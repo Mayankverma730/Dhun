@@ -1665,25 +1665,182 @@ function initAuth() {
     authState.users = [];
   }
 
-  // Load active user or fallback to Guest user
+  // Check if an authenticated user session is active
   const activeUserId = localStorage.getItem('dhun_auth_active_user');
-  let user = authState.users.find(u => u.id === activeUserId);
+  let user = activeUserId ? authState.users.find(u => u.id === activeUserId) : null;
 
-  if (!user) {
-    user = {
-      id: 'guest',
-      name: 'Guest User',
-      email: 'guest@dhun.local',
-      avatarColor: '#7c3aed',
-      provider: 'guest',
-      bio: '🎵 Exploring Dhun Music',
-      joinedAt: Date.now()
-    };
+  const gateScreen = document.getElementById('login-gate-screen');
+  const appShell   = document.getElementById('app');
+
+  if (user) {
+    // Already authenticated: bypass gatekeeper, load private library
+    authState.currentUser = user;
+    if (gateScreen) gateScreen.style.display = 'none';
+    if (appShell)   appShell.style.display = '';
+    renderAvatarColorPicker();
+    updateAuthUI();
+  } else {
+    // Not authenticated: hold at dedicated full-page Login Gatekeeper screen
+    authState.currentUser = null;
+    if (gateScreen) {
+      gateScreen.style.display = 'flex';
+      gateScreen.classList.remove('gate-exiting');
+      renderGateAvatarColorPicker();
+    }
+    if (appShell) {
+      appShell.style.display = 'none';
+    }
+  }
+}
+
+function enterAppFromGate(user) {
+  if (!user) return;
+  authState.currentUser = user;
+  localStorage.setItem('dhun_auth_active_user', user.id);
+
+  const gateScreen = document.getElementById('login-gate-screen');
+  const appShell   = document.getElementById('app');
+
+  if (appShell) appShell.style.display = '';
+
+  if (gateScreen) {
+    gateScreen.classList.add('gate-exiting');
+    setTimeout(() => {
+      gateScreen.style.display = 'none';
+      gateScreen.classList.remove('gate-exiting');
+    }, 360);
   }
 
-  authState.currentUser = user;
-  renderAvatarColorPicker();
   updateAuthUI();
+  refreshPlaylists();
+  syncAllSongsLikedState();
+  renderProfileStats();
+
+  showToast(`🎉 Welcome to Dhun, ${user.name}!`);
+}
+
+function continueAsGuestFromGate() {
+  const guestUser = {
+    id: 'guest',
+    name: 'Guest User',
+    email: 'guest@dhun.local',
+    avatarColor: '#7c3aed',
+    provider: 'guest',
+    bio: '🎵 Exploring Dhun Music',
+    joinedAt: Date.now()
+  };
+  enterAppFromGate(guestUser);
+  showToast('👤 Exploring as Guest. Sign in anytime to preserve your private library.');
+}
+
+function switchGateTab(tab) {
+  const signinBtn  = document.getElementById('gate-tab-signin');
+  const signupBtn  = document.getElementById('gate-tab-signup');
+  const signinForm = document.getElementById('gate-form-signin');
+  const signupForm = document.getElementById('gate-form-signup');
+  const title      = document.getElementById('gate-title');
+  const subtitle   = document.getElementById('gate-subtitle');
+
+  if (tab === 'signin') {
+    if (signinBtn)  signinBtn.classList.add('active');
+    if (signupBtn)  signupBtn.classList.remove('active');
+    if (signinForm) signinForm.style.display = 'block';
+    if (signupForm) signupForm.style.display = 'none';
+    if (title)      title.textContent = 'Welcome Back to Dhun';
+    if (subtitle)   subtitle.textContent = 'Sign in to unlock your private likes, playlists & listening suite';
+  } else {
+    if (signinBtn)  signinBtn.classList.remove('active');
+    if (signupBtn)  signupBtn.classList.add('active');
+    if (signinForm) signinForm.style.display = 'none';
+    if (signupForm) signupForm.style.display = 'block';
+    if (title)      title.textContent = 'Create Free Account';
+    if (subtitle)   subtitle.textContent = '100% private to you with zero cross-user data collision';
+    renderGateAvatarColorPicker();
+  }
+}
+
+function renderGateAvatarColorPicker() {
+  const picker = document.getElementById('gate-signup-avatar-picker');
+  if (!picker || picker.children.length > 0) return;
+  picker.innerHTML = authState.paletteColors.map((c, i) => `
+    <button type="button" class="palette-dot ${i === 0 ? 'selected' : ''}" style="background:${c}" onclick="selectGateAvatarColor('${c}', this)" title="${c}"></button>
+  `).join('');
+}
+
+function selectGateAvatarColor(color, btn) {
+  authState.selectedAvatarColor = color;
+  document.querySelectorAll('#gate-signup-avatar-picker .palette-dot').forEach(d => d.classList.remove('selected'));
+  if (btn) btn.classList.add('selected');
+}
+
+function handleGateEmailSignIn() {
+  const emailInput = document.getElementById('gate-signin-email');
+  const passInput  = document.getElementById('gate-signin-password');
+
+  const email = (emailInput?.value || '').trim().toLowerCase();
+  const password = passInput?.value || '';
+
+  if (!email || !password) {
+    showToast('⚠️ Please enter your email and password');
+    return;
+  }
+
+  const user = authState.users.find(u => u.email.toLowerCase() === email);
+  if (!user) {
+    showToast('❌ Account not found. Please create an account first.');
+    switchGateTab('signup');
+    const signupEmail = document.getElementById('gate-signup-email');
+    if (signupEmail) signupEmail.value = email;
+    return;
+  }
+
+  if (user.password && user.password !== password) {
+    showToast('❌ Incorrect password. Please try again.');
+    return;
+  }
+
+  enterAppFromGate(user);
+}
+
+function handleGateEmailSignUp() {
+  const nameInput  = document.getElementById('gate-signup-name');
+  const emailInput = document.getElementById('gate-signup-email');
+  const passInput  = document.getElementById('gate-signup-password');
+
+  const name = (nameInput?.value || '').trim();
+  const email = (emailInput?.value || '').trim().toLowerCase();
+  const password = passInput?.value || '';
+
+  if (!name || !email || !password) {
+    showToast('⚠️ Please fill out all fields');
+    return;
+  }
+
+  const existing = authState.users.find(u => u.email.toLowerCase() === email);
+  if (existing) {
+    showToast('⚠️ An account with this email already exists! Please sign in.');
+    switchGateTab('signin');
+    const signinEmail = document.getElementById('gate-signin-email');
+    if (signinEmail) signinEmail.value = email;
+    return;
+  }
+
+  const userId = 'usr_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
+  const newUser = {
+    id: userId,
+    name: name,
+    email: email,
+    password: password,
+    avatarColor: authState.selectedAvatarColor || '#7c3aed',
+    provider: 'email',
+    bio: '🎵 Dhun Music Listener',
+    joinedAt: Date.now()
+  };
+
+  authState.users.push(newUser);
+  localStorage.setItem('dhun_auth_users', JSON.stringify(authState.users));
+
+  enterAppFromGate(newUser);
 }
 
 function getUserStorageKey(suffix) {
@@ -1736,7 +1893,7 @@ function updateAuthUI() {
 
   const signoutBtn = document.getElementById('ump-signout-btn');
   if (signoutBtn) {
-    signoutBtn.style.display = isGuest ? 'none' : 'flex';
+    signoutBtn.style.display = 'flex';
   }
 
   const trigger = document.getElementById('ump-auth-trigger');
@@ -1835,7 +1992,7 @@ function renderAvatarColorPicker() {
 
 function selectAvatarColor(color, btn) {
   authState.selectedAvatarColor = color;
-  document.querySelectorAll('.palette-dot').forEach(d => d.classList.remove('selected'));
+  document.querySelectorAll('#signup-avatar-picker .palette-dot').forEach(d => d.classList.remove('selected'));
   if (btn) btn.classList.add('selected');
 }
 
@@ -1910,7 +2067,7 @@ function handleEmailSignIn() {
   switchToUser(user);
 }
 
-function handleGoogleSignIn() {
+function handleGoogleSignIn(isFromGate = false) {
   // If user has official Google GIS credentials configured
   if (window.google && window.google.accounts && window.google.accounts.id && window.DHUN_GOOGLE_CLIENT_ID) {
     try {
@@ -1920,7 +2077,6 @@ function handleGoogleSignIn() {
   }
 
   // Instant seamless Google Profile login prompt:
-  // Provides 1-click zero friction Google authentication that works everywhere (Vercel, localhost, mobile)
   const defaultGoogleEmail = authState.currentUser && authState.currentUser.email !== 'guest@dhun.local' 
     ? authState.currentUser.email 
     : 'user@gmail.com';
@@ -1957,24 +2113,34 @@ function handleGoogleSignIn() {
     localStorage.setItem('dhun_auth_users', JSON.stringify(authState.users));
   }
 
-  closeAuthModal();
-  switchToUser(existing);
+  if (isFromGate) {
+    enterAppFromGate(existing);
+  } else {
+    closeAuthModal();
+    switchToUser(existing);
+  }
   showToast(`✅ Google Sign-In verified! Welcome, ${existing.name}!`);
 }
 
 function signOutUser() {
   if (confirm('Are you sure you want to sign out of this account?')) {
-    const guestUser = {
-      id: 'guest',
-      name: 'Guest User',
-      email: 'guest@dhun.local',
-      avatarColor: '#7c3aed',
-      provider: 'guest',
-      bio: '🎵 Exploring Dhun Music',
-      joinedAt: Date.now()
-    };
-    switchToUser(guestUser);
-    showToast('👋 Signed out. Switched to clean Guest profile.');
+    localStorage.removeItem('dhun_auth_active_user');
+    authState.currentUser = null;
+
+    const gateScreen = document.getElementById('login-gate-screen');
+    const appShell   = document.getElementById('app');
+
+    if (appShell) {
+      appShell.style.display = 'none';
+    }
+    if (gateScreen) {
+      gateScreen.style.display = 'flex';
+      gateScreen.classList.remove('gate-exiting');
+      switchGateTab('signin');
+      renderGateAvatarColorPicker();
+    }
+
+    showToast('👋 Signed out. Please sign in to enter Dhun.');
   }
 }
 

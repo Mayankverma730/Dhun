@@ -4296,6 +4296,318 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   transform: translateY(0);
 }
 
+@media (max-width: 480px) {
+  .auth-modal-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    border-bottom: none !important;
+    padding: 24px 18px 30px !important;
+    margin: 0 !important;
+    box-shadow: 0 -10px 45px rgba(0, 0, 0, 0.8) !important;
+    animation: slideUpModal 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+}
+
+/* ══════════════════════════════════════════════════
+   FULL-PAGE DEDICATED LOGIN & GATEWAY LANDING SCREEN
+   ══════════════════════════════════════════════════ */
+.login-gate-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: #090514;
+  background: radial-gradient(circle at 18% 25%, rgba(124, 58, 237, 0.22) 0%, transparent 55%),
+              radial-gradient(circle at 82% 75%, rgba(6, 182, 212, 0.16) 0%, transparent 50%),
+              #090514;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 20px;
+  animation: gateFadeIn 0.35s ease-out;
+}
+
+@keyframes gateFadeIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.login-gate-screen.gate-exiting {
+  animation: gateFadeOut 0.35s ease-in forwards !important;
+  pointer-events: none;
+}
+
+@keyframes gateFadeOut {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(1.04); }
+}
+
+.gate-container {
+  width: 100%;
+  max-width: 1120px;
+  margin: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 56px;
+}
+
+/* Left Showcase Column */
+.gate-hero-col {
+  flex: 1;
+  max-width: 560px;
+}
+
+.gate-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.gate-brand-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  background: var(--grad-main);
+  color: #fff;
+  font-size: 24px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.55);
+}
+
+.gate-brand-name {
+  font-size: 32px;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  background: var(--grad-main);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.gate-hero-headline {
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1.18;
+  letter-spacing: -1px;
+  color: var(--text-1);
+  margin-bottom: 16px;
+}
+
+.gate-gradient-text {
+  background: linear-gradient(135deg, #a78bfa 0%, #38bdf8 50%, #f472b6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.gate-hero-sub {
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: var(--text-2);
+  margin-bottom: 30px;
+}
+
+/* Vinyl Graphic */
+.gate-vinyl-wrap {
+  position: relative;
+  width: 180px;
+  height: 180px;
+  margin: 20px 0 32px;
+}
+
+.gate-vinyl-disc {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: repeating-radial-gradient(circle, #1e1438, #130a27 10px, #0f0720 18px);
+  border: 4px solid #332057;
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.7), 0 0 40px rgba(124, 58, 237, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: spinVinyl 16s linear infinite;
+}
+
+@keyframes spinVinyl {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.gate-vinyl-center {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--grad-main);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0 0 6px rgba(0,0,0,0.3);
+}
+
+.gate-vinyl-logo {
+  color: #fff;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.gate-aura-ring {
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  border: 2px dashed rgba(124, 58, 237, 0.4);
+  animation: spinVinyl 32s linear infinite reverse;
+  pointer-events: none;
+}
+
+/* Perks List */
+.gate-perks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.gate-perk-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 10px 16px;
+  border-radius: 14px;
+  max-width: 480px;
+}
+
+.gate-perk-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.gate-perk-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-1);
+  margin: 0;
+}
+
+.gate-perk-desc {
+  font-size: 12px;
+  color: var(--text-3);
+  margin: 2px 0 0 0;
+}
+
+/* Right Auth Card */
+.gate-auth-col {
+  flex-shrink: 0;
+  width: 450px;
+  max-width: 100%;
+}
+
+.gate-auth-card {
+  padding: 34px 30px;
+  border-radius: 24px;
+  background: rgba(20, 12, 38, 0.85);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  border: 1.5px solid rgba(124, 58, 237, 0.35);
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.65), 0 0 35px rgba(124, 58, 237, 0.2);
+}
+
+.gate-auth-header {
+  text-align: center;
+  margin-bottom: 22px;
+}
+
+.gate-auth-title {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text-1);
+  margin: 0 0 6px 0;
+}
+
+.gate-auth-subtitle {
+  font-size: 13px;
+  color: var(--text-2);
+  margin: 0;
+  line-height: 1.45;
+}
+
+.gate-google-btn {
+  margin-top: 6px;
+}
+
+.gate-guest-wrap {
+  margin-top: 18px;
+  text-align: center;
+}
+
+.gate-guest-btn {
+  background: none;
+  border: none;
+  color: var(--text-2);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 8px;
+  transition: all 0.2s;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.gate-guest-btn:hover {
+  color: var(--purple-bright);
+}
+
+/* Mobile & Tablet Responsiveness */
+@media (max-width: 960px) {
+  .gate-container {
+    flex-direction: column;
+    gap: 36px;
+    align-items: center;
+    padding: 20px 0;
+  }
+  .gate-hero-col {
+    text-align: center;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .gate-brand {
+    justify-content: center;
+  }
+  .gate-hero-headline {
+    font-size: 28px;
+  }
+  .gate-vinyl-wrap {
+    display: none;
+  }
+  .gate-perks-list {
+    display: none;
+  }
+  .gate-auth-col {
+    width: 100%;
+    max-width: 440px;
+  }
+}
+
+@media (max-width: 480px) {
+  .gate-auth-card {
+    padding: 24px 18px;
+    border-radius: 20px;
+  }
+  .gate-hero-headline {
+    font-size: 24px;
+  }
+}
+
 /* Divider */
 .auth-divider {
   display: flex;

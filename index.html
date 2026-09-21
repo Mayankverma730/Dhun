@@ -54,6 +54,143 @@
     <div class="orb orb-3"></div>
   </div>
 
+  <!-- ══════════════════════════════════════════════════════════
+       FULL-PAGE DEDICATED LOGIN & GATEWAY LANDING SCREEN
+       ══════════════════════════════════════════════════════════ -->
+  <div id="login-gate-screen" class="login-gate-screen" style="display:none">
+    <div class="gate-container">
+      
+      <!-- Brand & Music Showcase Column (Left on Desktop) -->
+      <div class="gate-hero-col">
+        <div class="gate-brand">
+          <div class="gate-brand-icon">♪</div>
+          <span class="gate-brand-name">Dhun</span>
+        </div>
+        <h1 class="gate-hero-headline">Your Universe of Music.<br><span class="gate-gradient-text">Private, Isolated & Live.</span></h1>
+        <p class="gate-hero-sub">Step into a next-generation high-fidelity music experience. Zero data collision, real-time Listen Together rooms, and complete personal library isolation.</p>
+
+        <!-- Animated Vinyl Graphic -->
+        <div class="gate-vinyl-wrap" aria-hidden="true">
+          <div class="gate-vinyl-disc">
+            <div class="gate-vinyl-grooves"></div>
+            <div class="gate-vinyl-center">
+              <span class="gate-vinyl-logo">♪</span>
+            </div>
+          </div>
+          <div class="gate-aura-ring"></div>
+        </div>
+
+        <!-- Highlights Checklist -->
+        <div class="gate-perks-list">
+          <div class="gate-perk-item">
+            <span class="gate-perk-icon">🔒</span>
+            <div>
+              <p class="gate-perk-title">100% Private Profiles</p>
+              <p class="gate-perk-desc">Your playlists, likes & stats are strictly isolated</p>
+            </div>
+          </div>
+          <div class="gate-perk-item">
+            <span class="gate-perk-icon">🎧</span>
+            <div>
+              <p class="gate-perk-title">Global Listen Together</p>
+              <p class="gate-perk-desc">Live cross-device Jam rooms with synchronized playback</p>
+            </div>
+          </div>
+          <div class="gate-perk-item">
+            <span class="gate-perk-icon">⚡</span>
+            <div>
+              <p class="gate-perk-title">Stream & Local Audio</p>
+              <p class="gate-perk-desc">Drop audio from PC or stream high-fidelity YouTube tracks</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Authentication Card (Right on Desktop) -->
+      <div class="gate-auth-col">
+        <div class="glass-card gate-auth-card">
+          <div class="gate-auth-header">
+            <h2 class="gate-auth-title" id="gate-title">Welcome to Dhun</h2>
+            <p class="gate-auth-subtitle" id="gate-subtitle">Sign in or create an account to unlock your private music suite</p>
+          </div>
+
+          <!-- Google Sign-In Button -->
+          <button class="google-auth-btn gate-google-btn" onclick="handleGoogleSignIn(true)" title="Continue with Google">
+            <svg class="google-icon" viewBox="0 0 24 24" width="20" height="20">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            <span>Continue with Google</span>
+          </button>
+
+          <div class="auth-divider">
+            <span>OR CONTINUE WITH EMAIL</span>
+          </div>
+
+          <!-- Tabs Switcher -->
+          <div class="auth-tab-group">
+            <button class="auth-tab-btn active" id="gate-tab-signin" onclick="switchGateTab('signin')">Sign In</button>
+            <button class="auth-tab-btn" id="gate-tab-signup" onclick="switchGateTab('signup')">Create Account</button>
+          </div>
+
+          <!-- Sign In Form -->
+          <form id="gate-form-signin" class="auth-panel" onsubmit="event.preventDefault();handleGateEmailSignIn()">
+            <div class="auth-form-group">
+              <label class="auth-input-label" for="gate-signin-email">Email Address</label>
+              <input class="form-input" id="gate-signin-email" type="email" placeholder="you@example.com" required autocomplete="email" />
+            </div>
+            <div class="auth-form-group" style="margin-top:14px">
+              <label class="auth-input-label" for="gate-signin-password">Password</label>
+              <input class="form-input" id="gate-signin-password" type="password" placeholder="••••••••" required autocomplete="current-password" />
+            </div>
+            <button type="submit" class="btn-primary auth-action-btn" style="margin-top:22px">
+              <span>Sign In & Enter Dhun</span>
+            </button>
+          </form>
+
+          <!-- Sign Up Form -->
+          <form id="gate-form-signup" class="auth-panel" style="display:none" onsubmit="event.preventDefault();handleGateEmailSignUp()">
+            <div class="auth-form-group">
+              <label class="auth-input-label" for="gate-signup-name">Full Name</label>
+              <input class="form-input" id="gate-signup-name" type="text" placeholder="e.g. Mayank Verma" required autocomplete="name" />
+            </div>
+            <div class="auth-form-group" style="margin-top:12px">
+              <label class="auth-input-label" for="gate-signup-email">Email Address</label>
+              <input class="form-input" id="gate-signup-email" type="email" placeholder="you@example.com" required autocomplete="email" />
+            </div>
+            <div class="auth-form-group" style="margin-top:12px">
+              <label class="auth-input-label" for="gate-signup-password">Password</label>
+              <input class="form-input" id="gate-signup-password" type="password" placeholder="At least 6 characters" required minlength="6" autocomplete="new-password" />
+            </div>
+            <div class="auth-form-group" style="margin-top:12px">
+              <label class="auth-input-label">Avatar Color Theme</label>
+              <div class="avatar-palette-picker" id="gate-signup-avatar-picker">
+                <!-- Color dots -->
+              </div>
+            </div>
+            <button type="submit" class="btn-primary auth-action-btn" style="margin-top:22px">
+              <span>Create Account & Enter Dhun</span>
+            </button>
+          </form>
+
+          <!-- Guest Exploration Option -->
+          <div class="gate-guest-wrap">
+            <button type="button" class="gate-guest-btn" onclick="continueAsGuestFromGate()">
+              <span>Or explore preview as Guest →</span>
+            </button>
+          </div>
+
+          <div class="auth-footer-notice" style="margin-top:18px">
+            <p>🔒 <strong>Zero Collision Guarantee:</strong> Your library and listening habits are kept strictly confidential.</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
   <div class="app-shell" id="app">
     <!-- Backdrop for mobile drawer navigation -->
     <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="toggleMobileSidebar(false)"></div>
