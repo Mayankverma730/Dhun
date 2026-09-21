@@ -271,6 +271,48 @@ static int json_int(const char *body, const char *key, int def)
     return (int)json_float(body, key, (float)def);
 }
 
+static int json_bool(const char *body, const char *key, int def)
+{
+    char search[128];
+    snprintf(search, sizeof(search), "\"%s\"", key);
+    const char *p = strstr(body, search);
+    if (!p) return def;
+    p += strlen(search);
+    while (*p && (*p == ':' || *p == ' ')) p++;
+    if (strncmp(p, "true", 4) == 0) return 1;
+    if (strncmp(p, "false", 5) == 0) return 0;
+    if (*p == '1') return 1;
+    if (*p == '0') return 0;
+    return def;
+}
+
+static const char *json_obj(const char *body, const char *key, char *out, int maxlen)
+{
+    char search[128];
+    snprintf(search, sizeof(search), "\"%s\"", key);
+    const char *p = strstr(body, search);
+    if (!p) { out[0] = '\0'; return NULL; }
+    p += strlen(search);
+    while (*p && (*p == ':' || *p == ' ')) p++;
+    if (*p == '{') {
+        int depth = 0;
+        int i = 0;
+        while (*p && i < maxlen - 1) {
+            out[i++] = *p;
+            if (*p == '{') depth++;
+            else if (*p == '}') {
+                depth--;
+                if (depth == 0) { p++; break; }
+            }
+            p++;
+        }
+        out[i] = '\0';
+        return out;
+    }
+    out[0] = '\0';
+    return NULL;
+}
+
 /* ── URL helpers ──────────────────────────────── */
 static void url_decode(const char *src, char *dst, int maxlen)
 {
@@ -744,6 +786,410 @@ static void route_sort(SOCKET sock, const char *body)
 }
 
 /* ═══════════════════════════════════════════════
+   LISTEN TOGETHER / JAM SESSION DSA & ROUTES
+═══════════════════════════════════════════════ */
+#include <time.h>
+
+#define MAX_JAM_MEMBERS 32
+#define MAX_JAM_EVENTS  64
+
+typedef struct {
+    char name[64];
+    char avatar[8];
+    char color[16];
+    int is_host;
+    time_t last_seen;
+} JamMember;
+
+typedef struct {
+    int id;
+    char type[32];
+    char sender[64];
+    char payload[2048];
+    long long timestamp;
+} JamEvent;
+
+typedef struct JamRoom {
+    char code[32];
+    char host_name[64];
+    int allow_control;
+    JamMember members[MAX_JAM_MEMBERS];
+    int member_count;
+    JamEvent events[MAX_JAM_EVENTS];
+    int event_count;
+    int last_event_id;
+    char current_song[2048];
+    float progress;
+    int is_playing;
+    time_t created_at;
+    time_t last_activity;
+    struct JamRoom *next;
+} JamRoom;
+
+static JamRoom *g_jam_rooms = NULL;
+
+static const char *JAM_COLORS[] = {
+    "#7c3aed", "#06b6d4", "#ec4899", "#10b981", "#f59e0b", "#8b5cf6", "#3b82f6", "#ef4444"
+};
+#define JAM_COLORS_COUNT 8
+
+static JamRoom *jam_find_room(const char *code)
+{
+    if (!code || !code[0]) return NULL;
+    JamRoom *curr = g_jam_rooms;
+    while (curr) {
+#ifdef _WIN32
+        if (_stricmp(curr->code, code) == 0) return curr;
+#else
+        if (strcasecmp(curr->code, code) == 0) return curr;
+#endif
+        curr = curr->next;
+    }
+    return NULL;
+}
+
+static void jam_cleanup_stale_rooms(void)
+{
+    time_t now = time(NULL);
+    JamRoom **curr = &g_jam_rooms;
+    while (*curr) {
+        JamRoom *entry = *curr;
+        /* Remove rooms with no activity for > 2 hours, or empty rooms inactive > 10 mins */
+        if (difftime(now, entry->last_activity) > 7200 ||
+            (entry->member_count == 0 && difftime(now, entry->last_activity) > 600)) {
+            *curr = entry->next;
+            free(entry);
+        } else {
+            curr = &(entry->next);
+        }
+    }
+}
+
+static void jam_add_event(JamRoom *r, const char *type, const char *sender, const char *payload)
+{
+    if (!r) return;
+    r->last_event_id++;
+    r->last_activity = time(NULL);
+
+    JamEvent *ev;
+    if (r->event_count < MAX_JAM_EVENTS) {
+        ev = &r->events[r->event_count++];
+    } else {
+        /* Circular shift: shift left by 1, replace last */
+        memmove(&r->events[0], &r->events[1], sizeof(JamEvent) * (MAX_JAM_EVENTS - 1));
+        ev = &r->events[MAX_JAM_EVENTS - 1];
+    }
+
+    ev->id = r->last_event_id;
+    strncpy(ev->type, type ? type : "", sizeof(ev->type) - 1);
+    ev->type[sizeof(ev->type) - 1] = '\0';
+    strncpy(ev->sender, sender ? sender : "", sizeof(ev->sender) - 1);
+    ev->sender[sizeof(ev->sender) - 1] = '\0';
+    strncpy(ev->payload, payload ? payload : "{}", sizeof(ev->payload) - 1);
+    ev->payload[sizeof(ev->payload) - 1] = '\0';
+    ev->timestamp = (long long)time(NULL) * 1000;
+}
+
+static void jam_update_member_activity(JamRoom *r, const char *name)
+{
+    if (!r) return;
+    time_t now = time(NULL);
+    r->last_activity = now;
+
+    if (name && name[0]) {
+        for (int i = 0; i < r->member_count; i++) {
+            if (strcmp(r->members[i].name, name) == 0) {
+                r->members[i].last_seen = now;
+                break;
+            }
+        }
+    }
+
+    /* Prune disconnected members who haven't polled in 25 seconds */
+    int i = 0;
+    while (i < r->member_count) {
+        if (!r->members[i].is_host && difftime(now, r->members[i].last_seen) > 25) {
+            char left_user[64];
+            strncpy(left_user, r->members[i].name, sizeof(left_user) - 1);
+            left_user[sizeof(left_user) - 1] = '\0';
+
+            for (int j = i; j < r->member_count - 1; j++) {
+                r->members[j] = r->members[j + 1];
+            }
+            r->member_count--;
+
+            char pl[128];
+            snprintf(pl, sizeof(pl), "{\"sender\":\"%s\"}", left_user);
+            jam_add_event(r, "LEAVE", left_user, pl);
+        } else {
+            i++;
+        }
+    }
+}
+
+/* POST /api/jam/create */
+static void route_jam_create(SOCKET sock, const char *body)
+{
+    jam_cleanup_stale_rooms();
+
+    char dj_name[64];
+    json_str(body, "djName", dj_name, sizeof(dj_name));
+    if (!dj_name[0]) strcpy(dj_name, "You (DJ)");
+
+    int allow_control = json_bool(body, "allowControl", 1);
+
+    char room_code[32];
+    json_str(body, "roomId", room_code, sizeof(room_code));
+    if (!room_code[0] || strncmp(room_code, "DHUN-", 5) != 0) {
+        snprintf(room_code, sizeof(room_code), "DHUN-%04d", 1000 + (rand() % 9000));
+    }
+
+    JamRoom *existing = jam_find_room(room_code);
+    JamRoom *r = existing ? existing : (JamRoom*)calloc(1, sizeof(JamRoom));
+    if (!r) { send_error(sock, 500, "out of memory"); return; }
+
+    strncpy(r->code, room_code, sizeof(r->code) - 1);
+    strncpy(r->host_name, dj_name, sizeof(r->host_name) - 1);
+    r->allow_control = allow_control;
+    r->member_count = 1;
+    r->event_count = 0;
+    r->last_event_id = 0;
+    r->created_at = time(NULL);
+    r->last_activity = r->created_at;
+
+    /* Host is member #0 — NO BOTS */
+    strncpy(r->members[0].name, dj_name, sizeof(r->members[0].name) - 1);
+    strcpy(r->members[0].avatar, "DJ");
+    strcpy(r->members[0].color, "#7c3aed");
+    r->members[0].is_host = 1;
+    r->members[0].last_seen = r->created_at;
+
+    char song_buf[2048];
+    if (json_obj(body, "song", song_buf, sizeof(song_buf))) {
+        strncpy(r->current_song, song_buf, sizeof(r->current_song) - 1);
+    } else {
+        r->current_song[0] = '\0';
+    }
+    r->progress = json_float(body, "progress", 0.0f);
+    r->is_playing = json_bool(body, "isPlaying", 0);
+
+    if (!existing) {
+        r->next = g_jam_rooms;
+        g_jam_rooms = r;
+    }
+
+    jam_add_event(r, "ROOM_CREATED", dj_name, body);
+
+    char resp[512];
+    snprintf(resp, sizeof(resp),
+        "{\"success\":true,\"roomId\":\"%s\",\"host\":\"%s\",\"allowControl\":%s}",
+        r->code, r->host_name, r->allow_control ? "true" : "false");
+    send_ok(sock, resp);
+}
+
+/* POST /api/jam/join */
+static void route_jam_join(SOCKET sock, const char *body)
+{
+    char room_code[32], user_name[64];
+    json_str(body, "roomId", room_code, sizeof(room_code));
+    json_str(body, "name", user_name, sizeof(user_name));
+    if (!user_name[0]) strcpy(user_name, "Guest");
+
+    JamRoom *r = jam_find_room(room_code);
+    if (!r) {
+        send_error(sock, 404, "Jam room not found. Check the code and try again.");
+        return;
+    }
+
+    int found_idx = -1;
+    for (int i = 0; i < r->member_count; i++) {
+        if (strcmp(r->members[i].name, user_name) == 0) {
+            found_idx = i;
+            r->members[i].last_seen = time(NULL);
+            break;
+        }
+    }
+
+    if (found_idx == -1 && r->member_count < MAX_JAM_MEMBERS) {
+        int idx = r->member_count++;
+        strncpy(r->members[idx].name, user_name, sizeof(r->members[idx].name) - 1);
+        r->members[idx].name[sizeof(r->members[idx].name) - 1] = '\0';
+
+        char av[4] = "GU";
+        if (user_name[0]) {
+            av[0] = (char)toupper((unsigned char)user_name[0]);
+            av[1] = user_name[1] ? (char)toupper((unsigned char)user_name[1]) : '\0';
+            av[2] = '\0';
+        }
+        strcpy(r->members[idx].avatar, av);
+        strcpy(r->members[idx].color, JAM_COLORS[idx % JAM_COLORS_COUNT]);
+        r->members[idx].is_host = 0;
+        r->members[idx].last_seen = time(NULL);
+
+        char jpayload[256];
+        snprintf(jpayload, sizeof(jpayload),
+            "{\"sender\":\"%s\",\"avatar\":\"%s\",\"color\":\"%s\"}",
+            user_name, r->members[idx].avatar, r->members[idx].color);
+        jam_add_event(r, "JOIN", user_name, jpayload);
+    }
+
+    char *resp = malloc(BUF);
+    if (!resp) { send_error(sock, 500, "out of memory"); return; }
+
+    int pos = snprintf(resp, BUF,
+        "{\"success\":true,\"roomId\":\"%s\",\"host\":\"%s\",\"allowControl\":%s,"
+        "\"progress\":%.2f,\"isPlaying\":%s,\"lastEventId\":%d,\"members\":[",
+        r->code, r->host_name, r->allow_control ? "true" : "false",
+        r->progress, r->is_playing ? "true" : "false", r->last_event_id);
+
+    for (int i = 0; i < r->member_count; i++) {
+        if (i > 0 && pos < BUF - 2) resp[pos++] = ',';
+        pos += snprintf(resp + pos, BUF - pos,
+            "{\"name\":\"%s\",\"avatar\":\"%s\",\"color\":\"%s\",\"isHost\":%s}",
+            r->members[i].name, r->members[i].avatar, r->members[i].color,
+            r->members[i].is_host ? "true" : "false");
+    }
+    pos += snprintf(resp + pos, BUF - pos, "],\"currentSong\":%s}",
+        (r->current_song[0] ? r->current_song : "null"));
+
+    send_ok(sock, resp);
+    free(resp);
+}
+
+/* POST /api/jam/sync */
+static void route_jam_sync(SOCKET sock, const char *body)
+{
+    char room_code[32], sender[64], type[32];
+    json_str(body, "roomId", room_code, sizeof(room_code));
+    json_str(body, "sender", sender, sizeof(sender));
+    json_str(body, "type", type, sizeof(type));
+
+    JamRoom *r = jam_find_room(room_code);
+    if (!r) { send_error(sock, 404, "Room not found"); return; }
+
+    int is_host = (strcmp(r->host_name, sender) == 0);
+    if (!is_host && !r->allow_control && strcmp(type, "REACTION") != 0) {
+        send_error(sock, 403, "DJ has locked controls for this room");
+        return;
+    }
+
+    if (strcmp(type, "SYNC_PLAY") == 0) {
+        r->is_playing = 1;
+        r->progress = json_float(body, "progress", r->progress);
+    } else if (strcmp(type, "SYNC_PAUSE") == 0) {
+        r->is_playing = 0;
+        r->progress = json_float(body, "progress", r->progress);
+    } else if (strcmp(type, "SYNC_SEEK") == 0) {
+        r->progress = json_float(body, "progress", r->progress);
+    } else if (strcmp(type, "SYNC_SONG") == 0) {
+        char sbuf[2048];
+        if (json_obj(body, "song", sbuf, sizeof(sbuf))) {
+            strncpy(r->current_song, sbuf, sizeof(r->current_song) - 1);
+            r->current_song[sizeof(r->current_song) - 1] = '\0';
+        }
+        r->progress = 0.0f;
+        r->is_playing = json_bool(body, "shouldPlay", 1);
+    }
+
+    jam_add_event(r, type, sender, body);
+    send_ok(sock, "{\"success\":true}");
+}
+
+/* GET /api/jam/poll?roomId=...&lastId=...&user=... */
+static void route_jam_poll(SOCKET sock, const char *path)
+{
+    char room_code[32], user_name[64];
+    get_query_param(path, "roomId", room_code, sizeof(room_code));
+    get_query_param(path, "user", user_name, sizeof(user_name));
+    int last_id = 0;
+    char last_id_str[32];
+    get_query_param(path, "lastId", last_id_str, sizeof(last_id_str));
+    if (last_id_str[0]) last_id = atoi(last_id_str);
+
+    JamRoom *r = jam_find_room(room_code);
+    if (!r) {
+        send_error(sock, 404, "Room not found");
+        return;
+    }
+
+    jam_update_member_activity(r, user_name);
+
+    char *resp = malloc(BUF);
+    if (!resp) { send_error(sock, 500, "out of memory"); return; }
+
+    int pos = snprintf(resp, BUF,
+        "{\"success\":true,\"roomId\":\"%s\",\"host\":\"%s\",\"allowControl\":%s,"
+        "\"progress\":%.2f,\"isPlaying\":%s,\"lastEventId\":%d,\"members\":[",
+        r->code, r->host_name, r->allow_control ? "true" : "false",
+        r->progress, r->is_playing ? "true" : "false", r->last_event_id);
+
+    for (int i = 0; i < r->member_count; i++) {
+        if (i > 0 && pos < BUF - 2) resp[pos++] = ',';
+        pos += snprintf(resp + pos, BUF - pos,
+            "{\"name\":\"%s\",\"avatar\":\"%s\",\"color\":\"%s\",\"isHost\":%s}",
+            r->members[i].name, r->members[i].avatar, r->members[i].color,
+            r->members[i].is_host ? "true" : "false");
+    }
+
+    pos += snprintf(resp + pos, BUF - pos, "],\"events\":[");
+
+    int ev_first = 1;
+    for (int i = 0; i < r->event_count; i++) {
+        if (r->events[i].id > last_id) {
+            if (!ev_first && pos < BUF - 2) resp[pos++] = ',';
+            ev_first = 0;
+            pos += snprintf(resp + pos, BUF - pos,
+                "{\"id\":%d,\"type\":\"%s\",\"sender\":\"%s\",\"payload\":%s,\"timestamp\":%lld}",
+                r->events[i].id, r->events[i].type, r->events[i].sender,
+                r->events[i].payload[0] == '{' ? r->events[i].payload : "{}",
+                r->events[i].timestamp);
+        }
+    }
+
+    pos += snprintf(resp + pos, BUF - pos, "],\"currentSong\":%s}",
+        (r->current_song[0] ? r->current_song : "null"));
+
+    send_ok(sock, resp);
+    free(resp);
+}
+
+/* POST /api/jam/leave */
+static void route_jam_leave(SOCKET sock, const char *body)
+{
+    char room_code[32], user_name[64];
+    json_str(body, "roomId", room_code, sizeof(room_code));
+    json_str(body, "name", user_name, sizeof(user_name));
+
+    JamRoom *r = jam_find_room(room_code);
+    if (r) {
+        int found = -1;
+        for (int i = 0; i < r->member_count; i++) {
+            if (strcmp(r->members[i].name, user_name) == 0) {
+                found = i;
+                break;
+            }
+        }
+        if (found != -1) {
+            int was_host = r->members[found].is_host;
+            for (int j = found; j < r->member_count - 1; j++) {
+                r->members[j] = r->members[j + 1];
+            }
+            r->member_count--;
+
+            char lpayload[128];
+            snprintf(lpayload, sizeof(lpayload), "{\"sender\":\"%s\"}", user_name);
+            jam_add_event(r, "LEAVE", user_name, lpayload);
+
+            if (was_host && r->member_count > 0) {
+                r->members[0].is_host = 1;
+                strncpy(r->host_name, r->members[0].name, sizeof(r->host_name) - 1);
+            }
+        }
+    }
+    send_ok(sock, "{\"success\":true}");
+}
+
+/* ═══════════════════════════════════════════════
    REQUEST DISPATCHER
 ═══════════════════════════════════════════════ */
 static void handle_request(SOCKET sock, char *req, int req_len)
@@ -870,6 +1316,26 @@ static void handle_request(SOCKET sock, char *req, int req_len)
     /* ── /api/sort ──────────────────────────── */
     if (strcmp(seg2,"sort")==0 && strcmp(method,"POST")==0) {
         route_sort(sock, body); return;
+    }
+
+    /* ── /api/jam ───────────────────────────── */
+    if (strcmp(seg2,"jam")==0) {
+        if (strcmp(seg3,"create")==0 && strcmp(method,"POST")==0) {
+            route_jam_create(sock, body); return;
+        }
+        if (strcmp(seg3,"join")==0 && strcmp(method,"POST")==0) {
+            route_jam_join(sock, body); return;
+        }
+        if (strcmp(seg3,"sync")==0 && strcmp(method,"POST")==0) {
+            route_jam_sync(sock, body); return;
+        }
+        if (strcmp(seg3,"poll")==0 && strcmp(method,"GET")==0) {
+            route_jam_poll(sock, path); return;
+        }
+        if (strcmp(seg3,"leave")==0 && strcmp(method,"POST")==0) {
+            route_jam_leave(sock, body); return;
+        }
+        send_error(sock,404,"not found"); return;
     }
 
     /* ── Anything else: serve as static file ── */

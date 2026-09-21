@@ -1,0 +1,1589 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VIBE — Music Management System | Project Presentation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    /* =========================================================
+       LIGHT THEME (DEFAULT) & DARK THEME VARIABLES
+       ========================================================= */
+    :root, [data-theme="light"] {
+      --bg-primary: #f8fafc;
+      --bg-surface: #ffffff;
+      --bg-card: #ffffff;
+      --bg-gradient-1: rgba(37, 99, 235, 0.05);
+      --bg-gradient-2: rgba(124, 58, 237, 0.05);
+      --card-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.07), 0 4px 6px -2px rgba(15, 23, 42, 0.03);
+      --card-hover-shadow: 0 18px 35px -5px rgba(37, 99, 235, 0.12), 0 8px 12px -4px rgba(15, 23, 42, 0.04);
+      --border: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --text-main: #0f172a;
+      --text-body: #334155;
+      --text-muted: #64748b;
+      
+      --accent-blue: #2563eb;
+      --accent-purple: #7c3aed;
+      --accent-pink: #db2777;
+      --accent-green: #059669;
+      --accent-amber: #d97706;
+
+      --badge-blue-bg: #eff6ff;
+      --badge-blue-text: #1d4ed8;
+      --badge-blue-border: #bfdbfe;
+
+      --badge-purple-bg: #f5f3ff;
+      --badge-purple-text: #6d28d9;
+      --badge-purple-border: #ddd6fe;
+
+      --badge-green-bg: #f0fdf4;
+      --badge-green-text: #15803d;
+      --badge-green-border: #bbf7d0;
+
+      --badge-amber-bg: #fffbeb;
+      --badge-amber-text: #b45309;
+      --badge-amber-border: #fde68a;
+
+      --badge-pink-bg: #fff1f2;
+      --badge-pink-text: #be123c;
+      --badge-pink-border: #fecdd3;
+
+      --code-bg: #0f172a;
+      --code-text: #e2e8f0;
+      --cover-overlay: linear-gradient(135deg, rgba(248, 250, 252, 0.94) 0%, rgba(241, 245, 249, 0.96) 100%);
+      --cover-img: url('cover_light_bg.jpg');
+      
+      --font-main: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    [data-theme="dark"] {
+      --bg-primary: #070913;
+      --bg-surface: #0d1224;
+      --bg-card: rgba(18, 24, 48, 0.7);
+      --bg-gradient-1: rgba(157, 78, 221, 0.08);
+      --bg-gradient-2: rgba(0, 240, 255, 0.06);
+      --card-shadow: 0 8px 30px -10px rgba(0, 0, 0, 0.5);
+      --card-hover-shadow: 0 14px 40px -8px rgba(0, 240, 255, 0.15);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.18);
+      --text-main: #f8fafc;
+      --text-body: #cbd5e1;
+      --text-muted: #94a3b8;
+      
+      --accent-blue: #00f0ff;
+      --accent-purple: #9d4edd;
+      --accent-pink: #ff2a85;
+      --accent-green: #00e676;
+      --accent-amber: #ffb703;
+
+      --badge-blue-bg: rgba(0, 240, 255, 0.1);
+      --badge-blue-text: #00f0ff;
+      --badge-blue-border: rgba(0, 240, 255, 0.25);
+
+      --badge-purple-bg: rgba(157, 78, 221, 0.12);
+      --badge-purple-text: #c77dff;
+      --badge-purple-border: rgba(157, 78, 221, 0.3);
+
+      --badge-green-bg: rgba(0, 230, 118, 0.12);
+      --badge-green-text: #00e676;
+      --badge-green-border: rgba(0, 230, 118, 0.3);
+
+      --badge-amber-bg: rgba(255, 183, 3, 0.12);
+      --badge-amber-text: #ffb703;
+      --badge-amber-border: rgba(255, 183, 3, 0.3);
+
+      --badge-pink-bg: rgba(255, 42, 133, 0.12);
+      --badge-pink-text: #ff2a85;
+      --badge-pink-border: rgba(255, 42, 133, 0.3);
+
+      --code-bg: #050811;
+      --code-text: #cbd5e1;
+      --cover-overlay: linear-gradient(180deg, rgba(7, 9, 19, 0.85) 0%, rgba(7, 9, 19, 0.95) 100%);
+      --cover-img: url('cover_bg.jpg');
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      transition: background-color 0.3s ease, border-color 0.3s ease, color 0.2s ease;
+    }
+
+    body {
+      background: var(--bg-primary);
+      color: var(--text-main);
+      font-family: var(--font-main);
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      user-select: none;
+    }
+
+    /* Deck Layout */
+    #deck {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      padding: 50px 75px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      opacity: 0;
+      pointer-events: none;
+      transform: scale(0.985) translateY(12px);
+      transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      background: radial-gradient(circle at 85% 15%, var(--bg-gradient-1) 0%, transparent 60%),
+                  radial-gradient(circle at 15% 85%, var(--bg-gradient-2) 0%, transparent 60%),
+                  var(--bg-primary);
+    }
+
+    .slide.active {
+      opacity: 1;
+      pointer-events: auto;
+      transform: scale(1) translateY(0);
+      z-index: 10;
+    }
+
+    /* Slide Header */
+    .slide-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1.5px solid var(--border);
+      padding-bottom: 16px;
+    }
+
+    .tag-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 14px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: var(--badge-blue-bg);
+      color: var(--badge-blue-text);
+      border: 1px solid var(--badge-blue-border);
+    }
+
+    .tag-purple {
+      background: var(--badge-purple-bg);
+      color: var(--badge-purple-text);
+      border-color: var(--badge-purple-border);
+    }
+
+    .tag-green {
+      background: var(--badge-green-bg);
+      color: var(--badge-green-text);
+      border-color: var(--badge-green-border);
+    }
+
+    .tag-amber {
+      background: var(--badge-amber-bg);
+      color: var(--badge-amber-text);
+      border-color: var(--badge-amber-border);
+    }
+
+    .tag-pink {
+      background: var(--badge-pink-bg);
+      color: var(--badge-pink-text);
+      border-color: var(--badge-pink-border);
+    }
+
+    .slide-title-group h2 {
+      font-size: 2.15rem;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      margin-top: 6px;
+      color: var(--text-main);
+    }
+
+    .slide-title-group p {
+      font-size: 0.98rem;
+      color: var(--text-muted);
+      margin-top: 3px;
+      font-weight: 500;
+    }
+
+    .project-watermark {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+    }
+
+    /* Slide Body */
+    .slide-body {
+      flex: 1;
+      display: flex;
+      gap: 32px;
+      align-items: stretch;
+      padding: 24px 0;
+      min-height: 0;
+    }
+
+    /* Slide Footer */
+    .slide-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1.5px solid var(--border);
+      padding-top: 12px;
+      font-size: 0.84rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .footer-left {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .dsa-pill {
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      padding: 3px 10px;
+      background: var(--badge-blue-bg);
+      color: var(--badge-blue-text);
+      border-radius: 6px;
+      border: 1px solid var(--badge-blue-border);
+      font-weight: 600;
+    }
+
+    /* Grid Layouts */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 26px;
+      width: 100%;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 22px;
+      width: 100%;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--bg-card);
+      border: 1.5px solid var(--border);
+      border-radius: 18px;
+      padding: 22px 24px;
+      box-shadow: var(--card-shadow);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+    }
+
+    .card:hover {
+      border-color: var(--border-strong);
+      transform: translateY(-3px);
+      box-shadow: var(--card-hover-shadow);
+    }
+
+    .card.glow-blue {
+      border-color: var(--badge-blue-border);
+    }
+
+    .card.glow-purple {
+      border-color: var(--badge-purple-border);
+    }
+
+    .card.glow-pink {
+      border-color: var(--badge-pink-border);
+    }
+
+    .card.glow-green {
+      border-color: var(--badge-green-border);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 12px;
+    }
+
+    .icon-box {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      background: var(--badge-blue-bg);
+      border: 1px solid var(--badge-blue-border);
+    }
+
+    .icon-purple {
+      background: var(--badge-purple-bg);
+      border-color: var(--badge-purple-border);
+    }
+
+    .icon-green {
+      background: var(--badge-green-bg);
+      border-color: var(--badge-green-border);
+    }
+
+    .icon-pink {
+      background: var(--badge-pink-bg);
+      border-color: var(--badge-pink-border);
+    }
+
+    .icon-amber {
+      background: var(--badge-amber-bg);
+      border-color: var(--badge-amber-border);
+    }
+
+    .card-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text-main);
+      letter-spacing: -0.01em;
+    }
+
+    .card p, .card li {
+      color: var(--text-body);
+      font-size: 0.93rem;
+      line-height: 1.58;
+    }
+
+    .card ul {
+      list-style-type: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .card ul li {
+      position: relative;
+      padding-left: 22px;
+    }
+
+    .card ul li::before {
+      content: "•";
+      position: absolute;
+      left: 6px;
+      color: var(--accent-blue);
+      font-size: 1.3rem;
+      line-height: 1;
+      top: -2px;
+    }
+
+    /* Code Box (Crisp dark slate with syntax highlighting for high readability) */
+    .code-box {
+      background: var(--code-bg);
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      padding: 16px 18px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      line-height: 1.55;
+      overflow-x: auto;
+      color: var(--code-text);
+      box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+    }
+
+    .code-keyword { color: #f43f5e; font-weight: 700; }
+    .code-type { color: #38bdf8; font-weight: 600; }
+    .code-func { color: #c084fc; font-weight: 600; }
+    .code-comment { color: #94a3b8; font-style: italic; }
+    .code-string { color: #4ade80; }
+
+    /* Metric Badges */
+    .metric-badge {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 5px 12px;
+      border-radius: 8px;
+      background: var(--badge-blue-bg);
+      color: var(--badge-blue-text);
+      border: 1px solid var(--badge-blue-border);
+      margin-top: 12px;
+    }
+
+    /* Tables */
+    .custom-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1.5px solid var(--border);
+      background: var(--bg-card);
+      box-shadow: var(--card-shadow);
+    }
+
+    .custom-table th, .custom-table td {
+      padding: 14px 20px;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+
+    .custom-table th {
+      background: var(--bg-primary);
+      color: var(--text-main);
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 0.76rem;
+      letter-spacing: 0.06em;
+      border-bottom: 1.5px solid var(--border);
+    }
+
+    .custom-table td {
+      border-bottom: 1px solid var(--border);
+      color: var(--text-body);
+    }
+
+    .custom-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .custom-table tr:hover td {
+      background: var(--badge-blue-bg);
+    }
+
+    /* Cover Slide */
+    .cover-slide {
+      background: var(--cover-overlay), var(--cover-img) center/cover no-repeat !important;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 0 90px;
+    }
+
+    .cover-content {
+      max-width: 920px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 22px;
+    }
+
+    .hero-title {
+      font-size: 3.6rem;
+      font-weight: 800;
+      letter-spacing: -0.035em;
+      line-height: 1.12;
+      color: var(--text-main);
+    }
+
+    .hero-subtitle {
+      font-size: 1.25rem;
+      color: var(--text-body);
+      max-width: 780px;
+      line-height: 1.55;
+      font-weight: 500;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 8px;
+    }
+
+    .meta-pills {
+      display: flex;
+      gap: 32px;
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1.5px solid var(--border);
+    }
+
+    .meta-item {
+      text-align: left;
+    }
+
+    .meta-item span {
+      display: block;
+      font-size: 0.74rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+    }
+
+    .meta-item strong {
+      font-size: 0.95rem;
+      color: var(--text-main);
+      font-weight: 700;
+    }
+
+    /* Image Showcase */
+    .img-showcase {
+      width: 100%;
+      height: 100%;
+      border-radius: 18px;
+      border: 1.5px solid var(--border);
+      object-fit: contain;
+      background: #0b0f19;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+    }
+
+    /* Floating Navigation Controls */
+    #nav-controls {
+      position: fixed;
+      bottom: 24px;
+      right: 32px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--bg-surface);
+      border: 1.5px solid var(--border);
+      padding: 6px 14px;
+      border-radius: 999px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+      z-index: 100;
+    }
+
+    .nav-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-main);
+      font-size: 1.05rem;
+      cursor: pointer;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+
+    .nav-btn:hover {
+      background: var(--badge-blue-bg);
+      color: var(--accent-blue);
+    }
+
+    #slide-indicator {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      min-width: 65px;
+      text-align: center;
+    }
+
+    .kbd-hint {
+      position: fixed;
+      bottom: 28px;
+      left: 32px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      display: flex;
+      gap: 10px;
+      z-index: 100;
+      font-weight: 500;
+    }
+
+    kbd {
+      background: var(--bg-surface);
+      padding: 3px 7px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    /* Print styles for clean PDF export */
+    @media print {
+      body {
+        overflow: visible;
+        height: auto;
+      }
+      #nav-controls, .kbd-hint {
+        display: none !important;
+      }
+      .slide {
+        position: relative !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        transform: none !important;
+        page-break-after: always;
+        height: 100vh;
+        width: 100vw;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="deck">
+
+    <!-- SLIDE 1: Title & Cover -->
+    <section class="slide cover-slide active" id="slide-1">
+      <div class="cover-content">
+        <div class="tag-badge">Computer Science & Systems Architecture</div>
+        <h1 class="hero-title">VIBE: Enterprise Music Management System</h1>
+        <p class="hero-subtitle">
+          A high-performance audio catalog and playback queue engine engineered in pure C with 8 core Data Structures & Algorithms, integrated with an embedded HTTP server and web interface.
+        </p>
+
+        <div class="badge-row">
+          <span class="tag-badge">Doubly Linked List</span>
+          <span class="tag-badge tag-purple">Binary Search Tree</span>
+          <span class="tag-badge tag-green">Circular Queue</span>
+          <span class="tag-badge tag-amber">Max-Heap</span>
+          <span class="tag-badge">Hash Table</span>
+          <span class="tag-badge tag-pink">Merge & Quick Sort</span>
+        </div>
+
+        <div class="meta-pills">
+          <div class="meta-item">
+            <span>Domain</span>
+            <strong>Systems & Audio Software</strong>
+          </div>
+          <div class="meta-item">
+            <span>Core Implementation</span>
+            <strong>Pure ANSI C (Zero Frameworks)</strong>
+          </div>
+          <div class="meta-item">
+            <span>Frontend & Server</span>
+            <strong>Winsock HTTP (3000) + Web UI</strong>
+          </div>
+          <div class="meta-item">
+            <span>Engineering Target</span>
+            <strong>Low Latency & Constant Memory</strong>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 2: Problem Statement -->
+    <section class="slide" id="slide-2">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <div class="tag-badge">Problem Statement</div>
+          <h2>What Problem Does This Project Solve?</h2>
+          <p>Overcoming computational bottlenecks in conventional music players and media storage.</p>
+        </div>
+        <div class="project-watermark">PROBLEM DEFINITION // SLIDE 02</div>
+      </div>
+
+      <div class="slide-body">
+        <div class="grid-3">
+          <div class="card glow-blue">
+            <div class="card-header">
+              <div class="icon-box">⚠️</div>
+              <div class="card-title">1. Linear Traversal Latency</div>
+            </div>
+            <p>
+              Naive systems store audio tracks in unindexed flat arrays. As libraries scale to 50,000+ tracks, searching by title or finding song metadata degrades to <strong>O(n)</strong> linear time, causing audio stutters and sluggish search latency.
+            </p>
+            <ul>
+              <li>High CPU utilization during continuous text query.</li>
+              <li>Cache-miss penalties with unmanaged memory.</li>
+            </ul>
+            <div class="metric-badge">O(n) → O(1) Target</div>
+          </div>
+
+          <div class="card glow-purple">
+            <div class="card-header">
+              <div class="icon-box icon-purple">🔄</div>
+              <div class="card-title">2. Queue Shifts & Bloat</div>
+            </div>
+            <p>
+              Standard queue implementations on plain arrays require expensive <strong>O(n) element shifts</strong> every time a song finishes playing, or result in wasted buffer space when head pointers simply increment without wrapping.
+            </p>
+            <ul>
+              <li>Frequent reallocations & fragmented heap.</li>
+              <li>Unbounded play history memory footprints.</li>
+            </ul>
+            <div class="metric-badge">Circular Buffer Required</div>
+          </div>
+
+          <div class="card glow-pink">
+            <div class="card-header">
+              <div class="icon-box icon-pink">📊</div>
+              <div class="card-title">3. Dynamic Top Charts Overhead</div>
+            </div>
+            <p>
+              Calculating live "Top 10 Most Played" or "Highest Rated" songs traditionally forces an expensive full-table sort costing <strong>O(n log n)</strong> on every single playback event, starving playback threads of precious clock cycles.
+            </p>
+            <ul>
+              <li>Heavy re-sort latency on frequent updates.</li>
+              <li>Lack of priority queue semantics.</li>
+            </ul>
+            <div class="metric-badge">O(log n) Heap Solution</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <div class="footer-left">
+          <span>Target: Zero-allocation playback loop, sub-millisecond retrieval, constant memory bounds</span>
+        </div>
+        <div>VIBE Presentation</div>
+      </div>
+    </section>
+
+    <!-- SLIDE 3: Real-World Use Cases -->
+    <section class="slide" id="slide-3">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <div class="tag-badge tag-green">Application & Industry Scope</div>
+          <h2>Primary Real-World Use Cases</h2>
+          <p>Where the VIBE architecture delivers tangible performance and architectural advantages.</p>
+        </div>
+        <div class="project-watermark">USE CASES // SLIDE 03</div>
+      </div>
+
+      <div class="slide-body">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header">
+              <div class="icon-box">🚗</div>
+              <div>
+                <div class="card-title">Automotive In-Vehicle Infotainment (IVI)</div>
+                <p>Embedded systems with constrained memory & high reliability</p>
+              </div>
+            </div>
+            <p>
+              Cars and embedded smart speakers run on strict RAM limits (under 64MB). VIBE’s lightweight pure C memory footprint without heavy runtimes (no Node/Python overhead) makes it ideal for instantaneous local playback, circular queuing, and offline steering-wheel controls.
+            </p>
+            <ul>
+              <li>Deterministic memory footprint (fixed queue & stack bounds).</li>
+              <li>Instantaneous response with zero garbage collection pauses.</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="icon-box icon-purple">🎧</div>
+              <div>
+                <div class="card-title">DJ & Live Performance Audio Deck</div>
+                <p>Zero-latency track queuing, previewing & history undo</p>
+              </div>
+            </div>
+            <p>
+              During live DJ sets, track scheduling cannot tolerate stutter. DJs require an instant FIFO play queue, a LIFO stack to instantly rewind/undo mistakenly triggered tracks, and instant O(1) song identification by unique track ID.
+            </p>
+            <ul>
+              <li>LIFO Stack gives instant "Backtrack / Undo" capability.</li>
+              <li>O(1) Enqueue/Dequeue ensures uninterrupted audio pipelines.</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="icon-box icon-green">📡</div>
+              <div>
+                <div class="card-title">Decentralized / Offline Edge Media Hub</div>
+                <p>Self-hosted streaming server for local home networks</p>
+              </div>
+            </div>
+            <p>
+              Functions as an ultra-fast local server running on a Raspberry Pi or NAS. Hosts local FLAC/MP3 catalogs, handles HTTP client requests asynchronously, and serves modern glassmorphic web clients without external internet dependencies.
+            </p>
+            <ul>
+              <li>Embedded Winsock/POSIX C socket server serving JSON API.</li>
+              <li>Decoupled architecture: C backend + modern web frontend.</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="icon-box icon-amber">🎓</div>
+              <div>
+                <div class="card-title">Production DSA Benchmark & Reference</div>
+                <p>Standardized reference architecture for algorithms in practice</p>
+              </div>
+            </div>
+            <p>
+              Demonstrates how abstract data structures taught theoretically (BSTs, Heaps, Linked Lists, Hash Tables) unify inside one cohesive, production-grade product to solve concrete software engineering problems simultaneously.
+            </p>
+            <ul>
+              <li>Concrete multi-structure synchronization (DLL + Hash + BST + Heap).</li>
+              <li>Empirical proof of Big-O asymptotic runtime advantages.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <div class="footer-left">
+          <span>Production Readiness: Embedded Systems, Low-latency Audio, Edge Computing</span>
+        </div>
+        <div>VIBE Presentation</div>
+      </div>
+    </section>
+
+    <!-- SLIDE 4: Architecture Diagram -->
+    <section class="slide" id="slide-4">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <div class="tag-badge">System Topology</div>
+          <h2>System Architecture & DSA Interconnections</h2>
+          <p>How 8 fundamental data structures synchronize synchronously to power the player.</p>
+        </div>
+        <div class="project-watermark">ARCHITECTURE // SLIDE 04</div>
+      </div>
+
+      <div class="slide-body" style="align-items: center; justify-content: center;">
+        <div style="width: 100%; height: 100%; display: flex; gap: 30px; align-items: center;">
+          <div style="flex: 1.25; height: 100%; display: flex; align-items: center; justify-content: center;">
+            <img src="architecture_diagram.jpg" alt="VIBE Architecture Diagram" class="img-showcase" style="max-height: 470px;" />
+          </div>
+          <div style="flex: 0.75; display: flex; flex-direction: column; gap: 12px;">
+            <div class="card" style="padding: 14px 18px;">
+              <strong style="color: var(--accent-blue); font-size: 0.95rem;">Doubly Linked List (Master Store)</strong>
+              <p style="font-size: 0.85rem;">Maintains sequential master catalog. Allows O(1) bi-directional playlist navigation (Next / Previous).</p>
+            </div>
+            <div class="card" style="padding: 14px 18px;">
+              <strong style="color: var(--accent-purple); font-size: 0.95rem;">BST + Hash Table (Dual Indexing)</strong>
+              <p style="font-size: 0.85rem;">BST organizes titles for prefix search & sorted traversal. Hash table gives O(1) key-based ID lookup.</p>
+            </div>
+            <div class="card" style="padding: 14px 18px;">
+              <strong style="color: var(--accent-green); font-size: 0.95rem;">Circular Queue & Stack (Playback)</strong>
+              <p style="font-size: 0.85rem;">FIFO Queue buffers upcoming tracks with zero memory shifts; LIFO Stack logs played history for rollback.</p>
+            </div>
+            <div class="card" style="padding: 14px 18px;">
+              <strong style="color: var(--accent-amber); font-size: 0.95rem;">Max-Heap (Top Charts Engine)</strong>
+              <p style="font-size: 0.85rem;">Maintains priority order based on play count or user ratings without sorting the entire dataset.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <div class="footer-left">
+          <span class="dsa-pill">DLL</span>
+          <span class="dsa-pill">BST</span>
+          <span class="dsa-pill">Hash Table</span>
+          <span class="dsa-pill">Max-Heap</span>
+          <span class="dsa-pill">Circular Queue</span>
+          <span class="dsa-pill">Stack</span>
+        </div>
+        <div>VIBE Presentation</div>
+      </div>
+    </section>
+
+    <!-- SLIDE 5: Code & Deep Dive: Doubly Linked List -->
+    <section class="slide" id="slide-5">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <div class="tag-badge">Core Engine: library.c / library.h</div>
+          <h2>Music Library: Doubly Linked List (DLL)</h2>
+          <p>Bi-directional sequential traversal and dynamic memory management for the track catalog.</p>
+        </div>
+        <div class="project-watermark">DATA STRUCTURE 1 // SLIDE 05</div>
+      </div>
+
+      <div class="slide-body">
+        <div class="grid-2">
+          <div style="display: flex; flex-direction: column; gap: 18px;">
+            <div class="card">
+              <div class="card-title" style="color: var(--accent-blue);">Why Doubly Linked List?</div>
+              <p style="margin-top: 8px;">
+                Music players require seamless <strong>Next Song</strong> and <strong>Previous Song</strong> operations. A Doubly Linked List provides pointers in both directions (<code>prev</code> and <code>next</code>), eliminating the need to search backward.
+              </p>
+              <ul>
+                <li><strong>O(1) Insertion:</strong> Constant-time appending to tail as new songs are imported.</li>
+                <li><strong>O(1) Local Deletion:</strong> Removing a track from a known pointer requires updating two adjacent pointers.</li>
+                <li><strong>Bidirectional Display:</strong> Supports forward traversal and reverse traversal (<code>lib_display_reverse</code>).</li>
+              </ul>
+              <div class="metric-badge">Append: O(1) | Bidirectional Step: O(1)</div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">Memory Representation</div>
+              <p style="font-size: 0.85rem; font-family: var(--font-mono); margin-top: 6px; color: var(--accent-blue); font-weight: 600;">
+                [NULL] &larr; [Song 1: Blinding Lights] &harr; [Song 2: Starboy] &harr; [Song 3: After Hours] &rarr; [NULL]
+              </p>
+            </div>
+          </div>
+
+          <div class="code-box">
+            <div class="code-comment">// library.h & library.c — Core DLL Implementation</div>
+            <span class="code-keyword">typedef struct</span> LibNode {
+                <span class="code-type">Song</span>           song;
+                <span class="code-keyword">struct</span> LibNode *prev;
+                <span class="code-keyword">struct</span> LibNode *next;
+            } <span class="code-type">LibNode</span>;
+
+            <span class="code-keyword">typedef struct</span> Library {
+                <span class="code-type">LibNode</span> *head;
+                <span class="code-type">LibNode</span> *tail;
+                <span class="code-type">int</span>      size;
+                <span class="code-type">int</span>      next_id;
+            } <span class="code-type">Library</span>;
+
+            <span class="code-type">int</span> <span class="code-func">lib_add_song</span>(<span class="code-type">Library</span> *lib, <span class="code-keyword">const char</span> *title, ...) {
+                <span class="code-type">LibNode</span> *node = (<span class="code-type">LibNode</span>*)<span class="code-func">malloc</span>(<span class="code-keyword">sizeof</span>(<span class="code-type">LibNode</span>));
+                node-&gt;song = <span class="code-func">song_create</span>(lib-&gt;next_id++, title, ...);
+                node-&gt;next = NULL;
+                node-&gt;prev = lib-&gt;tail;
+
+                <span class="code-keyword">if</span> (!lib-&gt;head) {
+                    lib-&gt;head = node;
+                } <span class="code-keyword">else</span> {
+                    lib-&gt;tail-&gt;next = node;
+                }
+                lib-&gt;tail = node;
+                lib-&gt;size++;
+                <span class="code-keyword">return</span> node-&gt;song.id;
+            }
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <div class="footer-left">
+          <span>Component: library.c</span>
+          <span class="dsa-pill">Pointers: 2x per Node</span>
+          <span class="dsa-pill">Dynamic Heap Allocated</span>
+        </div>
+        <div>VIBE Presentation</div>
+      </div>
+    </section>
+
+    <!-- SLIDE 6: Code & Deep Dive: Queue & Stack -->
+    <section class="slide" id="slide-6">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <div class="tag-badge tag-green">Playback Lifecycle: queue.c & stack.c</div>
+          <h2>Play Queue (Circular Queue) & History (Stack)</h2>
+          <p>FIFO scheduling for upcoming songs and LIFO tracking for playback history & back navigation.</p>
+        </div>
+        <div class="project-watermark">DATA STRUCTURES 2 & 3 // SLIDE 06</div>
+      </div>
+
+      <div class="slide-body">
+        <div class="grid-2">
+          <!-- Circular Queue -->
+          <div class="card glow-green">
+            <div class="card-header">
+              <div class="icon-box icon-green">🔄</div>
+              <div>
+                <div class="card-title">Circular Queue (FIFO) — Up Next</div>
+                <p>Constant time O(1) buffer without element shifting</p>
+              </div>
+            </div>
+            <div class="code-box" style="font-size: 0.76rem; padding: 12px;">
+<span class="code-comment">// queue.c — Modular arithmetic wrap-around</span>
+<span class="code-type">int</span> <span class="code-func">queue_enqueue</span>(<span class="code-type">Queue</span> *q, <span class="code-type">Song</span> song) {
+    <span class="code-keyword">if</span> (q-&gt;count == QUEUE_MAX_SIZE) <span class="code-keyword">return</span> -1;
+    q-&gt;data[q-&gt;rear] = song;
+    <span class="code-comment">// Wrap index seamlessly using modulo</span>
+    q-&gt;rear = (q-&gt;rear + 1) % QUEUE_MAX_SIZE;
+    q-&gt;count++;
+    <span class="code-keyword">return</span> 0;
+}
+            </div>
+            <ul>
+              <li><strong>Zero Wasted Space:</strong> Rear pointer wraps back to index 0.</li>
+              <li><strong>O(1) Enqueue & Dequeue:</strong> Next track plays instantly.</li>
+              <li>Fixed size guarantees bounded memory on embedded chips.</li>
+            </ul>
+          </div>
+
+          <!-- History Stack -->
+          <div class="card glow-purple">
+            <div class="card-header">
+              <div class="icon-box icon-purple">🥞</div>
+              <div>
+                <div class="card-title">History Stack (LIFO) — Rewind</div>
+                <p>Instantaneous "Previous Song" tracking & undo</p>
+              </div>
+            </div>
+            <div class="code-box" style="font-size: 0.76rem; padding: 12px;">
+<span class="code-comment">// stack.c — Push on play, Pop to rewind</span>
+<span class="code-type">int</span> <span class="code-func">stack_push</span>(<span class="code-type">Stack</span> *s, <span class="code-type">Song</span> song) {
+    <span class="code-keyword">if</span> (s-&gt;top &gt;= STACK_MAX_SIZE - 1) <span class="code-keyword">return</span> -1;
+    s-&gt;data[++(s-&gt;top)] = song;
+    <span class="code-keyword">return</span> 0;
+}
+
+<span class="code-type">int</span> <span class="code-func">stack_pop</span>(<span class="code-type">Stack</span> *s, <span class="code-type">Song</span> *out) {
+    <span class="code-keyword">if</span> (s-&gt;top &lt; 0) <span class="code-keyword">return</span> -1;
+    *out = s-&gt;data[(s-&gt;top)--];
+    <span class="code-keyword">return</span> 0;
+}
+            </div>
+            <ul>
+              <li><strong>Natural Audio Reversal:</strong> Most recently played song sits on top.</li>
+              <li><strong>O(1) Push / Pop / Peek:</strong> Zero overhead during track transitions.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <div class="footer-left">
+          <span class="dsa-pill">Circular Queue: Modulo Wrap</span>
+          <span class="dsa-pill">Stack: Array-backed LIFO</span>
+          <span class="dsa-pill">Both O(1) Time</span>
+        </div>
+        <div>VIBE Presentation</div>
+      </div>
+    </section>
+
+    <!-- SLIDE 7: Code & Deep Dive: BST & Hash Table -->
+    <section class="slide" id="slide-7">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <div class="tag-badge">Indexing: bst.c & hash.c</div>
+          <h2>Dual Indexing: BST & Hash Table</h2>
+          <p>O(log n) lexicographical search coupled with O(1) average constant-time ID retrieval.</p>
+        </div>
+        <div class="project-watermark">DATA STRUCTURES 4 & 5 // SLIDE 07</div>
+      </div>
+
+      <div class="slide-body">
+        <div class="grid-2">
+          <!-- Binary Search Tree -->
+          <div class="card">
+            <div class="card-title" style="color: var(--accent-purple);">1. Binary Search Tree (BST)</div>
+            <p style="margin-top: 6px;">
+              Enables <strong>O(log n)</strong> search by song title and ordered alphabetical display using in-order traversal:
+            </p>
+            <div class="code-box" style="font-size: 0.76rem; margin-top: 10px;">
+<span class="code-type">BSTNode</span> *<span class="code-func">bst_search</span>(<span class="code-type">BST</span> *tree, <span class="code-keyword">const char</span> *title) {
+    <span class="code-type">BSTNode</span> *curr = tree-&gt;root;
+    <span class="code-keyword">while</span> (curr) {
+        <span class="code-type">int</span> cmp = <span class="code-func">strcasecmp</span>(title, curr-&gt;song.title);
+        <span class="code-keyword">if</span> (cmp == 0) <span class="code-keyword">return</span> curr;
+        curr = (cmp &lt; 0) ? curr-&gt;left : curr-&gt;right;
+    }
+    <span class="code-keyword">return</span> NULL;
+}
+            </div>
+            <ul>
+              <li><strong>In-Order Traversal (L-Root-R):</strong> Generates sorted catalog in O(n) without running extra sort routines.</li>
+            </ul>
+          </div>
+
+          <!-- Hash Table -->
+          <div class="card">
+            <div class="card-title" style="color: var(--accent-blue);">2. Hash Table with Chaining</div>
+            <p style="margin-top: 6px;">
+              Maps internal numeric song IDs to song memory with <strong>O(1) average lookup</strong> using separate chaining:
+            </p>
+            <div class="code-box" style="font-size: 0.76rem; margin-top: 10px;">
+<span class="code-comment">// Modular hash using prime table size (101)</span>
+<span class="code-type">int</span> index = song.id % HASH_TABLE_SIZE;
+
+<span class="code-type">Song</span> *<span class="code-func">hash_lookup</span>(<span class="code-type">HashTable</span> *ht, <span class="code-type">int</span> id) {
+    <span class="code-type">int</span> idx = id % HASH_TABLE_SIZE;
+    <span class="code-type">HashNode</span> *node = ht-&gt;buckets[idx];
+    <span class="code-keyword">while</span> (node) {
+        <span class="code-keyword">if</span> (node-&gt;song.id == id) <span class="code-keyword">return</span> &amp;node-&gt;song;
+        node = node-&gt;next;
+    }
+    <span class="code-keyword">return</span> NULL;
+}
+            </div>
+            <ul>
+              <li><strong>Collision Handling:</strong> Singly linked list chains on each bucket.</li>
+              <li><strong>Zero Delay:</strong> UI click on song ID resolves song details in 0.001ms.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <div class="footer-left">
+          <span>Search: BST O(log n)</span>
+          <span>ID Lookup: Hash Table O(1)</span>
+          <span>Table Size: 101 Prime Buckets</span>
+        </div>
+        <div>VIBE Presentation</div>
+      </div>
+    </section>
+
+    <!-- SLIDE 8: Code & Deep Dive: Max-Heap -->
+    <section class="slide" id="slide-8">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <div class="tag-badge tag-amber">Analytics Engine: heap.c / heap.h</div>
+          <h2>Top Charts & Ranking: Max-Heap</h2>
+          <p>Complete binary tree maintaining real-time trending charts by play count or user rating.</p>
+        </div>
+        <div class="project-watermark">DATA STRUCTURE 6 // SLIDE 08</div>
+      </div>
+
+      <div class="slide-body">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title" style="color: var(--accent-amber);">Why Max-Heap Beats Full Sorting</div>
+            <p style="margin-top: 8px;">
+              In a commercial streaming app, users constantly want to know: <em>"What is the #1 trending song?"</em> or <em>"Show me the Top 5 tracks."</em>
+            </p>
+            <p style="margin-top: 10px;">
+              Running a full sort takes <strong>O(n log n)</strong> every time play count increments. A Max-Heap:
+            </p>
+            <ul>
+              <li><strong>Peeks Top Song:</strong> Exactly <strong>O(1)</strong> time at <code>data[0]</code>.</li>
+              <li><strong>Heapify / Insert:</strong> Logarithmic <strong>O(log n)</strong> via bubble-up/down.</li>
+              <li><strong>Build Heap:</strong> Can convert an entire library array to a heap in <strong>O(n) linear time</strong>.</li>
+              <li><strong>Dual Mode:</strong> Configurable for <code>HEAP_BY_PLAYS</code> or <code>HEAP_BY_RATING</code>.</li>
+            </ul>
+            <div class="metric-badge">Root Element = Highest Metric at O(1)</div>
+          </div>
+
+          <div class="code-box">
+            <div class="code-comment">// heap.c — Sift Down operation for Max-Heap extraction</div>
+            <span class="code-keyword">static void</span> <span class="code-func">heapify_down</span>(<span class="code-type">Heap</span> *h, <span class="code-type">int</span> i) {
+                <span class="code-type">int</span> largest = i;
+                <span class="code-type">int</span> left    = 2 * i + 1;
+                <span class="code-type">int</span> right   = 2 * i + 2;
+
+                <span class="code-keyword">if</span> (left &lt; h-&gt;size &amp;&amp; <span class="code-func">heap_compare</span>(h, left, largest) &gt; 0)
+                    largest = left;
+                <span class="code-keyword">if</span> (right &lt; h-&gt;size &amp;&amp; <span class="code-func">heap_compare</span>(h, right, largest) &gt; 0)
+                    largest = right;
+
+                <span class="code-keyword">if</span> (largest != i) {
+                    <span class="code-type">Song</span> tmp = h-&gt;data[i];
+                    h-&gt;data[i] = h-&gt;data[largest];
+                    h-&gt;data[largest] = tmp;
+                    <span class="code-func">heapify_down</span>(h, largest);
+                }
+            }
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <div class="footer-left">
+          <span>Component: heap.c</span>
+          <span class="dsa-pill">Array-based Complete Binary Tree</span>
+          <span class="dsa-pill">Top-K Extraction: O(k log n)</span>
+        </div>
+        <div>VIBE Presentation</div>
+      </div>
+    </section>
+
+    <!-- SLIDE 9: Sorting Algorithms -->
+    <section class="slide" id="slide-9">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <div class="tag-badge tag-pink">Algorithmic Engine: sort.c / sort.h</div>
+          <h2>Sorting Engine: Merge Sort & Quick Sort</h2>
+          <p>Multi-attribute sorting (Title, Artist, Plays, Duration, Rating) + Binary Search on sorted data.</p>
+        </div>
+        <div class="project-watermark">ALGORITHMS // SLIDE 09</div>
+      </div>
+
+      <div class="slide-body">
+        <div class="grid-3">
+          <div class="card">
+            <div class="card-title" style="color: var(--accent-pink);">Merge Sort (Stable)</div>
+            <p style="margin-top: 8px;">
+              Divide-and-conquer algorithm with guaranteed <strong>O(n log n)</strong> worst-case complexity.
+            </p>
+            <ul>
+              <li><strong>Stability Preserved:</strong> If two songs have identical ratings, their original relative order is preserved.</li>
+              <li>Ideal for UI column sorting where secondary sort order matters.</li>
+            </ul>
+            <div class="metric-badge">Worst-Case: O(n log n)</div>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="color: var(--accent-blue);">Quick Sort (In-Place)</div>
+            <p style="margin-top: 8px;">
+              Partitioning algorithm with <strong>O(n log n)</strong> average case and minimal memory overhead.
+            </p>
+            <ul>
+              <li><strong>Zero Extra RAM:</strong> Sorts songs directly within memory buffers.</li>
+              <li>Uses median/pivot strategy for fast reordering of catalog arrays.</li>
+            </ul>
+            <div class="metric-badge">Auxiliary Space: O(1)</div>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="color: var(--accent-green);">Binary Search</div>
+            <p style="margin-top: 8px;">
+              Once tracks are sorted by title, search operations execute in <strong>O(log n)</strong> time:
+            </p>
+            <ul>
+              <li>Halves search space on every comparison step.</li>
+              <li>Finds any track in a 100,000-song catalog in at most <strong>17 comparisons</strong> (vs 100,000 in linear search).</li>
+            </ul>
+            <div class="metric-badge">Lookups: &le; 17 steps for 100k</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <div class="footer-left">
+          <span>Sort Keys: Title, Artist, Play Count, User Rating, Track Duration</span>
+        </div>
+        <div>VIBE Presentation</div>
+      </div>
+    </section>
+
+    <!-- SLIDE 10: Playlist Management -->
+    <section class="slide" id="slide-10">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <div class="tag-badge tag-purple">Relational Modeling: playlist.c</div>
+          <h2>Playlist Architecture: Linked List of Lists</h2>
+          <p>Hierarchical data model decoupling song storage from playlist membership.</p>
+        </div>
+        <div class="project-watermark">DATA STRUCTURE 7 // SLIDE 10</div>
+      </div>
+
+      <div class="slide-body">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title">Pointer-Based Architecture (No Duplication)</div>
+            <p style="margin-top: 10px;">
+              Playlists do <strong>not</strong> duplicate song structs. Doing so would multiply memory usage and risk stale data when play counts update.
+            </p>
+            <ul>
+              <li><strong>Two-Tier Hierarchy:</strong> The <code>PlaylistManager</code> maintains a singly linked list of <code>Playlist</code> nodes.</li>
+              <li><strong>Referential Integrity:</strong> Each playlist contains a singly linked list of <code>PLSongNode</code> storing integer <code>song_id</code> references.</li>
+              <li><strong>Dynamic Linking:</strong> When displaying a playlist, IDs are mapped back to actual songs via the DLL / Hash Table in constant time.</li>
+            </ul>
+            <div class="metric-badge">Zero Song Duplication Overhead</div>
+          </div>
+
+          <div class="card" style="justify-content: center;">
+            <div style="background: var(--bg-primary); border: 1.5px solid var(--border); border-radius: 14px; padding: 22px;">
+              <div style="color: var(--accent-blue); font-weight: 700; margin-bottom: 12px; font-family: var(--font-mono);">
+                PlaylistManager Memory Topology:
+              </div>
+              <div style="font-family: var(--font-mono); font-size: 0.86rem; line-height: 1.85; color: var(--text-main); font-weight: 500;">
+                [PlaylistManager] &rarr; [Playlist: "Chill Beats"] &rarr; [Playlist: "Workout High"]<br/>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&darr;<br/>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[SongID: 1] &rarr; [SongID: 4] &rarr; [SongID: 7] &rarr; NULL
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <div class="footer-left">
+          <span>Component: playlist.c</span>
+          <span class="dsa-pill">Singly Linked Lists</span>
+          <span class="dsa-pill">Normalized References</span>
+        </div>
+        <div>VIBE Presentation</div>
+      </div>
+    </section>
+
+    <!-- SLIDE 11: Full-Stack Architecture -->
+    <section class="slide" id="slide-11">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <div class="tag-badge">Integration Architecture</div>
+          <h2>Full-Stack System: C Backend + Web UI</h2>
+          <p>Bridging high-performance C data structures with modern interactive browser client.</p>
+        </div>
+        <div class="project-watermark">FULL-STACK // SLIDE 11</div>
+      </div>
+
+      <div class="slide-body">
+        <div class="grid-3">
+          <div class="card">
+            <div class="card-header">
+              <div class="icon-box">⚙️</div>
+              <div class="card-title">1. High-Perf C Engine</div>
+            </div>
+            <p>
+              Executes all business logic, memory allocation, and algorithmic operations:
+            </p>
+            <ul>
+              <li>Atomic additions across DLL, BST, Hash Table.</li>
+              <li>Tracks playback state, volume, and queue index.</li>
+              <li>Native binary performance with zero interpreter lag.</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="icon-box icon-purple">🌐</div>
+              <div class="card-title">2. Embedded HTTP Server</div>
+            </div>
+            <p>
+              Implemented in <code>server.c</code> using raw Windows Sockets (Winsock2):
+            </p>
+            <ul>
+              <li>Lightweight micro-server listening on port 3000.</li>
+              <li>Serializes C struct collections into clean <strong>JSON responses</strong>.</li>
+              <li>Serves static assets (HTML, CSS, JS, album art) with correct MIME types.</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="icon-box icon-green">🎨</div>
+              <div class="card-title">3. Modern Web UI</div>
+            </div>
+            <p>
+              Interactive Spotify-grade interface created in <code>index.html</code> & <code>app.js</code>:
+            </p>
+            <ul>
+              <li>Real-time visual queue reordering & playback progress bar.</li>
+              <li>Instant search filters with debounced REST calls.</li>
+              <li>Live Top Charts & Visualizer bars reacting to playback.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <div class="footer-left">
+          <span>Transport: Raw HTTP / JSON REST API</span>
+          <span>Port: 3000</span>
+          <span>Zero External Framework Dependencies</span>
+        </div>
+        <div>VIBE Presentation</div>
+      </div>
+    </section>
+
+    <!-- SLIDE 12: Complexity Analysis Table -->
+    <section class="slide" id="slide-12">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <div class="tag-badge tag-green">Performance Evaluation</div>
+          <h2>Complexity Analysis & Algorithmic Benchmark</h2>
+          <p>Theoretical and empirical comparison proving performance gains over naive implementations.</p>
+        </div>
+        <div class="project-watermark">BENCHMARKS // SLIDE 12</div>
+      </div>
+
+      <div class="slide-body">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>Operation</th>
+              <th>Data Structure Used</th>
+              <th>Naive Array Time</th>
+              <th>VIBE Architecture Time</th>
+              <th>Space Complexity</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>ID Song Lookup</strong></td>
+              <td>Hash Table (Separate Chaining)</td>
+              <td>O(n) linear scan</td>
+              <td><span style="color: var(--accent-blue); font-weight:700;">O(1) average</span></td>
+              <td>O(n)</td>
+            </tr>
+            <tr>
+              <td><strong>Title Search</strong></td>
+              <td>Binary Search Tree (BST)</td>
+              <td>O(n) full scan</td>
+              <td><span style="color: var(--accent-purple); font-weight:700;">O(log n)</span></td>
+              <td>O(n)</td>
+            </tr>
+            <tr>
+              <td><strong>Enqueue Song</strong></td>
+              <td>Circular Queue (FIFO)</td>
+              <td>O(1) append / O(n) realloc</td>
+              <td><span style="color: var(--accent-green); font-weight:700;">O(1) guaranteed</span></td>
+              <td>O(k) bounded</td>
+            </tr>
+            <tr>
+              <td><strong>Dequeue / Play Next</strong></td>
+              <td>Circular Queue (FIFO)</td>
+              <td>O(n) left element shift</td>
+              <td><span style="color: var(--accent-green); font-weight:700;">O(1) pointer move</span></td>
+              <td>O(1) aux</td>
+            </tr>
+            <tr>
+              <td><strong>Rewind to Prev Song</strong></td>
+              <td>History Stack (LIFO)</td>
+              <td>O(n) reverse scan</td>
+              <td><span style="color: var(--accent-blue); font-weight:700;">O(1) stack pop</span></td>
+              <td>O(m) bounded</td>
+            </tr>
+            <tr>
+              <td><strong>Find Top Played Song</strong></td>
+              <td>Max-Heap (Root Peek)</td>
+              <td>O(n) scan or O(n log n) sort</td>
+              <td><span style="color: var(--accent-amber); font-weight:700;">O(1) peek</span></td>
+              <td>O(n)</td>
+            </tr>
+            <tr>
+              <td><strong>Full Catalog Sort</strong></td>
+              <td>Merge Sort (Stable)</td>
+              <td>O(n&sup2;) Bubble/Insertion</td>
+              <td><span style="color: var(--accent-pink); font-weight:700;">O(n log n) stable</span></td>
+              <td>O(n)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="slide-footer">
+        <div class="footer-left">
+          <span>Validation: All operations verified with zero memory leaks and boundary safety</span>
+        </div>
+        <div>VIBE Presentation</div>
+      </div>
+    </section>
+
+    <!-- SLIDE 13: Summary & Future Roadmap -->
+    <section class="slide" id="slide-13">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <div class="tag-badge">Conclusion & Evolution</div>
+          <h2>Key Achievements & Future Engineering Roadmap</h2>
+          <p>Synthesis of accomplishments and future extensions for high-scale distributed audio.</p>
+        </div>
+        <div class="project-watermark">SUMMARY // SLIDE 13</div>
+      </div>
+
+      <div class="slide-body">
+        <div class="grid-2">
+          <div class="card glow-blue">
+            <div class="card-title">What Was Achieved</div>
+            <ul>
+              <li><strong>Complete End-to-End System:</strong> Engineered 8 interconnected classic data structures in ANSI C with zero high-level framework crutches.</li>
+              <li><strong>Dual-Tier Architecture:</strong> Unified a high-speed compiled C core with a modern browser frontend over embedded sockets.</li>
+              <li><strong>Mathematical Optimization:</strong> Reduced key query operations from O(n) to O(1) and O(log n).</li>
+              <li><strong>Memory Safety:</strong> Strict pointer validations, destructor functions (<code>lib_destroy</code>, <code>bst_destroy</code>, <code>hash_destroy</code>) preventing memory leaks.</li>
+            </ul>
+          </div>
+
+          <div class="card glow-purple">
+            <div class="card-title">Future Expansion Roadmap</div>
+            <ul>
+              <li><strong>AVL / Red-Black Balancing:</strong> Self-balancing tree rotations to prevent BST degradation on sorted inputs.</li>
+              <li><strong>Persistent Disk Serialization:</strong> B-Tree or SQLite storage engine for persistence across system restarts.</li>
+              <li><strong>Trie Data Structure:</strong> Autocomplete prefix search (e.g. typing "Th" instantly highlights "The Weeknd").</li>
+              <li><strong>DSP Audio Processing:</strong> Native Fast Fourier Transform (FFT) integration for real-time waveform visualizers.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <div class="footer-left">
+          <span>Project Status: Fully Functional, Documented & Tested</span>
+        </div>
+        <div>VIBE Presentation</div>
+      </div>
+    </section>
+
+    <!-- SLIDE 14: Q&A / Final Slide -->
+    <section class="slide cover-slide" id="slide-14">
+      <div class="cover-content">
+        <div class="tag-badge tag-green">Evaluation & Discussion</div>
+        <h1 class="hero-title" style="font-size: 3.2rem;">Thank You & Open for Questions</h1>
+        <p class="hero-subtitle">
+          Demonstration code, interactive web player, and modular C test harnesses are ready for live inspection.
+        </p>
+
+        <div style="display: flex; gap: 20px; margin-top: 15px;">
+          <div class="card" style="padding: 16px 28px; text-align: center;">
+            <div style="color: var(--accent-blue); font-family: var(--font-mono); font-size: 1.1rem; font-weight: 700;">http://localhost:3000</div>
+            <p style="font-size: 0.82rem; margin-top: 4px;">Live REST Server & Web UI</p>
+          </div>
+          <div class="card" style="padding: 16px 28px; text-align: center;">
+            <div style="color: var(--accent-purple); font-family: var(--font-mono); font-size: 1.1rem; font-weight: 700;">./music_mgr.exe</div>
+            <p style="font-size: 0.82rem; margin-top: 4px;">CLI Interactive Engine</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Floating Navigation Controls -->
+  <div id="nav-controls">
+    <button class="nav-btn" id="theme-btn" title="Toggle Light/Dark Theme">🌙</button>
+    <button class="nav-btn" id="prev-btn" title="Previous (Left Arrow / PageUp)">◀</button>
+    <span id="slide-indicator">1 / 14</span>
+    <button class="nav-btn" id="next-btn" title="Next (Right Arrow / Space / PageDown)">▶</button>
+    <button class="nav-btn" id="fs-btn" title="Toggle Fullscreen (F)">⛶</button>
+    <button class="nav-btn" id="print-btn" title="Print / Export PDF (Ctrl+P)">🖨️</button>
+  </div>
+
+  <div class="kbd-hint">
+    <span><kbd>←</kbd> <kbd>→</kbd> Navigate</span>
+    <span><kbd>Space</kbd> Next</span>
+    <span><kbd>F</kbd> Fullscreen</span>
+    <span><kbd>Ctrl+P</kbd> Export PDF</span>
+  </div>
+
+  <script>
+    const slides = document.querySelectorAll('.slide');
+    const totalSlides = slides.length;
+    let currentSlide = 0;
+
+    const indicator = document.getElementById('slide-indicator');
+    const prevBtn = document.getElementById('prev-btn');
+    const nextBtn = document.getElementById('next-btn');
+    const fsBtn = document.getElementById('fs-btn');
+    const printBtn = document.getElementById('print-btn');
+    const themeBtn = document.getElementById('theme-btn');
+
+    function showSlide(index) {
+      if (index < 0) index = 0;
+      if (index >= totalSlides) index = totalSlides - 1;
+
+      slides.forEach((s, idx) => {
+        s.classList.toggle('active', idx === index);
+      });
+
+      currentSlide = index;
+      indicator.textContent = `${currentSlide + 1} / ${totalSlides}`;
+    }
+
+    prevBtn.addEventListener('click', () => showSlide(currentSlide - 1));
+    nextBtn.addEventListener('click', () => showSlide(currentSlide + 1));
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+        showSlide(currentSlide + 1);
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        showSlide(currentSlide - 1);
+      } else if (e.key === 'f' || e.key === 'F') {
+        toggleFullscreen();
+      }
+    });
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+
+    fsBtn.addEventListener('click', toggleFullscreen);
+
+    printBtn.addEventListener('click', () => {
+      window.print();
+    });
+
+    // Theme Toggle Handler
+    themeBtn.addEventListener('click', () => {
+      const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+      const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', newTheme);
+      themeBtn.textContent = newTheme === 'light' ? '🌙' : '☀️';
+    });
+  </script>
+</body>
+</html>
