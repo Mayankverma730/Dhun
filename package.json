@@ -1,0 +1,20 @@
+{
+  "name": "dhun",
+  "version": "1.0.0",
+  "description": "Dhun - Enterprise Music Management System",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": ["music", "management", "audio", "player"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "vite": "^5.0.0"
+  },
+  "dependencies": {
+    "@vercel/analytics": "^1.1.1"
+  }
+}
