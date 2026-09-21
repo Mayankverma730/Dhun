@@ -1759,6 +1759,7 @@ function updateAuthUI() {
   // Hydrate user-specific likes and playlists into state
   syncAllSongsLikedState();
   renderProfileStats();
+  if (typeof renderUserNotifications === 'function') renderUserNotifications();
 }
 
 function switchToUser(user) {
@@ -3445,32 +3446,73 @@ function showToast(msg) {
   }, 2200);
 }
 
-/* ── Notifications ────────────────────────────── */
-function toggleNotifPanel() {
-  const panel = document.getElementById('notif-panel');
-  const btn   = document.getElementById('notif-btn');
-  if (!panel) return;
-  const isOpen = panel.style.display !== 'none';
-  if (!isOpen) {
-    /* Close theme panel if open */
-    const themePanel = document.getElementById('theme-panel');
-    const themeBtn   = document.getElementById('theme-toggle-btn');
-    if (themePanel) themePanel.style.display = 'none';
-    if (themeBtn)   themeBtn.setAttribute('aria-expanded', 'false');
+/* ── Notifications (Per-User Data Isolated) ────────────────────────── */
+function getUserNotifications() {
+  try {
+    const raw = localStorage.getItem(getUserStorageKey('notifications'));
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+
+  const u = authState.currentUser;
+  const isGuest = !u || u.id === 'guest' || u.provider === 'guest';
+  if (isGuest) {
+    return [];
   }
-  panel.style.display = isOpen ? 'none' : 'block';
-  btn.setAttribute('aria-expanded', String(!isOpen));
+  return [
+    {
+      id: 'welcome_' + u.id,
+      icon: '🎵',
+      grad: 'linear-gradient(135deg,#7c3aed,#2563eb)',
+      title: 'Welcome to Dhun',
+      text: `Your private profile is active. Enjoy high-fidelity listening!`,
+      time: 'Just now',
+      unread: true
+    }
+  ];
 }
 
-function updateNotifBadge() {
-  const badge = document.getElementById('notif-badge');
-  const unread = document.querySelectorAll('#notif-list .notif-item.unread').length;
-  if (!badge) return;
-  badge.textContent = unread;
-  badge.style.display = unread > 0 ? 'flex' : 'none';
+function saveUserNotifications(notifs) {
+  try {
+    localStorage.setItem(getUserStorageKey('notifications'), JSON.stringify(notifs));
+  } catch (e) {}
+}
+
+function renderUserNotifications() {
+  const list = document.getElementById('notif-list');
+  if (!list) return;
+  const notifs = getUserNotifications();
+  if (!notifs || notifs.length === 0) {
+    list.innerHTML = `<div class="notif-empty"><div class="notif-empty-icon">🔕</div><p>You're all caught up!</p></div>`;
+    updateNotifBadge();
+    return;
+  }
+  list.innerHTML = notifs.map(n => `
+    <div class="notif-item ${n.unread ? 'unread' : ''}" onclick="dismissNotifById('${n.id}')">
+      <div class="notif-icon" style="background:${n.grad || 'linear-gradient(135deg,#7c3aed,#ec4899)'}">${n.icon || '🔔'}</div>
+      <div class="notif-body">
+        <p class="notif-text"><strong>${escapeHtmlText(n.title)}:</strong> ${escapeHtmlText(n.text)}</p>
+        <p class="notif-time">${n.time || 'Just now'}</p>
+      </div>
+      <button class="notif-close" onclick="event.stopPropagation();dismissNotifById('${n.id}')" aria-label="Dismiss">✕</button>
+    </div>
+  `).join('');
+  updateNotifBadge();
+}
+
+function dismissNotifById(id) {
+  let notifs = getUserNotifications();
+  notifs = notifs.filter(n => n.id !== id);
+  saveUserNotifications(notifs);
+  renderUserNotifications();
 }
 
 function dismissNotif(item) {
+  if (!item) return;
+  const notifId = item.dataset.notifId;
+  if (notifId) {
+    dismissNotifById(notifId);
+    return;
+  }
   item.classList.remove('unread');
   item.style.transition = 'opacity 0.3s, transform 0.3s, max-height 0.3s, padding 0.3s';
   item.style.opacity = '0';
@@ -3487,16 +3529,15 @@ function dismissNotif(item) {
 }
 
 function markAllRead() {
-  document.querySelectorAll('#notif-list .notif-item.unread').forEach(el => el.classList.remove('unread'));
-  updateNotifBadge();
+  let notifs = getUserNotifications();
+  notifs.forEach(n => { n.unread = false; });
+  saveUserNotifications(notifs);
+  renderUserNotifications();
 }
 
 function clearAllNotifs() {
-  const list = document.getElementById('notif-list');
-  if (!list) return;
-  list.innerHTML = '';
-  showEmptyIfNeeded();
-  updateNotifBadge();
+  saveUserNotifications([]);
+  renderUserNotifications();
 }
 
 function showEmptyIfNeeded() {
@@ -3505,6 +3546,31 @@ function showEmptyIfNeeded() {
   if (list.children.length === 0) {
     list.innerHTML = `<div class="notif-empty"><div class="notif-empty-icon">🔕</div><p>You're all caught up!</p></div>`;
   }
+}
+
+function updateNotifBadge() {
+  const badge = document.getElementById('notif-badge');
+  if (!badge) return;
+  const notifs = getUserNotifications();
+  const unread = notifs.filter(n => n.unread).length;
+  badge.textContent = unread;
+  badge.style.display = unread > 0 ? 'flex' : 'none';
+}
+
+function toggleNotifPanel() {
+  const panel = document.getElementById('notif-panel');
+  const btn   = document.getElementById('notif-btn');
+  if (!panel) return;
+  const isOpen = panel.style.display !== 'none';
+  if (!isOpen) {
+    renderUserNotifications();
+    const themePanel = document.getElementById('theme-panel');
+    const themeBtn   = document.getElementById('theme-toggle-btn');
+    if (themePanel) themePanel.style.display = 'none';
+    if (themeBtn)   themeBtn.setAttribute('aria-expanded', 'false');
+  }
+  panel.style.display = isOpen ? 'none' : 'block';
+  btn.setAttribute('aria-expanded', String(!isOpen));
 }
 
 /* ── Theme Switcher ──────────────────────────── */

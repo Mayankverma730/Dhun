@@ -232,7 +232,7 @@
               <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" stroke="currentColor"
                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
-            <span class="notif-badge" id="notif-badge">2</span>
+            <span class="notif-badge" id="notif-badge" style="display:none">0</span>
           </button>
 
           <!-- Notification Dropdown Panel -->
@@ -242,26 +242,13 @@
               <button class="notif-mark-all" onclick="markAllRead()" aria-label="Mark all as read">Mark all read</button>
             </div>
             <div class="notif-list" id="notif-list">
-              <div class="notif-item unread" onclick="dismissNotif(this)">
-                <div class="notif-icon" style="background:linear-gradient(135deg,#7c3aed,#ec4899)">🛡️</div>
-                <div class="notif-body">
-                  <p class="notif-text"><strong>Inbuilt Protection:</strong> Duplicate song blocker is active.</p>
-                  <p class="notif-time">Just now</p>
-                </div>
-                <button class="notif-close" onclick="event.stopPropagation();dismissNotif(this.parentElement)" aria-label="Dismiss">✕</button>
-              </div>
-              <div class="notif-item unread" onclick="dismissNotif(this)">
-                <div class="notif-icon" style="background:linear-gradient(135deg,#0ea5e9,#10b981)">✨</div>
-                <div class="notif-body">
-                  <p class="notif-text"><strong>Dhun Hub:</strong> Song Info, Listening Stats, Similar Dhun & Vibe Board active.</p>
-                  <p class="notif-time">Ready</p>
-                </div>
-                <button class="notif-close" onclick="event.stopPropagation();dismissNotif(this.parentElement)" aria-label="Dismiss">✕</button>
-              </div>
+              <div class="notif-empty"><div class="notif-empty-icon">🔕</div><p>You're all caught up!</p></div>
             </div>
             <div class="notif-footer">
               <button class="notif-clear-all" onclick="clearAllNotifs()">Clear All</button>
             </div>
+          </div>
+
           <button class="topbar-avatar" id="topbar-avatar-btn" onclick="toggleUserMenu()" aria-label="Open user account menu">👤</button>
 
           <!-- User Account & Switch Profile Popover -->
