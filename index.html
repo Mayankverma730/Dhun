@@ -55,6 +55,8 @@
   </div>
 
   <div class="app-shell" id="app">
+    <!-- Backdrop for mobile drawer navigation -->
+    <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="toggleMobileSidebar(false)"></div>
 
     <!-- ════════════════════════════════════
        LEFT SIDEBAR
@@ -149,6 +151,9 @@
       <!-- ── Sticky Top Bar ── -->
       <header class="topbar" id="topbar">
         <div class="topbar-left">
+          <button class="mobile-menu-btn" id="mobile-menu-btn" onclick="toggleMobileSidebar()" aria-label="Toggle navigation menu">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
           <div class="breadcrumb" id="breadcrumb">Home</div>
         </div>
         <div class="topbar-center" id="topbar-search-wrap" style="display:none">
@@ -1141,6 +1146,30 @@
       </div>
 
     </footer>
+
+    <!-- ══ MOBILE BOTTOM APP NAVIGATION (Phone / Tablet) ══ -->
+    <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="Mobile navigation">
+      <button class="mob-nav-btn active" id="mob-nav-home" onclick="navigate('home')">
+        <span class="mob-nav-icon">🏠</span>
+        <span class="mob-nav-label">Home</span>
+      </button>
+      <button class="mob-nav-btn" id="mob-nav-search" onclick="navigate('search')">
+        <span class="mob-nav-icon">🔍</span>
+        <span class="mob-nav-label">Discover</span>
+      </button>
+      <button class="mob-nav-btn" id="mob-nav-library" onclick="navigate('library')">
+        <span class="mob-nav-icon">📚</span>
+        <span class="mob-nav-label">Library</span>
+      </button>
+      <button class="mob-nav-btn" id="mob-nav-player" onclick="navigate('player')">
+        <span class="mob-nav-icon">🎵</span>
+        <span class="mob-nav-label">Playing</span>
+      </button>
+      <button class="mob-nav-btn" id="mob-nav-jam" onclick="openListenTogetherModal()">
+        <span class="mob-nav-icon">🎧</span>
+        <span class="mob-nav-label">Jam</span>
+      </button>
+    </nav>
 
   </div><!-- /app-shell -->
 

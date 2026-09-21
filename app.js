@@ -1156,15 +1156,32 @@ function fmtDur(minutes) {
    bottom player bar visibility, and triggers a data refresh
    for the newly activated page.
    ══════════════════════════════════════════════════ */
+/* Mobile Navigation Drawer Toggle */
+function toggleMobileSidebar(forceState) {
+  const sidebar = document.getElementById('sidebar');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  if (!sidebar) return;
+  const isOpen = sidebar.classList.contains('mobile-open');
+  const next = forceState !== undefined ? forceState : !isOpen;
+  sidebar.classList.toggle('mobile-open', next);
+  if (backdrop) backdrop.classList.toggle('active', next);
+}
+
 function navigate(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.mob-nav-btn').forEach(b => b.classList.remove('active'));
+
+  toggleMobileSidebar(false);
 
   const target = document.getElementById('page-' + page);
   if (target) target.classList.add('active');
 
   const navBtn = document.getElementById('nav-' + page);
   if (navBtn) navBtn.classList.add('active');
+
+  const mobBtn = document.getElementById('mob-nav-' + page);
+  if (mobBtn) mobBtn.classList.add('active');
 
   state.currentPage = page;
 
