@@ -1,0 +1,1341 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+  <title>Dhun – Music Management</title>
+  <meta name="description"
+    content="Dhun – Your premium music management experience. Discover, play, and manage your music." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('vibe-theme');
+        if (t && t !== 'default') document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+
+      // If user opened directly via file://, redirect to http://localhost:3000 to eliminate YouTube Error 153
+      if (window.location.protocol === 'file:') {
+        fetch('http://127.0.0.1:3000/api/songs', { mode: 'cors' })
+          .then(function(res) {
+            if (res.ok) {
+              window.location.replace('http://localhost:3000');
+            }
+          })
+          .catch(function() {});
+      }
+    })();
+  </script>
+</head>
+
+<body>
+
+  <!-- Localhost Notice if opened via file:// -->
+  <div id="file-protocol-banner" style="display:none;background:linear-gradient(90deg,#ff416c,#ff4b2b);color:#fff;padding:8px 16px;text-align:center;font-size:13px;font-weight:600;z-index:99999;position:sticky;top:0;box-shadow:0 4px 14px rgba(0,0,0,0.4);">
+    <span>⚠️ You opened Dhun using <code>file://</code>. YouTube blocks media playback on <code>file://</code> with Error 153.</span>
+    <a href="http://localhost:3000" style="color:#fff;text-decoration:underline;margin-left:10px;background:rgba(0,0,0,0.3);padding:3px 10px;border-radius:6px;font-weight:700;">Open via http://localhost:3000 🚀</a>
+  </div>
+  <script>
+    if (window.location.protocol === 'file:') {
+      document.getElementById('file-protocol-banner').style.display = 'block';
+    }
+  </script>
+
+  <!-- Ambient Orbs -->
+  <div class="ambient-bg" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <div class="app-shell" id="app">
+
+    <!-- ════════════════════════════════════
+       LEFT SIDEBAR
+  ════════════════════════════════════ -->
+    <aside class="sidebar" id="sidebar">
+
+      <!-- Logo -->
+      <div class="sidebar-logo">
+        <div class="logo-icon">♪</div>
+        <span class="logo-text">Dhun</span>
+      </div>
+
+      <!-- Main Navigation -->
+      <nav class="sidebar-nav" role="navigation" aria-label="Main navigation">
+        <p class="nav-section-label">Menu</p>
+        <button class="nav-item active" id="nav-home" onclick="navigate('home')" aria-label="Home">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none">
+            <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M9 22V12h6v10" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round" />
+          </svg>
+          <span>Home</span>
+        </button>
+        <button class="nav-item" id="nav-search" onclick="navigate('search')" aria-label="Search">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none">
+            <circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="2" />
+            <path d="m21 21-4.35-4.35" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          </svg>
+          <span>Discover</span>
+        </button>
+        <button class="nav-item" id="nav-library" onclick="navigate('library')" aria-label="Library">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none">
+            <path d="M19 11H5M19 6H5M19 16H5M19 21H5" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          </svg>
+          <span>Library</span>
+        </button>
+        <button class="nav-item" id="nav-player" onclick="navigate('player')" aria-label="Now Playing">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+          </svg>
+          <span>Now Playing</span>
+        </button>
+        <button class="nav-item" id="nav-profile" onclick="navigate('profile')" aria-label="Profile">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none">
+            <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" />
+            <circle cx="12" cy="7" r="4" stroke="currentColor" stroke-width="2" />
+          </svg>
+          <span>Profile</span>
+        </button>
+
+        <!-- Quick Action: Add from PC directly -->
+        <button class="nav-item add-pc-nav-btn" onclick="triggerAddSongFromPC()" aria-label="Add song from PC" style="margin-top:10px;background:linear-gradient(135deg,rgba(124,58,237,0.18),rgba(37,99,235,0.12));border:1px dashed rgba(124,58,237,0.45);color:var(--text-1);font-weight:600">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <span>📁 Add from PC</span>
+        </button>
+
+        <p class="nav-section-label" style="margin-top:28px">Your Playlists</p>
+        <div id="sidebar-playlists">
+          <!-- Populated dynamically from API -->
+          <button class="nav-item playlist-item" style="color:var(--text-muted)" onclick="createPlaylist()">
+            <div class="pl-dot" style="background:rgba(255,255,255,0.1);border:1.5px dashed rgba(255,255,255,0.3)">
+            </div>
+            <span>New Playlist</span>
+            <span>+</span>
+          </button>
+        </div>
+      </nav>
+
+      <!-- Sidebar User -->
+      <div class="sidebar-user" onclick="navigate('profile')">
+        <div class="su-avatar" id="su-avatar">👤</div>
+        <div class="su-info">
+          <p class="su-name" id="su-name">My Profile</p>
+          <p class="su-role" id="su-role">Music Collector</p>
+        </div>
+        <button class="su-settings" aria-label="Settings">⚙</button>
+      </div>
+
+    </aside>
+
+    <!-- ════════════════════════════════════
+       MAIN CONTENT
+  ════════════════════════════════════ -->
+    <main class="main-content" id="main-content">
+
+      <!-- ── Sticky Top Bar ── -->
+      <header class="topbar" id="topbar">
+        <div class="topbar-left">
+          <div class="breadcrumb" id="breadcrumb">Home</div>
+        </div>
+        <div class="topbar-center" id="topbar-search-wrap" style="display:none">
+          <div class="topbar-search">
+            <span>🔍</span>
+            <input type="search" id="search-input-top" placeholder="Search songs, artists, albums..." autocomplete="off"
+              aria-label="Search" oninput="handleSearch(this.value)" onfocus="showSugg()" />
+            <button id="voice-btn-top" onclick="startVoiceSearch()" aria-label="Voice search">🎙️</button>
+            <button id="clear-btn-top" onclick="clearSearch()" style="display:none" aria-label="Clear search">✕</button>
+          </div>
+          <div class="suggestions-box glass-card" id="suggestions-box" style="display:none"></div>
+        </div>
+        <div class="topbar-right">
+          <!-- Listen Together with Friends Button -->
+          <button class="topbar-jam-btn" id="listen-together-topbar-btn" onclick="openListenTogetherModal()" title="Listen Together with Friends">
+            <span class="jam-pulse-dot" id="jam-live-dot" style="display:none"></span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
+              <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
+              <circle cx="12" cy="12" r="2.5" fill="currentColor"/>
+            </svg>
+            <span id="jam-btn-text">Listen Together</span>
+            <span class="jam-count-badge" id="jam-count-badge" style="display:none">0</span>
+          </button>
+
+          <!-- Button to Add Song from PC directly without manual input -->
+          <button class="topbar-pc-btn" id="add-pc-topbar-btn" onclick="triggerAddSongFromPC()" title="Add song from PC (auto-detects title, artist & duration)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <span>Add from PC</span>
+          </button>
+
+          <button class="topbar-icon-btn" aria-label="Manual Add Song" onclick="showAddSongModal()" title="Manual input form">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" />
+              <path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            </svg>
+          </button>
+
+          <!-- Theme Switcher -->
+          <div class="theme-switcher" id="theme-switcher">
+            <button class="theme-btn topbar-icon-btn" id="theme-toggle-btn" onclick="toggleThemePanel()"
+              aria-label="Change theme" aria-expanded="false" title="Change theme">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="2"/>
+                <path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <div class="theme-panel" id="theme-panel" style="display:none">
+              <div class="theme-panel-title">🎨 Appearance</div>
+              <button class="theme-option active" id="theme-opt-default" onclick="setTheme('default')">
+                <div class="theme-swatch swatch-default"></div>
+                <span class="theme-label theme-label-default">Default</span>
+                <span class="theme-check" id="check-default">✓</span>
+              </button>
+              <button class="theme-option" id="theme-opt-dark" onclick="setTheme('dark')">
+                <div class="theme-swatch swatch-dark"></div>
+                <span class="theme-label theme-label-dark">Dark</span>
+                <span class="theme-check" id="check-dark" style="display:none">✓</span>
+              </button>
+              <button class="theme-option" id="theme-opt-light" onclick="setTheme('light')">
+                <div class="theme-swatch swatch-light"></div>
+                <span class="theme-label theme-label-light">Light</span>
+                <span class="theme-check" id="check-light" style="display:none">✓</span>
+              </button>
+            </div>
+          </div>
+
+          <button class="topbar-icon-btn" id="notif-btn" aria-label="Notifications"
+            onclick="toggleNotifPanel()" aria-expanded="false" aria-haspopup="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span class="notif-badge" id="notif-badge">2</span>
+          </button>
+
+          <!-- Notification Dropdown Panel -->
+          <div class="notif-panel glass-card" id="notif-panel" role="dialog" aria-label="Notifications" style="display:none">
+            <div class="notif-panel-header">
+              <span class="notif-panel-title">🔔 Notifications</span>
+              <button class="notif-mark-all" onclick="markAllRead()" aria-label="Mark all as read">Mark all read</button>
+            </div>
+            <div class="notif-list" id="notif-list">
+              <div class="notif-item unread" onclick="dismissNotif(this)">
+                <div class="notif-icon" style="background:linear-gradient(135deg,#7c3aed,#ec4899)">🛡️</div>
+                <div class="notif-body">
+                  <p class="notif-text"><strong>Inbuilt Protection:</strong> Duplicate song blocker is active.</p>
+                  <p class="notif-time">Just now</p>
+                </div>
+                <button class="notif-close" onclick="event.stopPropagation();dismissNotif(this.parentElement)" aria-label="Dismiss">✕</button>
+              </div>
+              <div class="notif-item unread" onclick="dismissNotif(this)">
+                <div class="notif-icon" style="background:linear-gradient(135deg,#0ea5e9,#10b981)">✨</div>
+                <div class="notif-body">
+                  <p class="notif-text"><strong>Dhun Hub:</strong> Song Info, Listening Stats, Similar Dhun & Vibe Board active.</p>
+                  <p class="notif-time">Ready</p>
+                </div>
+                <button class="notif-close" onclick="event.stopPropagation();dismissNotif(this.parentElement)" aria-label="Dismiss">✕</button>
+              </div>
+            </div>
+            <div class="notif-footer">
+              <button class="notif-clear-all" onclick="clearAllNotifs()">Clear All</button>
+            </div>
+          </div>
+          <button class="topbar-avatar" id="topbar-avatar-btn" onclick="navigate('profile')" aria-label="Open profile">👤</button>
+        </div>
+      </header>
+
+      <!-- ══ PAGE: HOME ══════════════════════════ -->
+      <section class="page active" id="page-home">
+
+        <!-- Hero Banner -->
+        <div class="hero-banner" id="hero-banner">
+          <div class="hero-bg"><img id="hero-bg-img" src="album3.jpg" alt="" aria-hidden="true" />
+            <div class="hero-overlay"></div>
+          </div>
+          <div class="hero-content">
+            <span class="hero-tag" id="hero-tag">🎵 Now in Library</span>
+            <h1 class="hero-title" id="hero-title">Tujhko Jo Paaya</h1>
+            <p class="hero-sub" id="hero-sub">Mohit Chauhan / Pritam · Crook · Bollywood</p>
+            <div class="hero-actions">
+              <button class="btn-primary" onclick="openPlayer(0)" id="hero-play-btn">▶ Play Now</button>
+              <button class="btn-secondary" onclick="toggleLike(this,null)" aria-label="Like this song">♡
+                Like</button>
+            </div>
+          </div>
+          <div class="hero-stats">
+            <div class="hstat"><span class="hstat-num" id="hero-stat-tracks">1</span><span class="hstat-label">Tracks</span></div>
+            <div class="hstat"><span class="hstat-num" id="hero-stat-rating">4.9★</span><span class="hstat-label">Rating</span></div>
+            <div class="hstat"><span class="hstat-num" id="hero-stat-quality">HD</span><span class="hstat-label">Audio</span></div>
+          </div>
+        </div>
+
+        <!-- Grid Layout: 3-col below hero -->
+        <div class="home-grid">
+
+          <!-- COL A: Featured Playlists + Recommended -->
+          <div class="home-col-main">
+
+            <div class="section-header">
+              <h2 class="section-title">✨ Playlists</h2>
+              <button class="see-all-btn" onclick="navigate('profile')">Manage</button>
+            </div>
+            <div class="featured-row" id="featured-playlists-row">
+              <div class="feat-card" onclick="createPlaylist()" style="cursor:pointer">
+                <div class="feat-thumb" style="background:linear-gradient(135deg,#7c3aed,#2563eb);display:flex;align-items:center;justify-content:center;font-size:28px;color:#fff">+</div>
+                <div class="feat-info">
+                  <span class="feat-tag">🎵 Custom</span>
+                  <h3 class="feat-name">Create Playlist</h3>
+                  <p class="feat-meta">Organize your favorite music</p>
+                  <button class="feat-play">＋ New</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Recommended Songs Table -->
+            <div class="section-header" style="margin-top:36px">
+              <h2 class="section-title">🎯 Library Songs</h2>
+              <div style="display:flex;gap:8px;align-items:center">
+                <select onchange="sortLibrary(this.value)" class="sort-select" aria-label="Sort songs">
+                  <option value="title">Sort: Title</option>
+                  <option value="artist">Sort: Artist</option>
+                  <option value="plays">Sort: Plays</option>
+                  <option value="rating">Sort: Rating</option>
+                </select>
+                <button class="see-all-btn" onclick="navigate('library')">View All</button>
+              </div>
+            </div>
+            <!-- Populated dynamically from API -->
+            <div class="songs-table" id="recommended-list">
+              <div class="st-header">
+                <span class="st-h st-h-num">#</span>
+                <span class="st-h">Title</span>
+                <span class="st-h">Album</span>
+                <span class="st-h">Genre</span>
+                <span class="st-h st-h-dur">Duration</span>
+                <span class="st-h st-h-act"></span>
+              </div>
+              <p style="padding:24px;color:var(--text-2)">Loading songs…</p>
+            </div>
+
+            <div class="section-header" style="margin-top:36px">
+              <h2 class="section-title">📈 Top Played</h2>
+              <button class="see-all-btn" onclick="navigate('library')">See All</button>
+            </div>
+            <!-- Populated from Charts API (Max-Heap) -->
+            <div class="trending-grid" id="trending-dynamic">
+              <p style="color:var(--text-2);padding:8px">Loading charts…</p>
+            </div>
+
+          </div><!-- /home-col-main -->
+
+          <!-- COL B: Right Panel -->
+          <div class="home-col-side">
+
+            <!-- Mood Selector -->
+            <div class="side-card glass-card">
+              <h3 class="side-card-title">🎭 Mood</h3>
+              <div class="mood-grid">
+                <button class="mood-pill active" id="mood-chill" onclick="selectMood(this)">😌 Chill</button>
+                <button class="mood-pill" id="mood-energetic" onclick="selectMood(this)">⚡ Energy</button>
+                <button class="mood-pill" id="mood-focus" onclick="selectMood(this)">🎯 Focus</button>
+                <button class="mood-pill" id="mood-romantic" onclick="selectMood(this)">💕 Romance</button>
+                <button class="mood-pill" id="mood-sad" onclick="selectMood(this)">🌧️ Melancholy</button>
+                <button class="mood-pill" id="mood-happy" onclick="selectMood(this)">🎉 Party</button>
+              </div>
+              <div class="mood-song" onclick="if(state.songs.length) openPlayerById(state.songs[0].id)">
+                <div class="ms-thumb" style="background:linear-gradient(135deg,#7c3aed,#2563eb)"><img src="album1.jpg"
+                    alt="Now Playing" /></div>
+                <div class="ms-info">
+                  <p class="ms-name" id="mood-song-name">Tujhko Jo Paaya</p>
+                  <p class="ms-artist" id="mood-song-artist">Mohit Chauhan · 5:43</p>
+                </div>
+                <button class="ms-play" onclick="event.stopPropagation();if(state.songs.length) openPlayerById(state.songs[0].id)"
+                  aria-label="Play mood song">▶</button>
+              </div>
+            </div>
+
+            <!-- Friends Listening / Listen Together Live -->
+            <div class="side-card glass-card" style="margin-top:16px">
+              <h3 class="side-card-title">👥 Listen Together</h3>
+              <div class="friend-item" onclick="openListenTogetherModal()" style="cursor:pointer">
+                <div class="friend-av" style="background:linear-gradient(135deg,#7c3aed,#ec4899)">🎧</div>
+                <div class="friend-info">
+                  <p class="friend-name">Synchronized Jam</p>
+                  <p class="friend-song">🎵 Real-time beat & song sync</p>
+                </div>
+                <span class="live-tag">LIVE</span>
+              </div>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="side-card glass-card" style="margin-top:16px">
+              <h3 class="side-card-title">🕐 Recently Played</h3>
+              <div id="home-recent-list">
+                <p style="padding:12px;color:var(--text-muted);font-size:12px">No recent plays yet</p>
+              </div>
+            </div>
+
+          </div><!-- /home-col-side -->
+        </div><!-- /home-grid -->
+      </section>
+
+      <!-- ══ PAGE: SEARCH ════════════════════════ -->
+      <section class="page" id="page-search">
+        <div class="page-header">
+          <h1 id="search-page-title">Discover Music</h1>
+          <p id="search-page-sub">Explore millions of songs — automatically synced to your Dhun Library</p>
+        </div>
+
+        <!-- Unified Search Bar -->
+        <div class="search-hero">
+          <div class="search-hero-bar" id="search-hero-bar">
+            <span class="shi-icon" id="search-bar-icon">🔍</span>
+            <input type="search" class="search-hero-input" id="search-input"
+              placeholder="Search any song, artist, album, or paste YouTube link..." autocomplete="off" aria-label="Search"
+              oninput="handleSearch(this.value)" onfocus="showSugg()" />
+            <button onclick="startVoiceSearch()" aria-label="Voice search" class="shi-voice">🎙️ Voice</button>
+            <button id="clear-btn" onclick="clearSearch()" style="display:none" aria-label="Clear search"
+              class="shi-clear">✕</button>
+          </div>
+          <div class="suggestions-box glass-card" id="suggestions-box-2" style="display:none"></div>
+        </div>
+
+        <!-- Trending & Popular Feeds (Auto-Added to Library) -->
+        <div id="yt-mode-header">
+          <div class="yt-trending-chips" id="yt-trending-chips">
+            <button class="filter-chip active" id="yt-chip-trending" onclick="loadYTFeed('trending', this)">🔥 Top Trending</button>
+            <button class="filter-chip" id="yt-chip-bollywood" onclick="loadYTFeed('bollywood', this)">🎶 Bollywood Hits</button>
+            <button class="filter-chip" id="yt-chip-punjabi" onclick="loadYTFeed('punjabi', this)">⚡ Punjabi Bangers</button>
+            <button class="filter-chip" id="yt-chip-lofi" onclick="loadYTFeed('lofi', this)">☕ Lo-Fi Chill & Study</button>
+            <button class="filter-chip" id="yt-chip-electronic" onclick="loadYTFeed('electronic', this)">🎛️ EDM & Electronic</button>
+          </div>
+        </div>
+
+        <!-- YouTube Music Results / Feed Grid -->
+        <div id="yt-music-view">
+          <div class="section-header" style="margin-top:10px">
+            <h2 class="section-title" id="yt-results-title">🔥 Trending & Popular Media</h2>
+            <span class="yt-results-badge" id="yt-results-count">8 Tracks</span>
+          </div>
+          <div class="yt-cards-grid" id="yt-music-grid">
+            <!-- Populated dynamically via renderYTMusicGrid() -->
+          </div>
+        </div>
+
+        <!-- Recent Searches -->
+        <div id="search-default-view" style="display:none">
+          <div class="section-header">
+            <h2 class="section-title">🕐 Recent Searches</h2><button class="see-all-btn" onclick="clearRecent()">Clear
+              All</button>
+          </div>
+          <div class="recent-chips" id="recent-list">
+            <div class="recent-chip" onclick="selectSuggestion('Blinding Lights')">🕐 Blinding Lights <button
+                onclick="event.stopPropagation();this.parentElement.remove()" aria-label="Remove">✕</button></div>
+            <div class="recent-chip" onclick="selectSuggestion('The Weeknd')">🕐 The Weeknd <button
+                onclick="event.stopPropagation();this.parentElement.remove()" aria-label="Remove">✕</button></div>
+            <div class="recent-chip" onclick="selectSuggestion('Chill Vibes')">🕐 Chill Vibes Playlist <button
+                onclick="event.stopPropagation();this.parentElement.remove()" aria-label="Remove">✕</button></div>
+          </div>
+
+          <!-- Categories -->
+          <div class="section-header" style="margin-top:32px">
+            <h2 class="section-title">🎨 Browse Categories</h2>
+          </div>
+          <div class="categories-grid">
+            <div class="cat-card" style="background:linear-gradient(135deg,#7c3aed,#2563eb)"
+              onclick="searchCategory('Pop')"><span class="cat-emoji">🎤</span>
+              <p>Pop</p>
+            </div>
+            <div class="cat-card" style="background:linear-gradient(135deg,#0ea5e9,#06b6d4)"
+              onclick="searchCategory('Electronic')"><span class="cat-emoji">⚡</span>
+              <p>Electronic</p>
+            </div>
+            <div class="cat-card" style="background:linear-gradient(135deg,#f97316,#fbbf24)"
+              onclick="searchCategory('Hip-Hop')"><span class="cat-emoji">🎧</span>
+              <p>Hip-Hop</p>
+            </div>
+            <div class="cat-card" style="background:linear-gradient(135deg,#ec4899,#f97316)"
+              onclick="searchCategory('R&B')"><span class="cat-emoji">🎹</span>
+              <p>R&amp;B</p>
+            </div>
+            <div class="cat-card" style="background:linear-gradient(135deg,#10b981,#0ea5e9)"
+              onclick="searchCategory('Indie')"><span class="cat-emoji">🎸</span>
+              <p>Indie</p>
+            </div>
+            <div class="cat-card" style="background:linear-gradient(135deg,#6366f1,#7c3aed)"
+              onclick="searchCategory('Classical')"><span class="cat-emoji">🎻</span>
+              <p>Classical</p>
+            </div>
+            <div class="cat-card" style="background:linear-gradient(135deg,#f43f5e,#ec4899)"
+              onclick="searchCategory('Mood')"><span class="cat-emoji">🌙</span>
+              <p>Mood</p>
+            </div>
+            <div class="cat-card" style="background:linear-gradient(135deg,#f59e0b,#10b981)"
+              onclick="searchCategory('Workout')"><span class="cat-emoji">💪</span>
+              <p>Workout</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Search Results -->
+        <div id="search-results-view" style="display:none">
+          <div class="section-header">
+            <h2 class="section-title">Results for "<span id="results-query"></span>"</h2>
+            <button id="delete-playlist-view-btn" class="btn-secondary"
+              style="display:none;color:#f43f5e;border-color:rgba(244,63,94,0.3);padding:6px 14px;font-size:12px;cursor:pointer;"
+              onclick="deleteCurrentOpenPlaylist()">
+              🗑️ Delete Playlist
+            </button>
+          </div>
+          <div class="songs-table" id="search-results-list"></div>
+        </div>
+      </section>
+
+      <!-- ══ PAGE: PLAYER ════════════════════════ -->
+      <section class="page" id="page-player">
+        <div class="player-page-layout">
+
+          <!-- Left: Album Art + Info -->
+          <div class="player-left">
+
+            <!-- ── Song / Video Mode Toggle Pill ── -->
+            <div class="sv-toggle-wrap">
+              <div class="sv-toggle-pill" role="group" aria-label="Playback Mode">
+                <button class="sv-toggle-btn active" id="sv-btn-song" onclick="setSongVideoMode('song')" aria-pressed="true">Song</button>
+                <button class="sv-toggle-btn" id="sv-btn-video" onclick="setSongVideoMode('video')" aria-pressed="false">Video</button>
+              </div>
+            </div>
+
+            <!-- ── Video Player Panel (shown in Video mode) ── -->
+            <div class="player-video-panel" id="player-video-panel" style="display:none;">
+              <div class="pvp-inner">
+                <!-- YouTube iframe lives here in video mode -->
+                <div class="pvp-frame-wrap" id="pvp-frame-wrap">
+                  <div class="pvp-placeholder" id="pvp-placeholder">
+                    <div class="pvp-ph-icon">
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor" opacity="0.4"><path d="M17 10.5V7a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h12a1 1 0 001-1v-3.5l4 4v-11l-4 4z"/></svg>
+                    </div>
+                    <p class="pvp-ph-text">Loading video…</p>
+                  </div>
+                </div>
+                <!-- Video Song Info Bar -->
+                <div class="pvp-info-bar">
+                  <div class="pvp-info-left">
+                    <p class="pvp-title" id="pvp-title">Song Title</p>
+                    <p class="pvp-artist" id="pvp-artist">Artist · Album</p>
+                  </div>
+                  <div class="pvp-info-actions">
+                    <button class="pvp-action-btn" onclick="toggleLike(this, null)" title="Like" aria-label="Like">♡</button>
+                    <button class="pvp-action-btn" onclick="if(state.currentSong) enqueueSong(state.currentSong.id, event)" title="Add to Queue" aria-label="Queue">＋</button>
+                    <button class="pvp-action-btn pvp-mode-back" onclick="setSongVideoMode('song')" title="Back to Song View" aria-label="Song mode" style="width:auto;padding:0 10px;font-size:12px;border-radius:14px;">♫ Song</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Windows 7 Media Player Style Beat-Reactive Flow Visualizer -->
+            <div class="flow-visualizer-wrap" id="flow-visualizer-wrap">
+              <!-- Live Canvas Visualizer -->
+              <canvas id="flow-visualizer-canvas"></canvas>
+
+              <!-- Floating Live Reaction Stream -->
+              <div class="reaction-stream-container" id="reaction-stream"></div>
+
+              <!-- Top Controls: Visualizer Presets -->
+              <div class="visualizer-top-bar">
+                <div class="visualizer-badge">
+                  <span class="viz-pulse-dot" id="viz-status-dot"></span>
+                  <span id="viz-mode-title">Cosmic Waveform</span>
+                </div>
+                <div class="visualizer-presets" role="group" aria-label="Visualizer Presets">
+                  <button class="viz-preset-btn active" id="viz-preset-cosmic" onclick="setVisualizerPreset('cosmic')" title="Cosmic Waveform Pulse">Cosmic</button>
+                  <button class="viz-preset-btn" id="viz-preset-alchemy" onclick="setVisualizerPreset('alchemy')" title="Windows Media Player Alchemy Flow">Alchemy</button>
+                  <button class="viz-preset-btn" id="viz-preset-aurora" onclick="setVisualizerPreset('aurora')" title="Fluid Aurora Waves">Aurora</button>
+                  <button class="viz-preset-btn" id="viz-preset-neonbars" onclick="setVisualizerPreset('neonbars')" title="Spectrum Equalizer Bars">Spectrum</button>
+                  <button class="viz-preset-btn" id="viz-preset-hyperspace" onclick="setVisualizerPreset('hyperspace')" title="Hyperspace Warp Speed">Hyperspace</button>
+                  <button class="viz-preset-btn" id="viz-preset-liquidplasma" onclick="setVisualizerPreset('liquidplasma')" title="Liquid Plasma Morph">Plasma</button>
+                  <button class="viz-preset-btn" id="viz-preset-kaleido" onclick="setVisualizerPreset('kaleido')" title="Kaleidoscopic Mandala Bloom">Kaleido</button>
+                  <button class="viz-preset-btn" id="viz-preset-cybergrid" onclick="setVisualizerPreset('cybergrid')" title="Retro Synthwave Cyber Grid">Cyber Grid</button>
+                </div>
+              </div>
+
+              <!-- Floating Glassmorphic Album Artwork Badge -->
+              <div class="visualizer-album-card" id="visualizer-album-card" title="Now Playing Album Art">
+                <img id="player-album-img" src="album1.jpg" alt="Album Art" onerror="this.onerror=null;this.src='album1.jpg'" />
+                <div class="viz-album-glow"></div>
+              </div>
+
+              <!-- Bottom Beat Rhythm & Spectrum Meter -->
+              <div class="visualizer-bottom-bar">
+                <div class="viz-beat-meter">
+                  <span class="viz-beat-label">BEAT ENERGY</span>
+                  <div class="viz-beat-bar"><div class="viz-beat-fill" id="viz-beat-fill"></div></div>
+                </div>
+                <div class="eq-bars" id="equalizer">
+                  <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+                </div>
+              </div>
+            </div>
+            <div class="player-song-info">
+              <div>
+                <h2 class="player-title" id="player-song-title">Tujhko Jo Paaya</h2>
+                <p class="player-artist" id="player-song-artist">Mohit Chauhan / Pritam · Crook</p>
+                <!-- Active Listen Together Friends Stack -->
+                <div class="jam-listening-stack" id="player-jam-stack" style="display:none" onclick="openListenTogetherModal()" title="Click to open session lobby"></div>
+              </div>
+              <button class="heart-btn" id="player-heart" onclick="toggleLike(this,null)" aria-label="Like">♡</button>
+            </div>
+
+            <!-- Dhun Player Hub: Song Info, Listening Stats, Similar Dhun & Vibe Board -->
+            <!-- Dhun Player Hub: Song Info, Listening Stats, Similar Dhun & Vibe Board -->
+            <div class="dhun-hub-panel lyrics-panel" id="dhun-player-hub">
+              <!-- Header & Segmented Tab Navigation -->
+              <div class="dhun-hub-header">
+                <div class="dhun-hub-tabs" role="tablist">
+                  <button class="dhun-tab-btn active" id="tab-btn-info" onclick="switchDhunHubTab('info')" role="tab" aria-selected="true" title="Song Info & Audio Details">
+                    <span class="tab-icon">ℹ️</span>
+                    <span class="tab-text">Song Info</span>
+                  </button>
+                  <button class="dhun-tab-btn" id="tab-btn-stats" onclick="switchDhunHubTab('stats')" role="tab" aria-selected="false" title="Personal Listening Stats">
+                    <span class="tab-icon">📈</span>
+                    <span class="tab-text">Stats</span>
+                  </button>
+                  <button class="dhun-tab-btn" id="tab-btn-similar" onclick="switchDhunHubTab('similar')" role="tab" aria-selected="false" title="Smart Similar Songs from Library">
+                    <span class="tab-icon">✨</span>
+                    <span class="tab-text">Similar Dhun</span>
+                    <span class="hub-count-pill" id="hub-similar-count">0</span>
+                  </button>
+                  <button class="dhun-tab-btn" id="tab-btn-vibe" onclick="switchDhunHubTab('vibe')" role="tab" aria-selected="false" title="Dhun Vibe & Mood Acoustics">
+                    <span class="tab-icon">🎨</span>
+                    <span class="tab-text">Vibe & Mood</span>
+                    <span class="hub-live-dot" title="Live vibe atmosphere"></span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Content Panes Container -->
+              <div class="dhun-hub-body" id="dhun-hub-body">
+
+                <!-- 1. Song Info Pane (Default) -->
+                <div class="dhun-pane active" id="pane-info" role="tabpanel">
+                  <div class="dhun-info-hero" style="display:flex;align-items:center;gap:16px;margin-bottom:16px;padding:12px 14px;border-radius:14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);">
+                    <img id="hub-info-art" src="album1.jpg" alt="Album Cover" onerror="this.onerror=null;this.src='album1.jpg'" style="width:72px;height:72px;border-radius:10px;object-fit:cover;box-shadow:0 8px 24px rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.15);flex-shrink:0;" />
+                    <div style="flex:1;min-width:0;">
+                      <span style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);font-weight:700;">YouTube Music Album Photo</span>
+                      <h3 id="hub-info-title" style="margin:2px 0 4px;font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-1);">Song Title</h3>
+                      <p id="hub-info-artist" style="margin:0;font-size:12px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Artist · Album</p>
+                    </div>
+                  </div>
+                  <div class="dhun-meta-grid">
+                    <div class="dhun-meta-card">
+                      <span class="meta-icon">💿</span>
+                      <div class="meta-content">
+                        <span class="meta-lbl">ALBUM</span>
+                        <span class="meta-txt" id="hub-meta-album">Crook</span>
+                      </div>
+                    </div>
+                    <div class="dhun-meta-card">
+                      <span class="meta-icon">🏷️</span>
+                      <div class="meta-content">
+                        <span class="meta-lbl">GENRE</span>
+                        <span class="meta-txt" id="hub-meta-genre">Bollywood / Romance</span>
+                      </div>
+                    </div>
+                    <div class="dhun-meta-card">
+                      <span class="meta-icon">🎧</span>
+                      <div class="meta-content">
+                        <span class="meta-lbl">AUDIO QUALITY</span>
+                        <span class="meta-txt" id="hub-meta-quality">320 kbps Studio HQ</span>
+                      </div>
+                    </div>
+                    <div class="dhun-meta-card">
+                      <span class="meta-icon">📅</span>
+                      <div class="meta-content">
+                        <span class="meta-lbl">YEAR</span>
+                        <span class="meta-txt" id="hub-meta-year">2024</span>
+                      </div>
+                    </div>
+                    <div class="dhun-meta-card">
+                      <span class="meta-icon">⏱️</span>
+                      <div class="meta-content">
+                        <span class="meta-lbl">DURATION</span>
+                        <span class="meta-txt" id="hub-meta-duration">5:43</span>
+                      </div>
+                    </div>
+                    <div class="dhun-meta-card">
+                      <span class="meta-icon">💾</span>
+                      <div class="meta-content">
+                        <span class="meta-lbl">AUDIO SOURCE</span>
+                        <span class="meta-txt" id="hub-meta-source">High-Fidelity Stream</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="dhun-tags-row">
+                    <span class="dhun-chip">#LosslessAudio</span>
+                    <span class="dhun-chip">#Stereo44.1kHz</span>
+                    <span class="dhun-chip">#DhunMaster</span>
+                    <span class="dhun-chip" id="hub-meta-codec">MP3 Audio</span>
+                  </div>
+                </div>
+
+                <!-- 2. Listening Stats Pane (Option 5) -->
+                <div class="dhun-pane" id="pane-stats" role="tabpanel">
+                  <div class="dhun-stats-grid">
+                    <div class="dhun-stat-card highlight">
+                      <div class="stat-top">
+                        <span class="stat-icon">🔥</span>
+                        <span class="stat-badge" id="hub-stat-badge">Fresh Discovery</span>
+                      </div>
+                      <div class="stat-num" id="hub-stat-plays">0</div>
+                      <div class="stat-lbl">Times Played</div>
+                      <div class="stat-bar-track"><div class="stat-bar-fill" id="hub-stat-play-fill" style="width: 20%"></div></div>
+                    </div>
+                    <div class="dhun-stat-card">
+                      <div class="stat-top"><span class="stat-icon">⏳</span></div>
+                      <div class="stat-num" id="hub-stat-time">0m 00s</div>
+                      <div class="stat-lbl">Total Time Listened</div>
+                      <span class="stat-sub" id="hub-stat-last">Live tracking</span>
+                    </div>
+                    <div class="dhun-stat-card">
+                      <div class="stat-top"><span class="stat-icon">❤️</span></div>
+                      <div class="stat-num" id="hub-stat-liked">Library Track</div>
+                      <div class="stat-lbl">Favorite Status</div>
+                      <span class="stat-sub" id="hub-stat-first">Saved in Dhun</span>
+                    </div>
+                    <div class="dhun-stat-card">
+                      <div class="stat-top"><span class="stat-icon">⚡</span></div>
+                      <div class="stat-num" id="hub-stat-completion">92%</div>
+                      <div class="stat-lbl">Avg. Retention</div>
+                      <span class="stat-sub">High replay affinity</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 3. Smart Similar Dhun Pane (Option 4) -->
+                <div class="dhun-pane" id="pane-similar" role="tabpanel">
+                  <div class="dhun-similar-list" id="dhun-similar-list">
+                    <!-- Populated dynamically via updateDhunHub() -->
+                  </div>
+                </div>
+
+                <!-- 4. Dhun Vibe & Mood Acoustics (Option 6) -->
+                <div class="dhun-pane" id="pane-vibe" role="tabpanel">
+                  <div class="dhun-vibe-container">
+                    <div class="dhun-vibe-card">
+                      <div class="vibe-card-top">
+                        <span class="vibe-card-emoji" id="hub-vibe-emoji">✨</span>
+                        <div>
+                          <span class="vibe-card-title" id="hub-vibe-title">Harmonic Melody</span>
+                          <span class="vibe-card-desc" id="hub-vibe-desc">Warm • Emotional • Acoustic</span>
+                        </div>
+                        <span class="vibe-sync-tag">⚡ Syncs with Top Beat Visualizer</span>
+                      </div>
+                    </div>
+
+                    <!-- 4 Live Precision Dynamics Meters -->
+                    <div class="dhun-vibe-metrics">
+                      <div class="vibe-meter">
+                        <div class="meter-head">
+                          <span class="meter-name">⚡ Energy Level</span>
+                          <span class="meter-val" id="vibe-val-energy">72%</span>
+                        </div>
+                        <div class="meter-track"><div class="meter-fill energy" id="vibe-fill-energy" style="width: 72%"></div></div>
+                      </div>
+                      <div class="vibe-meter">
+                        <div class="meter-head">
+                          <span class="meter-name">🌿 Acoustic Warmth</span>
+                          <span class="meter-val" id="vibe-val-warmth">88%</span>
+                        </div>
+                        <div class="meter-track"><div class="meter-fill warmth" id="vibe-fill-warmth" style="width: 88%"></div></div>
+                      </div>
+                      <div class="vibe-meter">
+                        <div class="meter-head">
+                          <span class="meter-name">🪩 Dance & Groove</span>
+                          <span class="meter-val" id="vibe-val-groove">65%</span>
+                        </div>
+                        <div class="meter-track"><div class="meter-fill groove" id="vibe-fill-groove" style="width: 65%"></div></div>
+                      </div>
+                      <div class="vibe-meter">
+                        <div class="meter-head">
+                          <span class="meter-name">🌌 Depth & Resonance</span>
+                          <span class="meter-val" id="vibe-val-depth">85%</span>
+                        </div>
+                        <div class="meter-track"><div class="meter-fill depth" id="vibe-fill-depth" style="width: 85%"></div></div>
+                      </div>
+                    </div>
+
+                    <!-- 8 Curated Mood Palettes -->
+                    <div class="dhun-vibe-selector">
+                      <span class="vibe-choose-lbl">Tune Dhun Mood & Top Visualizer Palette:</span>
+                      <div class="vibe-chips" id="dhun-vibe-chips">
+                        <button class="vibe-chip active" onclick="setCustomSongVibe('romantic', this)">💖 Romantic</button>
+                        <button class="vibe-chip" onclick="setCustomSongVibe('chill', this)">🌿 Chill</button>
+                        <button class="vibe-chip" onclick="setCustomSongVibe('energetic', this)">⚡ Energetic</button>
+                        <button class="vibe-chip" onclick="setCustomSongVibe('melancholic', this)">🌧️ Melancholy</button>
+                        <button class="vibe-chip" onclick="setCustomSongVibe('party', this)">🎉 Party</button>
+                        <button class="vibe-chip" onclick="setCustomSongVibe('sufi', this)">🕊️ Sufi Soul</button>
+                        <button class="vibe-chip" onclick="setCustomSongVibe('cyberpunk', this)">🌌 Cyberpunk</button>
+                        <button class="vibe-chip" onclick="setCustomSongVibe('acoustic', this)">🍃 Acoustic</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Hidden backward-compatibility node for legacy callers -->
+                <div id="lyrics-container" style="display:none"></div>
+              </div>
+            </div>
+
+            <!-- Progress + Controls -->
+            <div class="player-controls-panel">
+              <div class="progress-section">
+                <span id="current-time" class="time-label">0:00</span>
+                <div class="progress-track" id="progress-track" onclick="seekSong(event)" aria-label="Seek">
+                  <div class="progress-fill" id="progress-fill"></div>
+                  <div class="progress-thumb" id="progress-thumb"></div>
+                </div>
+                <span id="total-time" class="time-label">5:43</span>
+              </div>
+              <div class="controls-row">
+                <button class="ctrl-btn" id="shuffle-btn" onclick="toggleShuffle()" aria-label="Shuffle">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                    <path d="M16 3h5v5M4 20l17-17M21 16v5h-5M15 15l6 6M4 4l5 5" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </button>
+                <button class="ctrl-btn" onclick="prevSong()" aria-label="Previous">
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M6 4H8V20H6V4ZM9.5 12L18 4V20L9.5 12Z" />
+                  </svg>
+                </button>
+                <button class="play-pause-main" id="play-pause-btn" onclick="togglePlay()" aria-label="Play/Pause">
+                  <svg id="play-icon" width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M5 3l14 9-14 9V3z" />
+                  </svg>
+                  <svg id="pause-icon" width="26" height="26" viewBox="0 0 24 24" fill="currentColor"
+                    style="display:none">
+                    <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                  </svg>
+                </button>
+                <button class="ctrl-btn" onclick="nextSong()" aria-label="Next">
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M18 4H16V20H18V4ZM14.5 12L6 4V20L14.5 12Z" />
+                  </svg>
+                </button>
+                <button class="ctrl-btn" id="repeat-btn" onclick="toggleRepeat()" aria-label="Repeat">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                    <path d="M17 1l4 4-4 4M3 11V9a4 4 0 014-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 01-4 4H3"
+                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </button>
+              </div>
+
+              <!-- Player Secondary Controls & Utility Bar -->
+              <div class="player-utilities-bar">
+                <!-- In-Player Volume Control Bar -->
+                <div class="player-vol-wrap">
+                  <button class="player-vol-icon-btn" id="player-vol-mute" onclick="toggleMute()" aria-label="Mute or Unmute" title="Mute / Unmute">
+                    <span id="player-vol-icon">🔊</span>
+                  </button>
+                  <div class="player-vol-track-wrap">
+                    <input type="range" class="vol-slider" id="player-vol-slider" min="0" max="100" value="75" aria-label="Volume Slider" oninput="setVolume(this.value)" />
+                  </div>
+                  <span class="player-vol-label" id="player-vol-pct">75%</span>
+                </div>
+
+                <!-- Social & Community Actions -->
+                <div class="social-row">
+                  <button class="social-btn" id="social-like" onclick="toggleLike(this,null)" aria-label="Like">♡
+                    <span id="social-like-count">1</span></button>
+                  <button class="social-btn jam-social-btn" id="social-jam-btn" onclick="openListenTogetherModal()" aria-label="Listen Together">
+                    🎧 <span id="social-jam-text">Listen Together</span>
+                  </button>
+                  <button class="social-btn" aria-label="Add to Queue" onclick="if(state.currentSong) enqueueSong(state.currentSong.id, event)">＋ <span>Queue</span></button>
+                  <button class="social-btn social-del-btn" id="player-delete-song-btn" onclick="if(state.currentSong) deleteSong(state.currentSong.id, event)" aria-label="Remove from library" title="Remove song from library">🗑️ <span>Remove</span></button>
+                  <button class="social-btn" aria-label="Share" onclick="showToast('Share link copied to clipboard 🔗')">🔗 <span>Share</span></button>
+                </div>
+
+                <!-- Live Reaction Dock -->
+                <div class="jam-live-dock" id="jam-player-reactions" title="Send live reaction">
+                  <span class="jam-dock-label">React:</span>
+                  <button class="jam-react-btn" onclick="sendJamReaction('🔥')" title="Fire">🔥</button>
+                  <button class="jam-react-btn" onclick="sendJamReaction('❤️')" title="Love">❤️</button>
+                  <button class="jam-react-btn" onclick="sendJamReaction('🎉')" title="Party">🎉</button>
+                  <button class="jam-react-btn" onclick="sendJamReaction('🎵')" title="Vibe">🎵</button>
+                  <button class="jam-react-btn" onclick="sendJamReaction('👏')" title="Clap">👏</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Queue + Related -->
+          <div class="player-right">
+            <div class="queue-panel glass-card">
+              <h3 class="qp-title">🎵 Up Next</h3>
+              <div class="queue-list" id="queue-list">
+                <p style="padding:16px;color:var(--text-muted);font-size:13px">Queue is empty — click ＋ to queue songs</p>
+              </div>
+            </div>
+
+            <div class="related-panel glass-card" style="margin-top:16px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <h3 class="qp-title" style="margin:0;display:flex;align-items:center;gap:8px">✨ Auto Recommendations</h3>
+                <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:12px;background:rgba(124,58,237,0.25);color:var(--text-2);border:1px solid rgba(139,92,246,0.3)">AI Match</span>
+              </div>
+              <div id="related-list">
+                <!-- Dynamically populated from library -->
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ══ PAGE: PROFILE ═══════════════════════ -->
+      <section class="page" id="page-profile">
+        <!-- Cover -->
+        <div class="profile-cover">
+          <img src="album2.jpg" alt="Profile cover" class="pcover-img" id="pcover-img" />
+          <div class="pcover-overlay"></div>
+          <button class="pcover-change" aria-label="Change cover" onclick="showToast('Cover photo updated 📷')">📷 Change Cover</button>
+        </div>
+
+        <div class="profile-body">
+          <!-- Left: Info -->
+          <div class="profile-left">
+            <div class="pav-large" id="pav-large">👤</div>
+            <h1 class="pname" id="pname-display">My Profile</h1>
+            <p class="pbio" id="pbio-display">🎵 High-fidelity music listener & collector</p>
+            <div class="profile-actions">
+              <button class="btn-primary" onclick="toggleEditProfile()" id="edit-profile-btn">✏️ Edit Profile</button>
+              <button class="btn-secondary" onclick="showToast('Profile link copied 🔗')" aria-label="Share profile">🔗 Share</button>
+            </div>
+
+            <!-- Edit Form -->
+            <div class="edit-form glass-card" id="edit-form" style="display:none">
+              <h3>Edit Profile</h3>
+              <input class="form-input" type="text" id="edit-name" value="My Profile" placeholder="Display Name"
+                aria-label="Display name" />
+              <textarea class="form-input form-textarea" id="edit-bio"
+                aria-label="Bio">🎵 High-fidelity music listener & collector</textarea>
+              <div class="form-btns">
+                <button class="btn-primary" onclick="saveProfile()">Save Changes</button>
+                <button class="btn-secondary" onclick="toggleEditProfile()">Cancel</button>
+              </div>
+            </div>
+
+            <!-- Real Dynamic Stats -->
+            <div class="stats-row glass-card">
+              <div class="stat"><span class="stat-num" id="prof-songs-count">0</span><span class="stat-lbl">Songs</span></div>
+              <div class="stat-div"></div>
+              <div class="stat"><span class="stat-num" id="prof-playlists-count">0</span><span class="stat-lbl">Playlists</span></div>
+              <div class="stat-div"></div>
+              <div class="stat"><span class="stat-num" id="prof-likes-count">0</span><span class="stat-lbl">Liked</span></div>
+              <div class="stat-div"></div>
+              <div class="stat"><span class="stat-num" id="prof-plays-count">0</span><span class="stat-lbl">Total Plays</span></div>
+            </div>
+          </div>
+
+          <!-- Right: Tabs -->
+          <div class="profile-right">
+            <div class="profile-tabs" role="tablist">
+              <button class="tab-btn active" role="tab" onclick="switchTab(this,'playlists')"
+                id="tab-playlists">Playlists</button>
+              <button class="tab-btn" role="tab" onclick="switchTab(this,'liked')" id="tab-liked">Liked Songs</button>
+              <button class="tab-btn" role="tab" onclick="switchTab(this,'activity')"
+                id="tab-activity">Activity Log</button>
+            </div>
+
+            <div class="tab-content active" id="tab-content-playlists">
+              <div class="content-grid" id="profile-playlists-grid">
+                <!-- Dynamically populated via renderProfilePlaylists() -->
+                <div class="grid-card create-card" onclick="createPlaylist()">
+                  <div class="gc-thumb create-thumb">+</div>
+                  <p class="gc-name">New Playlist</p>
+                  <p class="gc-meta">Create</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="tab-content" id="tab-content-liked">
+              <!-- Dynamically populated via refreshLikedSongs() -->
+              <p style="padding:24px;color:var(--text-2);text-align:center">No liked songs yet ♡</p>
+            </div>
+
+            <div class="tab-content" id="tab-content-activity">
+              <div class="comment-list" id="profile-activity-list">
+                <div class="comment-card glass-card">
+                  <div class="comment-av" style="background:linear-gradient(135deg,#7c3aed,#ec4899)">🎵</div>
+                  <div class="comment-body">
+                    <p class="comment-author">Personal Music Hub</p>
+                    <p class="comment-text">Library synchronized with high-precision beat flow, song analytics, and live Dhun vibe aura.</p>
+                    <p class="comment-time">Active Session</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div><!-- /profile-right -->
+        </div><!-- /profile-body -->
+      </section>
+
+      <!-- ══ PAGE: LIBRARY ═══════════════════════ -->
+      <section class="page" id="page-library">
+
+        <div class="page-header">
+          <h1>📚 Your Library</h1>
+          <p>All your songs, sorted and ready to play</p>
+        </div>
+
+        <!-- Stats Bar -->
+        <div class="lib-stats-bar glass-card" id="lib-stats-bar">
+          <div class="lib-stat"><span class="lib-stat-num" id="lib-total">—</span><span class="lib-stat-lbl">Songs</span></div>
+          <div class="lib-stat-div"></div>
+          <div class="lib-stat"><span class="lib-stat-num" id="lib-artists">—</span><span class="lib-stat-lbl">Artists</span></div>
+          <div class="lib-stat-div"></div>
+          <div class="lib-stat"><span class="lib-stat-num" id="lib-albums">—</span><span class="lib-stat-lbl">Albums</span></div>
+          <div class="lib-stat-div"></div>
+          <div class="lib-stat"><span class="lib-stat-num" id="lib-duration">—</span><span class="lib-stat-lbl">Total Time</span></div>
+        </div>
+
+        <!-- Controls Row -->
+        <div class="lib-controls">
+          <div class="genre-filter-row" id="lib-genre-filters">
+            <button class="filter-chip active" id="lib-filter-all" onclick="filterLibraryGenre(this,'all')">All</button>
+            <button class="filter-chip" onclick="filterLibraryGenre(this,'Electronic')">⚡ Electronic</button>
+            <button class="filter-chip" onclick="filterLibraryGenre(this,'Pop')">🎤 Pop</button>
+            <button class="filter-chip" onclick="filterLibraryGenre(this,'Indie')">🎸 Indie</button>
+            <button class="filter-chip" onclick="filterLibraryGenre(this,'Ambient')">🌊 Ambient</button>
+            <button class="filter-chip" onclick="filterLibraryGenre(this,'Techno')">🎛️ Techno</button>
+            <button class="filter-chip" onclick="filterLibraryGenre(this,'Lo-Fi')">☕ Lo-Fi</button>
+            <button class="filter-chip" onclick="filterLibraryGenre(this,'Dance')">🕺 Dance</button>
+            <button class="filter-chip" onclick="filterLibraryGenre(this,'Chill')">😌 Chill</button>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;flex-shrink:0">
+            <select onchange="sortLibraryPage(this.value)" class="sort-select" aria-label="Sort library">
+              <option value="title">Sort: Title</option>
+              <option value="artist">Sort: Artist</option>
+              <option value="plays">Sort: Most Played</option>
+              <option value="rating">Sort: Top Rated</option>
+            </select>
+            <button class="btn-primary btn-add-pc" onclick="triggerAddSongFromPC()" style="padding:8px 18px;font-size:13px;display:inline-flex;align-items:center;gap:6px">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              📁 Add from PC
+            </button>
+            <button class="btn-secondary" onclick="showAddSongModal()" style="padding:8px 14px;font-size:13px" title="Manual Input Form">Manual</button>
+          </div>
+        </div>
+
+        <!-- Full Songs Table -->
+        <div class="songs-table" id="library-list">
+          <div class="st-header">
+            <span class="st-h st-h-num">#</span>
+            <span class="st-h">Title</span>
+            <span class="st-h">Album</span>
+            <span class="st-h">Genre</span>
+            <span class="st-h st-h-dur">Duration</span>
+            <span class="st-h st-h-act"></span>
+          </div>
+          <p style="padding:32px;color:var(--text-2);text-align:center">Loading library…</p>
+        </div>
+
+      </section>
+
+    </main><!-- /main-content -->
+
+    <!-- ════════════════════════════════════
+       BOTTOM PLAYER BAR (persistent)
+  ════════════════════════════════════ -->
+    <footer class="player-bar glass-card" id="player-bar">
+
+      <!-- Left: Song info -->
+      <div class="pb-left" onclick="navigate('player')" style="cursor:pointer">
+        <div class="pb-thumb" id="pb-thumb" style="background:linear-gradient(135deg,#7c3aed,#2563eb)">
+          <img id="pb-img" src="album1.jpg" alt="Now playing" onerror="this.onerror=null;this.src='album1.jpg'" />
+        </div>
+        <div class="pb-info">
+          <p class="pb-song" id="pb-song">Tujhko Jo Paaya</p>
+          <p class="pb-artist" id="pb-artist">Mohit Chauhan / Pritam</p>
+        </div>
+        <button class="pb-like like-btn" onclick="toggleLike(this,event)" aria-label="Like">♡</button>
+      </div>
+
+      <!-- Center: Controls + Progress -->
+      <div class="pb-center">
+        <div class="pb-controls">
+          <button class="pb-ctrl" id="pb-shuffle" onclick="toggleShuffle()" aria-label="Shuffle">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M16 3h5v5M4 20l17-17M21 16v5h-5M15 15l6 6M4 4l5 5" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+          <button class="pb-ctrl" onclick="prevSong()" aria-label="Previous">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M6 4H8V20H6V4ZM9.5 12L18 4V20L9.5 12Z" />
+            </svg>
+          </button>
+          <button class="pb-play" id="pb-play-btn" onclick="togglePlay()" aria-label="Play/Pause">
+            <svg id="pb-play-icon" width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M5 3l14 9-14 9V3z" />
+            </svg>
+            <svg id="pb-pause-icon" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="display:none">
+              <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+            </svg>
+          </button>
+          <button class="pb-ctrl" onclick="nextSong()" aria-label="Next">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18 4H16V20H18V4ZM14.5 12L6 4V20L14.5 12Z" />
+            </svg>
+          </button>
+          <button class="pb-ctrl" id="pb-repeat" onclick="toggleRepeat()" aria-label="Repeat">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M17 1l4 4-4 4M3 11V9a4 4 0 014-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 01-4 4H3" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+        </div>
+        <div class="pb-progress-wrap">
+          <span id="pb-cur-time" class="pb-time">1:23</span>
+          <div class="pb-progress" id="pb-progress" onclick="seekSong(event)" aria-label="Seek">
+            <div class="pb-fill" id="pb-fill"></div>
+            <div class="pb-thumb-dot" id="pb-thumb-dot"></div>
+          </div>
+          <span id="pb-total-time" class="pb-time">3:45</span>
+        </div>
+      </div>
+
+      <!-- Right: Volume + Extras -->
+      <div class="pb-right">
+        <button class="pb-ctrl" aria-label="Queue" onclick="navigate('player')">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M9 18V5l12-2v13M9 9l12-2" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round" />
+          </svg>
+        </button>
+        <div class="volume-control">
+          <span class="vol-icon">🔊</span>
+          <input type="range" class="vol-slider" id="vol-slider" min="0" max="100" value="75" aria-label="Volume"
+            oninput="setVolume(this.value)" />
+        </div>
+      </div>
+
+    </footer>
+
+  </div><!-- /app-shell -->
+
+  <!-- ══ ADD SONG MODAL ══════════════════════════════ -->
+  <div id="add-song-modal" style="display:none;position:fixed;inset:0;z-index:9990;
+     background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);
+     align-items:center;justify-content:center;">
+    <div class="glass-card" style="width:min(480px,90vw);padding:32px;border-radius:20px;position:relative">
+      <button onclick="hideAddSongModal()" style="position:absolute;top:16px;right:16px;
+      background:none;border:none;color:var(--text-2);font-size:20px;cursor:pointer">✕</button>
+      <h2 style="margin:0 0 20px;font-size:1.4rem">🎵 Add New Song</h2>
+      <!-- Direct PC Audio Upload Dropzone -->
+      <div class="pc-upload-dropzone" onclick="triggerAddSongFromPC();hideAddSongModal();" role="button" tabindex="0" title="Click to choose audio files from PC">
+        <div class="dropzone-icon">📁</div>
+        <div style="font-weight:700;font-size:15px;color:var(--text-1)">Choose Audio File from PC</div>
+        <div style="font-size:12px;color:var(--text-2);margin-top:2px">Auto-extracts title, artist & duration — no typing needed!</div>
+        <span class="dropzone-badge">⚡ Instant Auto-Import</span>
+      </div>
+      <div class="or-divider"><span>OR MANUAL INPUT</span></div>
+      <div style="display:grid;gap:12px">
+        <input class="form-input" id="new-title" type="text" placeholder="Song Title *" aria-label="Title" />
+        <input class="form-input" id="new-artist" type="text" placeholder="Artist Name *" aria-label="Artist" />
+        <input class="form-input" id="new-album" type="text" placeholder="Album" aria-label="Album" />
+        <input class="form-input" id="new-genre" type="text" placeholder="Genre" aria-label="Genre" />
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <input class="form-input" id="new-duration" type="number" placeholder="Duration (min)" step="0.1" min="0.5"
+            max="60" aria-label="Duration" />
+          <input class="form-input" id="new-rating" type="number" placeholder="Rating (1-5)" step="0.1" min="1" max="5"
+            aria-label="Rating" />
+        </div>
+      </div>
+      <div class="form-btns" style="margin-top:24px">
+        <button class="btn-primary" onclick="submitAddSong()">Add to Library</button>
+        <button class="btn-secondary" onclick="hideAddSongModal()">Cancel</button>
+      </div>
+      <p style="margin-top:16px;font-size:12px;color:var(--text-2)">
+        Data stored in C backend via Doubly Linked List + BST + Hash Table
+      </p>
+    </div>
+  </div>
+
+  <!-- ══ LISTEN TOGETHER MODAL ═════════════════════════ -->
+  <div id="listen-together-modal" class="jam-modal-backdrop" style="display:none">
+    <div class="glass-card jam-modal-card">
+      <button class="jam-modal-close" onclick="closeListenTogetherModal()" aria-label="Close modal">✕</button>
+
+      <!-- Header -->
+      <div class="jam-modal-header">
+        <div class="jam-header-icon-wrap">
+          <span class="jam-header-icon">🎧</span>
+        </div>
+        <div>
+          <h2 class="jam-modal-title">Listen Together</h2>
+          <p class="jam-modal-sub">Jam with friends in real-time with synchronized music & live reactions</p>
+        </div>
+      </div>
+
+      <!-- Tab Buttons (Host vs Join) when no active room -->
+      <div id="jam-tabs" class="jam-tab-group">
+        <button class="jam-tab-btn active" id="jam-tab-host" onclick="switchJamTab('host')">Host a Jam</button>
+        <button class="jam-tab-btn" id="jam-tab-join" onclick="switchJamTab('join')">Join Session</button>
+      </div>
+
+      <!-- Tab Content: Host a Room -->
+      <div id="jam-panel-host" class="jam-panel">
+        <div class="jam-promo-box">
+          <div class="jam-feature-badge">⚡ Instant Tab & Friend Sync</div>
+          <p class="jam-promo-text">Start a session as the DJ. Whenever you play, pause, seek, or change songs, everyone in the room syncs automatically in real-time.</p>
+        </div>
+        <div class="jam-form-group">
+          <label class="jam-input-label" for="jam-host-name">Your DJ Name</label>
+          <input class="form-input" id="jam-host-name" type="text" value="You (DJ)" placeholder="Your DJ nickname" />
+        </div>
+        <div class="jam-options">
+          <label class="jam-checkbox-label">
+            <input type="checkbox" id="jam-allow-control" checked />
+            <span>Allow friends to change songs & seek</span>
+          </label>
+        </div>
+        <button class="btn-primary jam-action-btn" onclick="startJamSession()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <circle cx="12" cy="12" r="10"/>
+            <polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/>
+          </svg>
+          <span>Start Jam Room</span>
+        </button>
+      </div>
+
+      <!-- Tab Content: Join a Room -->
+      <div id="jam-panel-join" class="jam-panel" style="display:none">
+        <div class="jam-promo-box">
+          <div class="jam-feature-badge">🔗 Connect to a Friend's Jam</div>
+          <p class="jam-promo-text">Enter your friend's room code or paste their invite link to jump into their stream instantly.</p>
+        </div>
+        <div class="jam-form-group">
+          <label class="jam-input-label" for="jam-guest-name">Your Nickname</label>
+          <input class="form-input" id="jam-guest-name" type="text" placeholder="e.g. Alex" />
+        </div>
+        <div class="jam-form-group" style="margin-top:12px">
+          <label class="jam-input-label" for="jam-room-code-input">Room Code or Invite Link</label>
+          <input class="form-input" id="jam-room-code-input" type="text" placeholder="e.g. DHUN-4821" style="text-transform:uppercase;letter-spacing:1.5px;font-weight:700" />
+        </div>
+        <button class="btn-primary jam-action-btn" onclick="joinJamSession()">
+          <span>Join Friend's Jam</span>
+        </button>
+      </div>
+
+      <!-- In-Session View (Shown when in active room) -->
+      <div id="jam-panel-active" class="jam-panel" style="display:none">
+        <div class="jam-room-banner">
+          <div class="jam-room-status">
+            <span class="jam-live-pulse"></span>
+            <span class="jam-room-id-text">Room: <strong id="jam-active-code">DHUN-0000</strong></span>
+          </div>
+          <button class="btn-copy-code" onclick="copyJamInviteLink()" title="Copy room link">
+            <span>📋 Copy Link</span>
+          </button>
+        </div>
+
+        <div class="jam-current-track-card">
+          <div class="jam-track-thumb" id="jam-sync-thumb">🎵</div>
+          <div class="jam-track-meta">
+            <span class="jam-now-label">NOW PLAYING TOGETHER</span>
+            <div class="jam-track-title" id="jam-sync-title">Tujhko Jo Paaya</div>
+            <div class="jam-track-artist" id="jam-sync-artist">Mohit Chauhan / Pritam</div>
+          </div>
+          <div class="jam-sync-pill">
+            <span class="jam-sync-dot"></span> Synced
+          </div>
+        </div>
+
+        <!-- Participants List -->
+        <div class="jam-listeners-section">
+          <div class="jam-section-title-row">
+            <span class="jam-section-title">Listeners (<span id="jam-member-count">1</span>)</span>
+            <span class="jam-sync-latency">📡 Real-Time Local & Tab Sync</span>
+          </div>
+          <div class="jam-members-list" id="jam-members-list">
+            <!-- Members dynamically injected -->
+          </div>
+        </div>
+
+        <!-- Live Reaction Bar in Room -->
+        <div class="jam-reactions-bar">
+          <span class="jam-react-label">Send Live Reaction:</span>
+          <div class="jam-reaction-emojis">
+            <button class="jam-emoji-btn" onclick="sendJamReaction('🔥')">🔥</button>
+            <button class="jam-emoji-btn" onclick="sendJamReaction('❤️')">❤️</button>
+            <button class="jam-emoji-btn" onclick="sendJamReaction('🎉')">🎉</button>
+            <button class="jam-emoji-btn" onclick="sendJamReaction('🎵')">🎵</button>
+            <button class="jam-emoji-btn" onclick="sendJamReaction('👏')">👏</button>
+            <button class="jam-emoji-btn" onclick="sendJamReaction('🚀')">🚀</button>
+          </div>
+        </div>
+
+        <div class="jam-footer-actions">
+          <button class="btn-secondary jam-leave-btn" onclick="leaveJamSession()">
+            <span>Leave Session</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- Hidden File Input for Adding Songs from PC -->
+  <input type="file" id="pc-audio-input" accept="audio/*,.mp3,.wav,.ogg,.flac,.m4a,.aac,.webm,.opus" multiple style="display:none" onchange="handlePCAudioFileInput(event)" />
+
+  <!-- Drag and Drop Full Screen Overlay -->
+  <div id="pc-drag-overlay" class="drag-drop-overlay" style="display:none">
+    <div class="drag-drop-box glass-card">
+      <div style="font-size:48px;animation:pulse 1.5s infinite">🎵</div>
+      <h2 style="margin:12px 0 6px;font-size:1.6rem">Drop Audio Files Here</h2>
+      <p style="color:var(--text-2);font-size:14px">Automatically adds songs from your PC directly to your library</p>
+    </div>
+  </div>
+
+  <!-- YouTube Audio/Video Engine Dock (Offscreen in Song mode, overlay in Video mode) -->
+  <div id="yt-player-dock" class="yt-player-dock" aria-hidden="true">
+    <div id="yt-hidden-player" style="width:100%;height:100%;"></div>
+    <!-- Clean Interactive Video Overlay: Click to play/pause, hover center badge, fs button -->
+    <div class="pvp-dock-overlay" id="pvp-dock-overlay" onclick="togglePlay()" title="Click to Play/Pause">
+      <button class="pvp-fs-btn" id="pvp-dock-fs" onclick="togglePVPFullscreen(event)" title="Fullscreen" aria-label="Fullscreen">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+      </button>
+      <div class="pvp-center-badge" id="pvp-center-badge">
+        <span id="pvp-badge-icon">▶</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="ytmusic_api.js"></script>
+  <script src="app.js"></script>
+  <script src="https://www.youtube.com/iframe_api"></script>
+</body>
+
+</html>
