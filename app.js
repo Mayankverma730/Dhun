@@ -2082,39 +2082,96 @@ function handleEmailSignIn() {
   switchToUser(user);
 }
 
+let _googleAuthIsFromGate = false;
+
 function handleGoogleSignIn(isFromGate = false) {
-  // If user has official Google GIS credentials configured
-  if (window.google && window.google.accounts && window.google.accounts.id && window.DHUN_GOOGLE_CLIENT_ID) {
-    try {
-      window.google.accounts.id.prompt();
-      return;
-    } catch(e){}
+  openGoogleAuthModal(isFromGate);
+}
+
+function openGoogleAuthModal(isFromGate = false) {
+  _googleAuthIsFromGate = isFromGate;
+  const modal = document.getElementById('google-auth-modal');
+  if (!modal) return;
+
+  const emailInput = document.getElementById('google-input-email');
+  const nameInput = document.getElementById('google-input-name');
+  const quickBox = document.getElementById('google-quick-account');
+  const quickName = document.getElementById('google-quick-name');
+  const quickEmail = document.getElementById('google-quick-email');
+  const quickAvatar = document.getElementById('google-quick-avatar');
+
+  // Find last Google account or active user
+  const lastGoogleUser = (authState.users || []).find(u => u.provider === 'google') ||
+    ((authState.currentUser && authState.currentUser.email !== 'guest@dhun.local') ? authState.currentUser : null);
+
+  if (lastGoogleUser && quickBox) {
+    quickBox.style.display = 'block';
+    if (quickName) quickName.textContent = lastGoogleUser.name || 'Google User';
+    if (quickEmail) quickEmail.textContent = lastGoogleUser.email;
+    if (quickAvatar) {
+      quickAvatar.textContent = (lastGoogleUser.name || 'G').charAt(0).toUpperCase();
+      quickAvatar.style.background = lastGoogleUser.avatarColor || '#4285F4';
+    }
+  } else if (quickBox) {
+    quickBox.style.display = 'none';
   }
 
-  // Instant seamless Google Profile login prompt:
-  const defaultGoogleEmail = authState.currentUser && authState.currentUser.email !== 'guest@dhun.local' 
-    ? authState.currentUser.email 
-    : 'user@gmail.com';
-  
-  const googleEmail = prompt(
-    '🌐 Continue with Google\n\nEnter your Google Account Email to connect instantly:',
-    defaultGoogleEmail
-  );
+  if (emailInput) {
+    emailInput.value = lastGoogleUser ? lastGoogleUser.email : '';
+  }
+  if (nameInput) {
+    nameInput.value = lastGoogleUser ? lastGoogleUser.name : '';
+  }
 
-  if (!googleEmail || !googleEmail.trim()) return;
-  const cleanEmail = googleEmail.trim().toLowerCase();
+  modal.style.display = 'flex';
+  setTimeout(() => {
+    if (emailInput && !emailInput.value) emailInput.focus();
+    else if (nameInput && !nameInput.value) nameInput.focus();
+  }, 80);
+}
 
-  // Derive Google Name from email or existing account
-  let defaultName = cleanEmail.split('@')[0];
-  defaultName = defaultName.charAt(0).toUpperCase() + defaultName.slice(1);
-  const googleName = prompt('Enter your Google Profile Display Name:', defaultName) || defaultName;
+function closeGoogleAuthModal() {
+  const modal = document.getElementById('google-auth-modal');
+  if (modal) modal.style.display = 'none';
+}
 
-  let existing = authState.users.find(u => u.email === cleanEmail);
+function handleGoogleQuickAccountClick() {
+  const lastGoogleUser = (authState.users || []).find(u => u.provider === 'google') ||
+    ((authState.currentUser && authState.currentUser.email !== 'guest@dhun.local') ? authState.currentUser : null);
+
+  if (lastGoogleUser) {
+    closeGoogleAuthModal();
+    if (_googleAuthIsFromGate) {
+      enterAppFromGate(lastGoogleUser);
+    } else {
+      closeAuthModal();
+      switchToUser(lastGoogleUser);
+    }
+    showToast(`✅ Signed in as ${lastGoogleUser.name}!`);
+  }
+}
+
+function submitGoogleSignInModal() {
+  const emailInput = document.getElementById('google-input-email');
+  const nameInput = document.getElementById('google-input-name');
+  const emailVal = (emailInput ? emailInput.value : '').trim().toLowerCase();
+  let nameVal = (nameInput ? nameInput.value : '').trim();
+
+  if (!emailVal) {
+    showToast('⚠️ Please enter your Google email');
+    return;
+  }
+  if (!nameVal) {
+    nameVal = emailVal.split('@')[0];
+    nameVal = nameVal.charAt(0).toUpperCase() + nameVal.slice(1);
+  }
+
+  let existing = (authState.users || []).find(u => u.email === emailVal);
   if (!existing) {
     existing = {
       id: 'usr_g_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
-      name: googleName.trim(),
-      email: cleanEmail,
+      name: nameVal,
+      email: emailVal,
       avatarColor: '#4285F4',
       provider: 'google',
       bio: 'Google Connected Listener 🎧',
@@ -2123,12 +2180,14 @@ function handleGoogleSignIn(isFromGate = false) {
     authState.users.push(existing);
     localStorage.setItem('dhun_auth_users', JSON.stringify(authState.users));
   } else {
+    existing.name = nameVal || existing.name;
     existing.provider = 'google';
     existing.avatarColor = existing.avatarColor || '#4285F4';
     localStorage.setItem('dhun_auth_users', JSON.stringify(authState.users));
   }
 
-  if (isFromGate) {
+  closeGoogleAuthModal();
+  if (_googleAuthIsFromGate) {
     enterAppFromGate(existing);
   } else {
     closeAuthModal();
@@ -2138,7 +2197,7 @@ function handleGoogleSignIn(isFromGate = false) {
 }
 
 function signOutUser() {
-  if (confirm('Are you sure you want to sign out of this account?')) {
+  showAppConfirm('Sign Out?', 'Are you sure you want to sign out of your account?', 'Sign Out', true, () => {
     localStorage.removeItem('dhun_auth_active_user');
     authState.currentUser = null;
 
@@ -2156,7 +2215,7 @@ function signOutUser() {
     }
 
     showToast('👋 Signed out. Please sign in to enter Dhun.');
-  }
+  });
 }
 
 function toggleUserMenu(force) {
@@ -2408,11 +2467,35 @@ function saveUserPlaylistsToStorage(playlists) {
   } catch (e) {}
 }
 
-/* ── Create Playlist (Strictly Isolated Per User) ──────────── */
-async function createPlaylist() {
-  const name = prompt('Playlist name:');
-  if (!name || !name.trim()) return;
-  const clean = name.trim();
+/* ── In-App Create Playlist Modal ────────────── */
+let _pendingAddSongId = null;
+
+function createPlaylist() {
+  openPlaylistCreateModal();
+}
+
+function openPlaylistCreateModal() {
+  const modal = document.getElementById('playlist-create-modal');
+  if (!modal) return;
+  const input = document.getElementById('playlist-name-input');
+  if (input) input.value = '';
+  modal.style.display = 'flex';
+  setTimeout(() => { if (input) input.focus(); }, 80);
+}
+
+function closePlaylistCreateModal() {
+  const modal = document.getElementById('playlist-create-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function submitCreatePlaylistModal() {
+  const input = document.getElementById('playlist-name-input');
+  const name = input ? input.value.trim() : '';
+  if (!name) {
+    showToast('⚠️ Please enter a playlist name');
+    return;
+  }
+  const clean = name;
   const newPl = {
     id: Date.now(),
     name: clean,
@@ -2425,40 +2508,96 @@ async function createPlaylist() {
   state.playlists = pls;
 
   apiPost('/playlists', { name: clean }, { silent: true }).catch(() => {});
+  closePlaylistCreateModal();
   showToast(`Playlist "${clean}" created 🎵`);
   renderSidebarPlaylists();
   renderProfilePlaylists();
   renderProfileStats();
+
+  // If this was opened from the add song flow, re-open add modal
+  if (_pendingAddSongId !== null) {
+    openPlaylistAddModal(_pendingAddSongId);
+  }
 }
 
-/* ── Add Song to Playlist ─────────────────────── */
-async function addToPlaylistPrompt(songId) {
-  if (!state.playlists || !state.playlists.length) {
-    showToast('No playlists — create one first');
-    return;
+/* ── In-App Add Song to Playlist Modal ───────── */
+function addToPlaylistPrompt(songId) {
+  openPlaylistAddModal(songId);
+}
+
+function openPlaylistAddModal(songId) {
+  _pendingAddSongId = Number(songId);
+  const modal = document.getElementById('playlist-add-modal');
+  if (!modal) return;
+
+  const listContainer = document.getElementById('playlist-add-list');
+  const userPlaylists = getUserPlaylistsFromStorage() || state.playlists || [];
+
+  if (!userPlaylists || userPlaylists.length === 0) {
+    if (listContainer) {
+      listContainer.innerHTML = `
+        <div style="text-align:center;padding:26px 12px;color:var(--text-2)">
+          <div style="font-size:32px;margin-bottom:8px">🎶</div>
+          <p style="margin:0 0 14px;font-size:14px">You don't have any playlists yet.</p>
+          <button class="btn-primary" onclick="openCreatePlaylistFromAddModal()" style="font-size:13px;padding:8px 16px">Create Your First Playlist</button>
+        </div>
+      `;
+    }
+  } else {
+    if (listContainer) {
+      listContainer.innerHTML = userPlaylists.map(pl => {
+        const cleanName = formatPlaylistName(pl.name);
+        const count = (pl.songs ? pl.songs.length : (pl.song_count || 0));
+        const alreadyHas = pl.songs && pl.songs.includes(_pendingAddSongId);
+        return `
+          <div class="playlist-chooser-item" onclick="addSongToSpecificPlaylist(${pl.id}, ${_pendingAddSongId})">
+            <div class="playlist-chooser-thumb" style="background:${gradientFor(pl.id)}">
+              <img src="${getPlaylistThumbnail(pl)}" alt="${escapeHtmlAttr(cleanName)}" onerror="this.style.display='none'"/>
+            </div>
+            <div class="playlist-chooser-info">
+              <p class="playlist-chooser-name">${escapeHtmlText(cleanName)}</p>
+              <p class="playlist-chooser-count">${count} song${count === 1 ? '' : 's'} ${alreadyHas ? '· <em>Already in playlist</em>' : ''}</p>
+            </div>
+            <span class="playlist-chooser-add-btn">${alreadyHas ? '✓' : '＋'}</span>
+          </div>
+        `;
+      }).join('');
+    }
   }
-  const names = state.playlists.map((p, i) => `${i+1}. ${p.name}`).join('\n');
-  const choice = prompt(`Add to which playlist?\n${names}\n\nEnter number:`);
-  const idx = parseInt(choice) - 1;
-  if (isNaN(idx) || idx < 0 || idx >= state.playlists.length) return;
-  const pl = state.playlists[idx];
+
+  modal.style.display = 'flex';
+}
+
+function closePlaylistAddModal() {
+  const modal = document.getElementById('playlist-add-modal');
+  if (modal) modal.style.display = 'none';
+  _pendingAddSongId = null;
+}
+
+function openCreatePlaylistFromAddModal() {
+  closePlaylistAddModal();
+  openPlaylistCreateModal();
+}
+
+function addSongToSpecificPlaylist(playlistId, songId) {
+  let pls = getUserPlaylistsFromStorage() || state.playlists || [];
+  const pl = pls.find(p => p.id === playlistId);
+  if (!pl) return;
 
   if (!pl.songs) pl.songs = [];
   const sId = Number(songId);
   if (!pl.songs.includes(sId)) {
     pl.songs.push(sId);
     pl.song_count = pl.songs.length;
-    let pls = getUserPlaylistsFromStorage() || state.playlists;
-    const target = pls.find(p => p.id === pl.id);
-    if (target) {
-      target.songs = pl.songs;
-      target.song_count = pl.song_count;
-      saveUserPlaylistsToStorage(pls);
-    }
+    saveUserPlaylistsToStorage(pls);
+    state.playlists = pls;
+    apiPost(`/playlists/${pl.id}/songs`, { song_id: songId }, { silent: true }).catch(() => {});
+    showToast(`Added to "${pl.name}" ✅`);
+  } else {
+    showToast(`"${pl.name}" already has this track 🎵`);
   }
 
-  apiPost(`/playlists/${pl.id}/songs`, { song_id: songId }, { silent: true }).catch(() => {});
-  showToast(`Added to "${pl.name}" ✅`);
+  closePlaylistAddModal();
   renderSidebarPlaylists();
   renderProfilePlaylists();
 }
@@ -2759,22 +2898,68 @@ async function enqueueSong(songId, event) {
   if (res) { showToast('Added to queue ✅'); refreshQueue(); }
 }
 
+/* ── In-App Confirmation Modal (Replaces browser confirm) ──────── */
+let _confirmCallback = null;
+
+function showAppConfirm(title, message, actionText = 'Confirm', isDanger = false, onConfirm = null) {
+  const modal = document.getElementById('app-confirm-modal');
+  if (!modal) {
+    if (confirm(message)) {
+      if (onConfirm) onConfirm();
+    }
+    return;
+  }
+
+  const titleEl = document.getElementById('confirm-modal-title');
+  const msgEl = document.getElementById('confirm-modal-message');
+  const actBtn = document.getElementById('confirm-modal-action-btn');
+  const iconEl = document.getElementById('confirm-modal-icon');
+
+  if (titleEl) titleEl.textContent = title;
+  if (msgEl) msgEl.textContent = message;
+  if (actBtn) {
+    actBtn.textContent = actionText;
+    if (isDanger) {
+      actBtn.classList.add('btn-danger-confirm');
+    } else {
+      actBtn.classList.remove('btn-danger-confirm');
+    }
+  }
+  if (iconEl) {
+    iconEl.textContent = isDanger ? '🗑️' : '❓';
+  }
+
+  _confirmCallback = onConfirm;
+  modal.style.display = 'flex';
+}
+
+function closeConfirmModal(confirmed = false) {
+  const modal = document.getElementById('app-confirm-modal');
+  if (modal) modal.style.display = 'none';
+
+  if (confirmed && typeof _confirmCallback === 'function') {
+    const cb = _confirmCallback;
+    _confirmCallback = null;
+    cb();
+  } else {
+    _confirmCallback = null;
+  }
+}
+
 /* Called from the player's Remove button AND each library song row's Remove button. */
 async function deleteSong(songId, event) {
   if (event) event.stopPropagation();
-  if (!confirm('Remove this song from library?')) return;
-  const res = await apiDelete(`/songs/${songId}`);
-  if (res) {
+  showAppConfirm('Remove Song?', 'Remove this song from your personal library?', 'Remove', true, async () => {
+    const res = await apiDelete(`/songs/${songId}`, { silent: true });
     showToast('Song removed 🗑️');
-    state.songs = (await apiGet('/songs')) || state.songs;
+    state.songs = (await apiGet('/songs', { silent: true })) || (state.songs || []).filter(s => s.id !== songId);
     _libAllSongs = state.songs;
-    /* Refresh whichever page is currently open */
     if (state.currentPage === 'library') {
       refreshLibrary();
     } else {
       refreshHome();
     }
-  }
+  });
 }
 
 /* ═══════════════════════════════════════════════
@@ -3200,27 +3385,28 @@ function renderProfilePlaylists() {
 async function deletePlaylistConfirm(id) {
   const pl = (state.playlists || []).find(p => p.id === id);
   const name = pl ? `"${pl.name}"` : 'this playlist';
-  if (!confirm(`Are you sure you want to remove playlist ${name}?`)) return;
   
-  let pls = (getUserPlaylistsFromStorage() || state.playlists || []).filter(p => p.id !== id);
-  saveUserPlaylistsToStorage(pls);
-  state.playlists = pls;
+  showAppConfirm('Delete Playlist?', `Are you sure you want to remove playlist ${name}?`, 'Delete', true, async () => {
+    let pls = (getUserPlaylistsFromStorage() || state.playlists || []).filter(p => p.id !== id);
+    saveUserPlaylistsToStorage(pls);
+    state.playlists = pls;
 
-  apiDelete(`/playlists/${id}`, { silent: true }).catch(() => {});
-  showToast(`Playlist ${name} removed 🗑️`);
-  await refreshPlaylists();
-  renderProfileStats();
+    apiDelete(`/playlists/${id}`, { silent: true }).catch(() => {});
+    showToast(`Playlist ${name} removed 🗑️`);
+    await refreshPlaylists();
+    renderProfileStats();
 
-  if (state.activePlaylistId === id) {
-    state.activePlaylistId = null;
-    const resView = document.getElementById('search-results-view');
-    const defView = document.getElementById('search-default-view');
-    if (resView) resView.style.display = 'none';
-    if (defView) defView.style.display = '';
-    const delBtn = document.getElementById('delete-playlist-view-btn');
-    if (delBtn) delBtn.style.display = 'none';
-    navigate('home');
-  }
+    if (state.activePlaylistId === id) {
+      state.activePlaylistId = null;
+      const resView = document.getElementById('search-results-view');
+      const defView = document.getElementById('search-default-view');
+      if (resView) resView.style.display = 'none';
+      if (defView) defView.style.display = '';
+      const delBtn = document.getElementById('delete-playlist-view-btn');
+      if (delBtn) delBtn.style.display = 'none';
+      navigate('home');
+    }
+  });
 }
 
 function deleteCurrentOpenPlaylist() {
@@ -4745,12 +4931,29 @@ function copyJamInviteLink() {
   const link = `${window.location.origin}${window.location.pathname}?jam=${jamState.roomId}`;
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(link).then(() => {
-      showToast(`📋 Copied Jam Link: ${jamState.roomId}`);
+      showToast(`📋 Jam invite link copied to clipboard!`);
     }).catch(() => {
-      prompt('Copy your Jam invite link:', link);
+      fallbackCopyJamLink(link);
     });
   } else {
-    prompt('Copy your Jam invite link:', link);
+    fallbackCopyJamLink(link);
+  }
+}
+
+function fallbackCopyJamLink(link) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = link;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast(`📋 Jam invite link copied to clipboard!`);
+  } catch (err) {
+    showToast(`Room code: ${jamState.roomId}`);
   }
 }
 

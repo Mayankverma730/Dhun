@@ -4862,5 +4862,160 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   }
 }
 
+/* ══════════════════════════════════════════════════
+   IN-APP DIALOGS & INTERFACE MODALS
+   (Replaces all native browser prompt / confirm dialogs)
+   ══════════════════════════════════════════════════ */
+.google-modal-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+.google-icon-large {
+  display: inline-block;
+  margin-bottom: 4px;
+}
+.google-account-chooser {
+  margin-bottom: 16px;
+}
+.google-account-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.google-account-item:hover {
+  background: rgba(66, 133, 244, 0.12);
+  border-color: rgba(66, 133, 244, 0.4);
+  transform: translateY(-1px);
+}
+.google-acc-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #4285F4;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.google-acc-info {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+.google-acc-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.google-acc-email {
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.google-acc-arrow {
+  color: var(--text-2);
+  font-size: 16px;
+  transition: transform 0.2s;
+}
+.google-account-item:hover .google-acc-arrow {
+  transform: translateX(3px);
+  color: #4285F4;
+}
+
+/* Playlist Chooser List */
+.playlist-chooser-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 14px 0;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.playlist-chooser-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  text-align: left;
+  width: 100%;
+}
+.playlist-chooser-item:hover {
+  background: var(--hover-bg);
+  border-color: var(--purple);
+  transform: translateX(4px);
+}
+.playlist-chooser-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: #fff;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.playlist-chooser-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.playlist-chooser-info {
+  flex: 1;
+  min-width: 0;
+}
+.playlist-chooser-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-1);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.playlist-chooser-count {
+  font-size: 11.5px;
+  color: var(--text-2);
+  margin: 2px 0 0 0;
+}
+.playlist-chooser-add-btn {
+  font-size: 18px;
+  color: var(--purple-bright);
+  font-weight: 700;
+  padding: 0 4px;
+}
+
+/* Danger Confirm Button */
+.btn-danger-confirm {
+  background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+  color: #fff !important;
+  border: none !important;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35) !important;
+}
+.btn-danger-confirm:hover {
+  background: linear-gradient(135deg, #f87171, #ef4444) !important;
+  transform: translateY(-1px);
+}
+
 
 
