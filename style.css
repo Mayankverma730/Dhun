@@ -4183,6 +4183,7 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   .topbar-jam-btn {
     padding: 6px 8px;
   }
+}
 
 /* ══════════════════════════════════════════════════════════════════
    AUTHENTICATION & USER PROFILE MULTI-TENANCY STYLES

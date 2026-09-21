@@ -814,8 +814,13 @@ const state = {
   timer:       null,
 };
 
+let _offlineWarningShown = false;
+
 /* ── API helpers ──────────────────────────────── */
-async function api(method, path, data) {
+async function api(method, path, data, options = {}) {
+  const isCloudHost = window.location.protocol === 'https:' ||
+                      window.location.hostname.includes('vercel.app') ||
+                      window.location.hostname.includes('github.io');
   try {
     const opts = {
       method,
@@ -833,16 +838,26 @@ async function api(method, path, data) {
     }
     return await res.json();
   } catch (e) {
-    console.error('API error:', e);
-    showToast('⚠️ Server offline — start dhun_server.exe');
+    // In cloud / Vercel hosting, or when silent is requested, suppress the error
+    if (options && options.silent) return null;
+    if (isCloudHost) {
+      // Running on Vercel / HTTPS cloud host: all operations handled client-side smoothly
+      return null;
+    }
+    // Only show warning once per session for local dev
+    if (!_offlineWarningShown) {
+      _offlineWarningShown = true;
+      setTimeout(() => { _offlineWarningShown = false; }, 20000);
+      showToast('⚠️ Running in offline client mode');
+    }
     return null;
   }
 }
 
-const apiGet    = (path)       => api('GET',    path);
-const apiPost   = (path, data) => api('POST',   path, data);
-const apiPut    = (path, data) => api('PUT',    path, data || {});
-const apiDelete = (path)       => api('DELETE', path);
+const apiGet    = (path, opts)       => api('GET',    path, null, opts);
+const apiPost   = (path, data, opts) => api('POST',   path, data, opts);
+const apiPut    = (path, data, opts) => api('PUT',    path, data || {}, opts);
+const apiDelete = (path, opts)       => api('DELETE', path, null, opts);
 
 /* ── Gradient palette for dynamic cards ──────── */
 const GRADIENTS = [
@@ -2404,12 +2419,12 @@ async function createPlaylist() {
     song_count: 0,
     songs: []
   };
-  let pls = getUserPlaylistsFromStorage() || state.playlists || [];
+  let pls = getUserPlaylistsFromStorage() || (state.playlists ? [...state.playlists] : []);
   pls.push(newPl);
   saveUserPlaylistsToStorage(pls);
   state.playlists = pls;
 
-  apiPost('/playlists', { name: clean }).catch(() => {});
+  apiPost('/playlists', { name: clean }, { silent: true }).catch(() => {});
   showToast(`Playlist "${clean}" created 🎵`);
   renderSidebarPlaylists();
   renderProfilePlaylists();
@@ -2418,7 +2433,7 @@ async function createPlaylist() {
 
 /* ── Add Song to Playlist ─────────────────────── */
 async function addToPlaylistPrompt(songId) {
-  if (!state.playlists.length) {
+  if (!state.playlists || !state.playlists.length) {
     showToast('No playlists — create one first');
     return;
   }
@@ -2442,7 +2457,7 @@ async function addToPlaylistPrompt(songId) {
     }
   }
 
-  apiPost(`/playlists/${pl.id}/songs`, { song_id: songId }).catch(() => {});
+  apiPost(`/playlists/${pl.id}/songs`, { song_id: songId }, { silent: true }).catch(() => {});
   showToast(`Added to "${pl.name}" ✅`);
   renderSidebarPlaylists();
   renderProfilePlaylists();
@@ -3038,15 +3053,15 @@ async function refreshProfile() {
 /* ── Auto-Generate Multiple Playlists Engine ──────────────────── */
 async function autoGenerateMultiplePlaylists() {
   try {
-    let pls = await apiGet('/playlists');
-    if (pls && pls.length >= 4) {
-      state.playlists = pls;
+    let localPls = getUserPlaylistsFromStorage();
+    if (localPls && localPls.length >= 2) {
+      state.playlists = localPls;
       renderSidebarPlaylists();
       renderProfilePlaylists();
       return;
     }
 
-    const currentSongs = state.songs || (await apiGet('/songs')) || [];
+    const currentSongs = state.songs || (await apiGet('/songs', { silent: true })) || [];
     if (!currentSongs || currentSongs.length === 0) return;
 
     const definitions = [
@@ -3072,31 +3087,35 @@ async function autoGenerateMultiplePlaylists() {
       }
     ];
 
-    for (const def of definitions) {
-      const alreadyExists = (pls || []).some(p => p.name.toLowerCase() === def.name.toLowerCase());
+    let userPlaylists = getUserPlaylistsFromStorage() || [];
+    for (let i = 0; i < definitions.length; i++) {
+      const def = definitions[i];
+      const alreadyExists = userPlaylists.some(p => p.name.toLowerCase() === def.name.toLowerCase());
       if (alreadyExists) continue;
 
       const matches = currentSongs.filter(def.filter);
       if (matches.length === 0) continue;
 
-      const created = await apiPost('/playlists', { name: def.name });
-      if (created && created.id !== undefined) {
-        for (const s of matches) {
-          await apiPost(`/playlists/${created.id}/songs`, { song_id: s.id });
-        }
-        if (matches[0]) {
-          const leadThumb = imgFor(matches[0].id);
-          playlistThumbnailMap.set(created.id, leadThumb);
-        }
+      const plId = Date.now() + i;
+      const matchedIds = matches.map(m => m.id);
+      userPlaylists.push({
+        id: plId,
+        name: def.name,
+        song_count: matchedIds.length,
+        songs: matchedIds
+      });
+      if (matches[0]) {
+        const leadThumb = imgFor(matches[0].id);
+        playlistThumbnailMap.set(plId, leadThumb);
       }
+      // Silently sync to C server if running
+      apiPost('/playlists', { name: def.name }, { silent: true }).catch(() => {});
     }
 
-    const updatedPls = await apiGet('/playlists');
-    if (updatedPls) {
-      state.playlists = updatedPls;
-      renderSidebarPlaylists();
-      renderProfilePlaylists();
-    }
+    saveUserPlaylistsToStorage(userPlaylists);
+    state.playlists = userPlaylists;
+    renderSidebarPlaylists();
+    renderProfilePlaylists();
   } catch (err) {
     console.warn('Auto-generate playlists error:', err);
   }
@@ -3109,19 +3128,21 @@ function formatPlaylistName(name) {
 
 async function refreshPlaylists() {
   const localPls = getUserPlaylistsFromStorage();
-  if (localPls) {
+  if (localPls && localPls.length > 0) {
     state.playlists = localPls.map(p => ({
       ...p,
       name: formatPlaylistName(p.name)
     }));
   } else {
-    const pls = await apiGet('/playlists');
-    if (pls && Array.isArray(pls)) {
+    const pls = await apiGet('/playlists', { silent: true });
+    if (pls && Array.isArray(pls) && pls.length > 0) {
       state.playlists = pls.map(p => ({
         ...p,
         name: formatPlaylistName(p.name)
       }));
       saveUserPlaylistsToStorage(state.playlists);
+    } else if (localPls) {
+      state.playlists = localPls;
     } else {
       state.playlists = [];
     }
@@ -3177,7 +3198,7 @@ function renderProfilePlaylists() {
 }
 
 async function deletePlaylistConfirm(id) {
-  const pl = state.playlists.find(p => p.id === id);
+  const pl = (state.playlists || []).find(p => p.id === id);
   const name = pl ? `"${pl.name}"` : 'this playlist';
   if (!confirm(`Are you sure you want to remove playlist ${name}?`)) return;
   
@@ -3185,7 +3206,7 @@ async function deletePlaylistConfirm(id) {
   saveUserPlaylistsToStorage(pls);
   state.playlists = pls;
 
-  apiDelete(`/playlists/${id}`).catch(() => {});
+  apiDelete(`/playlists/${id}`, { silent: true }).catch(() => {});
   showToast(`Playlist ${name} removed 🗑️`);
   await refreshPlaylists();
   renderProfileStats();
@@ -3217,7 +3238,7 @@ async function removeSongFromPlaylist(playlistId, songId) {
     saveUserPlaylistsToStorage(pls);
     state.playlists = pls;
   }
-  apiDelete(`/playlists/${playlistId}/songs/${songId}`).catch(() => {});
+  apiDelete(`/playlists/${playlistId}/songs/${songId}`, { silent: true }).catch(() => {});
   openPlaylist(playlistId);
   renderSidebarPlaylists();
   renderProfilePlaylists();
@@ -3225,14 +3246,30 @@ async function removeSongFromPlaylist(playlistId, songId) {
 
 async function openPlaylist(id) {
   state.activePlaylistId = id;
-  const pl = state.playlists.find(p => p.id === id);
+  let pls = getUserPlaylistsFromStorage() || state.playlists || [];
+  const pl = pls.find(p => p.id === id) || (state.playlists || []).find(p => p.id === id);
   let songs = [];
 
-  const apiSongs = await apiGet(`/playlists/${id}/songs`);
+  const apiSongs = await apiGet(`/playlists/${id}/songs`, { silent: true });
   if (apiSongs && Array.isArray(apiSongs) && apiSongs.length > 0) {
     songs = apiSongs;
   } else if (pl && Array.isArray(pl.songs) && pl.songs.length > 0) {
-    songs = pl.songs.map(sid => (state.songs || []).find(s => s.id == sid)).filter(Boolean);
+    const allKnown = [...(state.songs || []), ...(_libAllSongs || []), ...(state.history || [])];
+    songs = pl.songs.map(sid => {
+      const match = allKnown.find(s => s && s.id == sid);
+      if (match) return match;
+      const pcItem = pcSongAudioMap.get(sid) || pcSongAudioMap.get(Number(sid));
+      if (pcItem) {
+        return {
+          id: sid,
+          title: pcItem.title || 'Track',
+          artist: pcItem.artist || 'Artist',
+          duration: pcItem.duration || 180,
+          genre: 'Music'
+        };
+      }
+      return null;
+    }).filter(Boolean);
   }
 
   /* Show songs in search results view as quick view */
