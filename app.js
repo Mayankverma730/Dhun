@@ -3228,13 +3228,16 @@ const jamState = {
   allowControl: true,
   members: [],
   channel: null,
+  mqttClient: null,
+  mqttConnected: false,
+  heartbeatTimer: null,
   _isRemoteSync: false,
   lastEventId: 0,
   pollTimer: null,
   isPolling: false
 };
 
-/* Dedicated silent API caller for Jam Session sync */
+/* Dedicated silent API caller for Jam Session sync (Local Desktop fallback) */
 async function jamApi(method, path, data) {
   try {
     const opts = {
@@ -3251,6 +3254,98 @@ async function jamApi(method, path, data) {
     return { ok: true, status: res.status, data: json };
   } catch (e) {
     return { ok: false, status: 0, error: 'Network error or server offline' };
+  }
+}
+
+/* Connect to public global WebSocket MQTT Broker for cross-device real-time sync */
+function connectJamMqtt(roomId, onReady) {
+  disconnectJamMqtt();
+
+  if (typeof mqtt === 'undefined') {
+    console.warn('[Jam MQTT] mqtt.js library not loaded yet, falling back to local sync');
+    if (onReady) onReady(false);
+    return;
+  }
+
+  const brokerUrls = [
+    'wss://broker.emqx.io:8084/mqtt',
+    'wss://broker.hivemq.com:8884/mqtt'
+  ];
+  let currentIdx = 0;
+  let settled = false;
+
+  function tryNext() {
+    if (settled) return;
+    if (currentIdx >= brokerUrls.length) {
+      settled = true;
+      if (onReady) onReady(false);
+      return;
+    }
+    const url = brokerUrls[currentIdx++];
+    console.log(`[Jam MQTT] Connecting to ${url}...`);
+
+    try {
+      const clientId = 'dhun_' + Math.random().toString(36).substring(2, 11);
+      const client = mqtt.connect(url, {
+        clientId,
+        clean: true,
+        connectTimeout: 8000,
+        reconnectPeriod: 3000
+      });
+
+      jamState.mqttClient = client;
+
+      client.on('connect', () => {
+        console.log(`[Jam MQTT] Connected to ${url}`);
+        jamState.mqttConnected = true;
+        const topic = `dhun/v2/rooms/${roomId}`;
+        client.subscribe(topic, { qos: 0 }, (err) => {
+          if (err) console.warn('[Jam MQTT] Subscribe error:', err);
+          else console.log(`[Jam MQTT] Subscribed to room topic: ${topic}`);
+        });
+
+        if (!settled) {
+          settled = true;
+          if (onReady) onReady(true);
+        }
+      });
+
+      client.on('message', (t, rawMsg) => {
+        try {
+          const str = rawMsg.toString();
+          const data = JSON.parse(str);
+          handleJamMessageData(data);
+        } catch(e) {
+          console.warn('[Jam MQTT] Message parse error:', e);
+        }
+      });
+
+      client.on('error', (err) => {
+        console.warn(`[Jam MQTT] Error with ${url}:`, err);
+        if (!jamState.mqttConnected && !settled) {
+          try { client.end(true); } catch(e){}
+          tryNext();
+        }
+      });
+    } catch(err) {
+      console.warn('[Jam MQTT] Init failed:', err);
+      tryNext();
+    }
+  }
+
+  tryNext();
+}
+
+function disconnectJamMqtt() {
+  if (jamState.mqttClient) {
+    try {
+      if (jamState.roomId) {
+        jamState.mqttClient.unsubscribe(`dhun/v2/rooms/${jamState.roomId}`);
+      }
+      jamState.mqttClient.end(true);
+    } catch(e){}
+    jamState.mqttClient = null;
+    jamState.mqttConnected = false;
   }
 }
 
@@ -3331,17 +3426,27 @@ function broadcastJam(payload) {
     timestamp: Date.now()
   };
 
-  // 1. Cross-tab BroadcastChannel
+  // 1. MQTT Cloud Real-Time Broker (Cross-device, works globally anywhere)
+  if (jamState.mqttClient && jamState.mqttConnected) {
+    try {
+      const topic = `dhun/v2/rooms/${jamState.roomId}`;
+      jamState.mqttClient.publish(topic, JSON.stringify(msg), { qos: 0 });
+    } catch(e) {
+      console.warn('[Jam MQTT] Publish error:', e);
+    }
+  }
+
+  // 2. Cross-tab BroadcastChannel fallback
   if (jamState.channel) {
     try { jamState.channel.postMessage(msg); } catch(e){}
   }
 
-  // 2. Cross-window localStorage fallback
+  // 3. Cross-window localStorage fallback
   try {
     localStorage.setItem('dhun_jam_last_event', JSON.stringify(msg));
   } catch(e){}
 
-  // 3. Central C Backend Server sync
+  // 4. Central C Backend Server sync fallback
   jamApi('POST', '/jam/sync', msg).catch(() => {});
 }
 
@@ -3379,22 +3484,22 @@ function applyRemoteSong(song, shouldPlay, progress) {
       title: song.title,
       artist: song.artist
     };
-    pcSongAudioMap.set(song.id, ytData);
-    saveYTSongToStorage(song.id, ytData);
+    if (typeof pcSongAudioMap !== 'undefined') pcSongAudioMap.set(song.id, ytData);
+    if (typeof saveYTSongToStorage === 'function') saveYTSongToStorage(song.id, ytData);
   }
 
   state.currentSong = song;
   loadSongUI(song);
 
   if (progress !== undefined && progress !== null) {
-    state.progress = Number(progress) || 0;
+    state.progress = Math.max(0, Math.min(100, Number(progress) || 0));
     updateProgress();
   }
 
   if (shouldPlay) {
     startPlaying();
     if (progress !== undefined && progress > 0) {
-      setTimeout(() => applyRemoteSeek(progress), 120);
+      setTimeout(() => applyRemoteSeek(progress), 200);
     }
   } else {
     stopPlaying();
@@ -3403,7 +3508,7 @@ function applyRemoteSong(song, shouldPlay, progress) {
 
 function handleJamMessageData(data) {
   if (!data || !data.roomId) return;
-  if (!jamState.active && data.type !== 'JOIN_ROOM') return;
+  if (!jamState.active && data.type !== 'JOIN_REQUEST' && data.type !== 'JOIN_ROOM') return;
   if (data.roomId !== jamState.roomId) return;
   if (data.sender === jamState.userName) return;
 
@@ -3452,8 +3557,9 @@ function handleJamMessageData(data) {
         renderJamReactionParticle(data.emoji, data.sender);
         break;
 
+      case 'JOIN_REQUEST':
       case 'JOIN_ROOM':
-      case 'JOIN':
+      case 'JOIN': {
         const existingMember = jamState.members.find(m => m.name === data.sender);
         if (!existingMember) {
           const initials = (data.avatar || (data.sender || 'FR').slice(0, 2)).toUpperCase();
@@ -3467,6 +3573,7 @@ function handleJamMessageData(data) {
           updateJamUI();
           showToast(`🎉 ${data.sender} joined your Jam!`);
         }
+        // If we are Host, broadcast our current room state immediately back to the room
         if (jamState.isHost) {
           const currentSongPayload = state.currentSong ? {
             ...state.currentSong,
@@ -3476,38 +3583,60 @@ function handleJamMessageData(data) {
 
           broadcastJam({
             type: 'ROOM_STATE_REPLY',
-            song: currentSongPayload,
-            progress: state.progress,
-            isPlaying: state.isPlaying,
+            host: jamState.userName,
             members: jamState.members,
+            song: currentSongPayload,
+            progress: state.progress || 0,
+            isPlaying: !!state.isPlaying,
             allowControl: jamState.allowControl
           });
         }
         break;
+      }
 
       case 'ROOM_STATE_REPLY':
-        if (!jamState.isHost) {
-          if (Array.isArray(data.members)) {
-            data.members.forEach(m => {
-              if (!jamState.members.some(e => e.name === m.name)) {
-                jamState.members.push(m);
-              }
-            });
-            renderJamMembers();
-            updateJamUI();
-          }
-          if (data.song && (!state.currentSong || state.currentSong.id !== data.song.id)) {
-            applyRemoteSong(data.song, data.isPlaying, data.progress);
-          } else {
-            if (data.progress !== undefined) {
-              applyRemoteSeek(data.progress);
+      case 'ROOM_ANNOUNCE':
+      case 'HEARTBEAT': {
+        // Sync members list
+        if (Array.isArray(data.members) && data.members.length > 0) {
+          data.members.forEach(m => {
+            if (!jamState.members.some(e => e.name === m.name)) {
+              jamState.members.push(m);
             }
-            if (data.isPlaying && !state.isPlaying) {
-              startPlaying();
+          });
+          // Ensure self is in members list
+          if (!jamState.members.some(e => e.name === jamState.userName)) {
+            jamState.members.push({
+              name: jamState.userName,
+              avatar: jamState.isHost ? 'DJ' : jamState.userName.slice(0, 2).toUpperCase(),
+              color: jamState.isHost ? '#7c3aed' : '#06b6d4',
+              isHost: jamState.isHost
+            });
+          }
+          renderJamMembers();
+          updateJamUI();
+        }
+
+        // Guests sync song from Host
+        if (!jamState.isHost) {
+          if (data.song) {
+            const isDifferentSong = !state.currentSong || state.currentSong.id !== data.song.id || (data.song.videoId && state.currentSong.videoId !== data.song.videoId);
+            if (isDifferentSong) {
+              applyRemoteSong(data.song, data.isPlaying, data.progress);
+              showToast(`🎵 Synced track with DJ: "${data.song.title}"`);
+            } else {
+              if (data.isPlaying !== undefined && data.isPlaying !== state.isPlaying) {
+                if (data.isPlaying) startPlaying();
+                else stopPlaying();
+              }
+              if (data.progress !== undefined && Math.abs((state.progress || 0) - data.progress) > 3) {
+                applyRemoteSeek(data.progress);
+              }
             }
           }
         }
         break;
+      }
 
       case 'LEAVE_ROOM':
       case 'LEAVE':
@@ -3570,7 +3699,7 @@ function showJamPanel(panelName) {
 
 function startJamPolling() {
   stopJamPolling();
-  jamState.pollTimer = setInterval(pollJamServer, 800);
+  jamState.pollTimer = setInterval(pollJamServer, 1000);
 }
 
 function stopJamPolling() {
@@ -3589,7 +3718,6 @@ async function pollJamServer() {
     const url = `/jam/poll?roomId=${encodeURIComponent(jamState.roomId)}&lastId=${jamState.lastEventId}&user=${encodeURIComponent(jamState.userName)}`;
     const res = await jamApi('GET', url);
     if (res.ok && res.data && res.data.success) {
-      // 1. Update members list if changed
       if (Array.isArray(res.data.members)) {
         const oldStr = JSON.stringify(jamState.members);
         const newStr = JSON.stringify(res.data.members);
@@ -3600,12 +3728,10 @@ async function pollJamServer() {
         }
       }
 
-      // 2. Advance event ID
       if (res.data.lastEventId !== undefined) {
         jamState.lastEventId = Math.max(jamState.lastEventId, res.data.lastEventId);
       }
 
-      // 3. Process new events
       if (Array.isArray(res.data.events) && res.data.events.length > 0) {
         for (const ev of res.data.events) {
           if (ev.sender === jamState.userName) continue;
@@ -3648,13 +3774,56 @@ async function startJamSession() {
     { name: djName, avatar: 'DJ', color: '#7c3aed', isHost: true }
   ];
 
-  // Register room with backend C server
+  showJamPanel('active');
+  renderJamMembers();
+  updateJamUI();
+  showToast(`🎧 Creating Jam Room ${randCode}...`);
+
   const currentSongPayload = state.currentSong ? {
     ...state.currentSong,
     videoId: state.currentSong.videoId || (typeof getCurrentYTVideoId === 'function' ? getCurrentYTVideoId() : null),
     source: isCurrentSongYT() ? 'ytmusic' : (state.currentSong.source || 'library')
   } : null;
 
+  // Connect to cloud MQTT broker for worldwide real-time sync
+  connectJamMqtt(randCode, (connected) => {
+    if (connected) {
+      showToast(`🟢 Jam Room ${randCode} Live! Ready for friends.`);
+      // Announce room state
+      broadcastJam({
+        type: 'ROOM_ANNOUNCE',
+        host: djName,
+        members: jamState.members,
+        song: currentSongPayload,
+        progress: state.progress || 0,
+        isPlaying: !!state.isPlaying
+      });
+    } else {
+      showToast(`🎧 Jam Room ${randCode} active`);
+    }
+  });
+
+  // Host heartbeat (every 7 seconds)
+  if (jamState.heartbeatTimer) clearInterval(jamState.heartbeatTimer);
+  jamState.heartbeatTimer = setInterval(() => {
+    if (jamState.active && jamState.isHost && jamState.roomId) {
+      const songData = state.currentSong ? {
+        ...state.currentSong,
+        videoId: state.currentSong.videoId || (typeof getCurrentYTVideoId === 'function' ? getCurrentYTVideoId() : null),
+        source: isCurrentSongYT() ? 'ytmusic' : (state.currentSong.source || 'library')
+      } : null;
+      broadcastJam({
+        type: 'HEARTBEAT',
+        host: djName,
+        members: jamState.members,
+        song: songData,
+        progress: state.progress || 0,
+        isPlaying: !!state.isPlaying
+      });
+    }
+  }, 7000);
+
+  // Fallback to local desktop server if present
   try {
     await jamApi('POST', '/jam/create', {
       roomId: randCode,
@@ -3664,25 +3833,8 @@ async function startJamSession() {
       progress: state.progress || 0,
       isPlaying: !!state.isPlaying
     });
-  } catch(e) {
-    console.warn('[Jam] Server room creation fallback:', e);
-  }
-
-  // Start polling backend server for other members & events
-  startJamPolling();
-
-  // Broadcast to other tabs
-  broadcastJam({
-    type: 'ROOM_CREATED',
-    song: currentSongPayload,
-    progress: state.progress,
-    isPlaying: state.isPlaying
-  });
-
-  showJamPanel('active');
-  renderJamMembers();
-  updateJamUI();
-  showToast(`🎧 Jam Room ${randCode} created!`);
+    startJamPolling();
+  } catch(e){}
 }
 
 async function joinJamSession(prefilledCode) {
@@ -3705,63 +3857,51 @@ async function joinJamSession(prefilledCode) {
   const nameInput = document.getElementById('jam-guest-name');
   const guestName = (nameInput && nameInput.value.trim()) || 'Guest';
 
-  // First try joining via backend C server
   showToast(`🔍 Connecting to Jam Room ${code}...`);
-  const res = await jamApi('POST', '/jam/join', {
-    roomId: code,
-    name: guestName
-  });
 
-  if (res.ok && res.data && res.data.success) {
-    jamState.active = true;
-    jamState.roomId = code;
-    jamState.isHost = false;
-    jamState.userName = guestName;
-    jamState.lastEventId = res.data.lastEventId || 0;
-    jamState.allowControl = res.data.allowControl ?? true;
-
-    // Real members from server — zero bots!
-    jamState.members = Array.isArray(res.data.members) ? res.data.members : [
-      { name: res.data.host || 'Host', avatar: 'DJ', color: '#7c3aed', isHost: true },
-      { name: guestName, avatar: guestName.slice(0, 2).toUpperCase(), color: '#06b6d4', isHost: false }
-    ];
-
-    // Sync current song from room
-    if (res.data.currentSong) {
-      applyRemoteSong(res.data.currentSong, res.data.isPlaying, res.data.progress);
-    }
-
-    startJamPolling();
-    broadcastJam({ type: 'JOIN_ROOM' });
-
-    showJamPanel('active');
-    renderJamMembers();
-    updateJamUI();
-    showToast(`🎧 Joined Jam Room ${code}!`);
-    return;
-  }
-
-  if (res.status === 404) {
-    showToast(`⚠️ ${res.error || 'Room not found. Check the code and try again.'}`);
-    return;
-  }
-
-  // Fallback: If server is offline, fallback to cross-tab BroadcastChannel
-  console.warn('[Jam] Server offline, attempting local tab broadcast fallback');
   jamState.active = true;
   jamState.roomId = code;
   jamState.isHost = false;
   jamState.userName = guestName;
+  jamState.lastEventId = 0;
   jamState.members = [
     { name: guestName, avatar: guestName.slice(0, 2).toUpperCase(), color: '#06b6d4', isHost: false }
   ];
 
-  broadcastJam({ type: 'JOIN_ROOM' });
-
   showJamPanel('active');
   renderJamMembers();
   updateJamUI();
-  showToast(`🎧 Connecting to tab session ${code}...`);
+
+  // Connect to cloud MQTT broker
+  connectJamMqtt(code, (connected) => {
+    if (connected) {
+      showToast(`🟢 Connected to Jam Room ${code}! Syncing...`);
+      // Request room state from host
+      broadcastJam({
+        type: 'JOIN_REQUEST',
+        sender: guestName,
+        avatar: guestName.slice(0, 2).toUpperCase(),
+        color: '#06b6d4'
+      });
+    } else {
+      showToast(`⚠️ Syncing room ${code}...`);
+    }
+  });
+
+  // Local desktop server check fallback
+  jamApi('POST', '/jam/join', { roomId: code, name: guestName }).then(res => {
+    if (res.ok && res.data && res.data.success) {
+      if (Array.isArray(res.data.members) && res.data.members.length > 0) {
+        jamState.members = res.data.members;
+        renderJamMembers();
+        updateJamUI();
+      }
+      if (res.data.currentSong) {
+        applyRemoteSong(res.data.currentSong, res.data.isPlaying, res.data.progress);
+      }
+      startJamPolling();
+    }
+  }).catch(() => {});
 }
 
 function leaveJamSession(isUnload) {
@@ -3769,7 +3909,13 @@ function leaveJamSession(isUnload) {
     const room = jamState.roomId;
     const user = jamState.userName;
 
-    // Notify backend
+    // Broadcast leave event across all channels
+    broadcastJam({ type: 'LEAVE_ROOM' });
+
+    // Disconnect MQTT
+    disconnectJamMqtt();
+
+    // Notify local backend if any
     if (isUnload && navigator.sendBeacon) {
       try {
         const blob = new Blob([JSON.stringify({ roomId: room, name: user })], { type: 'application/json' });
@@ -3778,9 +3924,11 @@ function leaveJamSession(isUnload) {
     } else {
       jamApi('POST', '/jam/leave', { roomId: room, name: user }).catch(() => {});
     }
+  }
 
-    // Broadcast to tabs
-    broadcastJam({ type: 'LEAVE_ROOM' });
+  if (jamState.heartbeatTimer) {
+    clearInterval(jamState.heartbeatTimer);
+    jamState.heartbeatTimer = null;
   }
 
   stopJamPolling();
