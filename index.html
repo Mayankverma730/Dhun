@@ -298,7 +298,8 @@
           <div class="topbar-search">
             <span>🔍</span>
             <input type="search" id="search-input-top" placeholder="Search YouTube Music library, artist, album..." autocomplete="off"
-              aria-label="Search" oninput="handleSearch(this.value)" onfocus="showSugg()" />
+              aria-label="Search" oninput="handleSearch(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();handleSearch(this.value, true);}" onfocus="showSugg()" />
+            <button type="button" onclick="handleSearch(document.getElementById('search-input-top').value, true)" aria-label="Submit search" style="background:none;border:none;color:var(--text-1);cursor:pointer;padding:0 6px;font-size:14px">🔍</button>
             <button id="voice-btn-top" onclick="startVoiceSearch()" aria-label="Voice search">🎙️</button>
             <button id="clear-btn-top" onclick="clearSearch()" style="display:none" aria-label="Clear search">✕</button>
           </div>
@@ -550,10 +551,11 @@
         <!-- Unified Search Bar -->
         <div class="search-hero" id="search-hero-section">
           <div class="search-hero-bar" id="search-hero-bar">
-            <span class="shi-icon" id="search-bar-icon">🔍</span>
+            <span class="shi-icon" id="search-bar-icon" onclick="handleSearch(document.getElementById('search-input').value, true)" style="cursor:pointer" title="Search">🔍</span>
             <input type="search" class="search-hero-input" id="search-input"
               placeholder="Search YouTube Music library, artist, album, or paste YouTube link..." autocomplete="off" aria-label="Search"
-              oninput="handleSearch(this.value)" onfocus="showSugg()" />
+              oninput="handleSearch(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();handleSearch(this.value, true);}" onfocus="showSugg()" />
+            <button type="button" class="btn-primary" onclick="handleSearch(document.getElementById('search-input').value, true)" style="padding:7px 16px;border-radius:20px;font-size:13px;font-weight:600;display:inline-flex;align-items:center;cursor:pointer;border:none">Search</button>
             <button onclick="startVoiceSearch()" aria-label="Voice search" class="shi-voice">🎙️ Voice</button>
             <button id="clear-btn" onclick="clearSearch()" style="display:none" aria-label="Clear search"
               class="shi-clear">✕</button>
@@ -1797,8 +1799,8 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.5/dist/mqtt.min.js"></script>
-  <script src="ytmusic_api.js?v=3.0"></script>
-  <script src="app.js?v=3.0"></script>
+  <script src="ytmusic_api.js?v=5.0"></script>
+  <script src="app.js?v=5.0"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 

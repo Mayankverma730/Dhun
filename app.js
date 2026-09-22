@@ -4959,7 +4959,7 @@ let ytSearchDebounceTimer = null;
 let currentYTResults = [];
 
 /* YouTube Music Exclusive Search */
-async function handleSearch(q) {
+async function handleSearch(q, immediate = false) {
   const query = typeof q === 'string' ? q : '';
   const clearBtn  = document.getElementById('clear-btn');
   const clearBtn2 = document.getElementById('clear-btn-top');
@@ -4973,6 +4973,12 @@ async function handleSearch(q) {
   if (in2 && in2.value !== query) in2.value = query;
 
   showSugg();
+
+  // If user searched from topbar while on another page, navigate to Discover/Search page
+  if (query.trim() && state.currentPage !== 'search') {
+    closePlaylistView();
+    navigate('search');
+  }
 
   const defView     = document.getElementById('discover-feed-container');
   const resView     = document.getElementById('search-results-view');
@@ -5023,9 +5029,13 @@ async function handleSearch(q) {
   }
 
   clearTimeout(ytSearchDebounceTimer);
-  ytSearchDebounceTimer = setTimeout(async () => {
-    await performYTMusicSearch(query.trim());
-  }, 220);
+  if (immediate) {
+    performYTMusicSearch(query.trim());
+  } else {
+    ytSearchDebounceTimer = setTimeout(async () => {
+      await performYTMusicSearch(query.trim());
+    }, 220);
+  }
 }
 
 async function performYTMusicSearch(query) {
@@ -5039,9 +5049,9 @@ async function performYTMusicSearch(query) {
     try {
       const tracks = await YTMusicAPI.search(q, 24);
 
-      // Prevent race conditions: ensure user hasn't changed query
+      // Prevent race conditions: ensure user hasn't changed query to something completely different
       const currentInput = document.getElementById('search-input') || document.getElementById('search-input-top');
-      if (currentInput && currentInput.value.trim() && currentInput.value.trim() !== q) {
+      if (currentInput && currentInput.value.trim() && currentInput.value.trim().toLowerCase() !== q.toLowerCase()) {
         return;
       }
 
