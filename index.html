@@ -1081,7 +1081,7 @@
         <div class="profile-cover">
           <img src="album2.jpg" alt="Profile cover" class="pcover-img" id="pcover-img" />
           <div class="pcover-overlay"></div>
-          <button class="pcover-change" id="pcover-change-btn" aria-label="Change cover" onclick="openProfileCoverModal()">📷 Change Cover</button>
+          <button class="pcover-change" id="pcover-change-btn" aria-label="Change cover" onclick="openProfileCoverModal()" style="z-index:30;cursor:pointer;pointer-events:auto;">📷 Change Cover</button>
         </div>
 
         <div class="profile-body">
@@ -1677,6 +1677,8 @@
         <button type="button" class="btn-primary" style="flex:1" id="confirm-modal-action-btn" onclick="closeConfirmModal(true)">Confirm</button>
       </div>
     </div>
+  </div>
+
   <!-- ══ PROFILE COVER CUSTOMIZATION MODAL ════════════ -->
   <div id="profile-cover-modal" class="auth-modal-backdrop" style="display:none" onclick="if(event.target===this)closeProfileCoverModal()">
     <div class="auth-card glass-card" style="max-width:540px;width:92%;padding:28px 24px;border-radius:24px;position:relative;animation:gateSlideDown 0.3s cubic-bezier(0.16,1,0.3,1);">
