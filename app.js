@@ -1822,12 +1822,102 @@ const authState = {
   selectedAvatarColor: '#7c3aed'
 };
 
+function makeUserIdFromEmail(email) {
+  if (!email || email === 'guest@dhun.local') return 'guest';
+  const clean = String(email).toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
+  return `usr_${clean}`;
+}
+
+function mergeUserStorageData(oldUid, newUid) {
+  if (!oldUid || !newUid || oldUid === newUid) return;
+  try {
+    // 1. Merge Playlists without losing any tracks
+    const oldPlsRaw = localStorage.getItem(`dhun_usr_${oldUid}_playlists`);
+    const newPlsRaw = localStorage.getItem(`dhun_usr_${newUid}_playlists`);
+    const oldPls = oldPlsRaw ? JSON.parse(oldPlsRaw) : [];
+    const newPls = newPlsRaw ? JSON.parse(newPlsRaw) : [];
+
+    if (oldPls.length > 0) {
+      const combinedPls = [...newPls];
+      oldPls.forEach(op => {
+        const match = combinedPls.find(np => np.name && op.name && np.name.toLowerCase().trim() === op.name.toLowerCase().trim());
+        if (match) {
+          const songSet = new Set([...(match.songs || []), ...(op.songs || [])]);
+          match.songs = Array.from(songSet);
+        } else {
+          combinedPls.push(op);
+        }
+      });
+      localStorage.setItem(`dhun_usr_${newUid}_playlists`, JSON.stringify(combinedPls));
+    }
+
+    // 2. Merge Likes
+    const oldLikesRaw = localStorage.getItem(`dhun_usr_${oldUid}_likes`);
+    const newLikesRaw = localStorage.getItem(`dhun_usr_${newUid}_likes`);
+    const oldLikes = oldLikesRaw ? JSON.parse(oldLikesRaw) : [];
+    const newLikes = newLikesRaw ? JSON.parse(newLikesRaw) : [];
+    if (oldLikes.length > 0) {
+      const combinedLikes = Array.from(new Set([...newLikes, ...oldLikes]));
+      localStorage.setItem(`dhun_usr_${newUid}_likes`, JSON.stringify(combinedLikes));
+    }
+  } catch(e) {}
+}
+
+function deduplicateUsers(users) {
+  if (!Array.isArray(users)) return [];
+  const map = new Map();
+
+  users.forEach(u => {
+    if (!u) return;
+    const emailKey = (u.email || '').toLowerCase().trim();
+    if (!emailKey || u.id === 'guest' || emailKey === 'guest@dhun.local') {
+      map.set('guest', { ...u, id: 'guest', name: 'Guest User' });
+      return;
+    }
+
+    const canonicalId = makeUserIdFromEmail(emailKey);
+    const existing = map.get(emailKey);
+
+    if (!existing) {
+      map.set(emailKey, { ...u, id: canonicalId, email: emailKey });
+    } else {
+      // Merge into the single individual profile for this Gmail
+      const preferredName = (u.name && u.name.length >= existing.name.length) ? u.name : existing.name;
+      const preferredAvatar = u.avatarColor || existing.avatarColor || '#7c3aed';
+      const isGoogle = (u.provider === 'google' || existing.provider === 'google');
+      const lastLogin = Math.max(u.lastLoginAt || 0, existing.lastLoginAt || 0);
+
+      mergeUserStorageData(existing.id, canonicalId);
+      mergeUserStorageData(u.id, canonicalId);
+
+      map.set(emailKey, {
+        ...existing,
+        ...u,
+        id: canonicalId,
+        email: emailKey,
+        name: preferredName,
+        avatarColor: preferredAvatar,
+        provider: isGoogle ? 'google' : (existing.provider || u.provider),
+        lastLoginAt: lastLogin
+      });
+    }
+
+    if (u.id && u.id !== canonicalId) {
+      mergeUserStorageData(u.id, canonicalId);
+    }
+  });
+
+  return Array.from(map.values());
+}
+
 function getStoredUsers() {
   try {
     const raw = localStorage.getItem('dhun_auth_users');
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        return deduplicateUsers(parsed);
+      }
     }
   } catch(e) {}
   return [];
@@ -1835,15 +1925,16 @@ function getStoredUsers() {
 
 function saveStoredUsers(users) {
   try {
-    localStorage.setItem('dhun_auth_users', JSON.stringify(users));
-    authState.users = users;
+    const deduped = deduplicateUsers(users);
+    localStorage.setItem('dhun_auth_users', JSON.stringify(deduped));
+    authState.users = deduped;
   } catch(e) {}
 }
 
 function saveCredentials(email, password) {
   if (!email) return;
   try {
-    localStorage.setItem('dhun_saved_credentials', JSON.stringify({ email, password: password || '' }));
+    localStorage.setItem('dhun_saved_credentials', JSON.stringify({ email: String(email).toLowerCase().trim(), password: password || '' }));
   } catch(e) {}
 }
 
@@ -1857,13 +1948,14 @@ function getSavedCredentials() {
 
 function initAuth() {
   authState.users = getStoredUsers();
+  saveStoredUsers(authState.users); // Run deduplication pass immediately
 
   // 1. Try to find currently active user session
   let activeUser = null;
   const activeUserId = localStorage.getItem('dhun_auth_active_user');
 
   if (activeUserId) {
-    activeUser = authState.users.find(u => u.id === activeUserId);
+    activeUser = authState.users.find(u => u.id === activeUserId || (u.email && makeUserIdFromEmail(u.email) === activeUserId));
   }
 
   // 2. Fallback: Check if a full active profile was stored directly
@@ -1871,20 +1963,29 @@ function initAuth() {
     try {
       const rawProfile = localStorage.getItem('dhun_active_profile');
       if (rawProfile) {
-        activeUser = JSON.parse(rawProfile);
-        if (activeUser && !authState.users.some(u => u.id === activeUser.id)) {
-          authState.users.push(activeUser);
-          saveStoredUsers(authState.users);
+        const parsed = JSON.parse(rawProfile);
+        if (parsed && parsed.email) {
+          const canonicalId = makeUserIdFromEmail(parsed.email);
+          activeUser = authState.users.find(u => u.id === canonicalId || u.email.toLowerCase() === parsed.email.toLowerCase());
+          if (!activeUser) {
+            activeUser = { ...parsed, id: canonicalId };
+            authState.users.push(activeUser);
+            saveStoredUsers(authState.users);
+          }
         }
       }
     } catch(e) {}
   }
 
   // 3. Fallback: "profiles must be stored and gets sign after one time sign up"
-  // If the user has signed up before (any profile in authState.users), auto-sign in!
+  // If user signed up before, auto-sign in!
   if (!activeUser && authState.users.length > 0) {
     const sorted = [...authState.users].sort((a, b) => (b.lastLoginAt || 0) - (a.lastLoginAt || 0));
     activeUser = sorted[0];
+  }
+
+  if (activeUser) {
+    activeUser.id = makeUserIdFromEmail(activeUser.email);
     localStorage.setItem('dhun_auth_active_user', activeUser.id);
     localStorage.setItem('dhun_active_profile', JSON.stringify(activeUser));
   }
@@ -1902,6 +2003,11 @@ function initAuth() {
     if (appShell) appShell.style.display = '';
     renderAvatarColorPicker();
     updateAuthUI();
+
+    // Pull any remote cloud playlists and sync in background
+    setTimeout(() => {
+      pullProfileFromCloud();
+    }, 600);
   } else {
     // Not authenticated: hold at dedicated full-page Login Gatekeeper screen
     authState.currentUser = null;
@@ -1915,7 +2021,6 @@ function initAuth() {
     if (appShell) {
       appShell.style.display = 'none';
     }
-  }
 }
 
 function populateSavedCredentials() {
@@ -2530,25 +2635,35 @@ function submitGoogleSignInModal() {
     nameVal = nameVal.charAt(0).toUpperCase() + nameVal.slice(1);
   }
 
-  let existing = (authState.users || []).find(u => u.email === emailVal);
+  const canonicalId = makeUserIdFromEmail(emailVal);
+  const users = getStoredUsers();
+  let existing = users.find(u => u.email && u.email.toLowerCase().trim() === emailVal);
+
   if (!existing) {
     existing = {
-      id: 'usr_g_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
+      id: canonicalId,
       name: nameVal,
       email: emailVal,
       avatarColor: '#4285F4',
       provider: 'google',
       bio: 'Google Connected Listener 🎧',
-      joinedAt: Date.now()
+      joinedAt: Date.now(),
+      lastLoginAt: Date.now()
     };
-    authState.users.push(existing);
-    localStorage.setItem('dhun_auth_users', JSON.stringify(authState.users));
+    users.push(existing);
   } else {
+    if (existing.id && existing.id !== canonicalId) {
+      mergeUserStorageData(existing.id, canonicalId);
+    }
+    existing.id = canonicalId;
     existing.name = nameVal || existing.name;
     existing.provider = 'google';
     existing.avatarColor = existing.avatarColor || '#4285F4';
-    localStorage.setItem('dhun_auth_users', JSON.stringify(authState.users));
+    existing.lastLoginAt = Date.now();
   }
+
+  saveStoredUsers(users);
+  saveCredentials(existing.email, '');
 
   closeGoogleAuthModal();
   if (_googleAuthIsFromGate) {
@@ -2558,6 +2673,7 @@ function submitGoogleSignInModal() {
     switchToUser(existing);
   }
   showToast(`✅ Google Sign-In verified! Welcome, ${existing.name}!`);
+  pushProfileToCloud();
 }
 
 function signOutUser() {
@@ -2600,7 +2716,14 @@ function renderUserMenuAccounts() {
   const container = document.getElementById('ump-accounts-list');
   if (!container) return;
   const currentId = authState.currentUser ? authState.currentUser.id : 'guest';
-  const otherUsers = authState.users.filter(u => u.id !== currentId);
+  const currentEmail = (authState.currentUser?.email || '').toLowerCase().trim();
+  const otherUsers = (authState.users || []).filter(u => {
+    if (!u) return false;
+    if (u.id === currentId) return false;
+    const uEmail = (u.email || '').toLowerCase().trim();
+    if (currentEmail && uEmail && uEmail === currentEmail) return false;
+    return true;
+  });
   if (otherUsers.length === 0) {
     container.innerHTML = '';
     container.style.display = 'none';
@@ -2651,6 +2774,7 @@ function getUserLikedSet() {
 function saveUserLikedSet(set) {
   try {
     localStorage.setItem(getUserStorageKey('likes'), JSON.stringify(Array.from(set)));
+    if (typeof pushProfileToCloudDebounced === 'function') pushProfileToCloudDebounced();
   } catch (e) {}
 }
 
@@ -2792,6 +2916,7 @@ function saveProfile() {
   toggleEditProfile();
   showToast('Profile updated ✅');
   renderProfileStats();
+  pushProfileToCloud();
 }
 
 function renderProfileStats() {
@@ -2835,7 +2960,244 @@ function getUserPlaylistsFromStorage() {
 function saveUserPlaylistsToStorage(playlists) {
   try {
     localStorage.setItem(getUserStorageKey('playlists'), JSON.stringify(playlists));
+    pushProfileToCloudDebounced();
   } catch (e) {}
+}
+
+/* ── Cross-Device Profile & Playlists Cloud Synchronization ────────────── */
+let _cloudSyncClient = null;
+let _cloudPushTimer = null;
+
+function getCloudSyncTopic(email) {
+  if (!email) return null;
+  const cleanEmail = email.toLowerCase().trim().replace(/[^a-zA-Z0-9_]/g, '_');
+  return `dhun/v2/cloud_sync/${cleanEmail}`;
+}
+
+function getCloudMqttClient(callback) {
+  if (typeof mqtt === 'undefined') {
+    if (callback) callback(null);
+    return;
+  }
+  if (_cloudSyncClient && _cloudSyncClient.connected) {
+    if (callback) callback(_cloudSyncClient);
+    return;
+  }
+
+  const brokerUrls = [
+    'wss://broker.emqx.io:8084/mqtt',
+    'wss://broker.hivemq.com:8884/mqtt'
+  ];
+  let idx = 0;
+
+  function tryBroker() {
+    if (idx >= brokerUrls.length) {
+      if (callback) callback(null);
+      return;
+    }
+    const url = brokerUrls[idx++];
+    try {
+      const clientId = 'dhun_cs_' + Math.random().toString(36).substring(2, 10);
+      const client = mqtt.connect(url, {
+        clientId,
+        clean: true,
+        connectTimeout: 7000,
+        reconnectPeriod: 5000
+      });
+
+      let timeoutId = setTimeout(() => {
+        try { client.end(true); } catch(e) {}
+        tryBroker();
+      }, 7500);
+
+      client.once('connect', () => {
+        clearTimeout(timeoutId);
+        _cloudSyncClient = client;
+        if (callback) callback(client);
+      });
+
+      client.once('error', () => {
+        clearTimeout(timeoutId);
+        try { client.end(true); } catch(e) {}
+        tryBroker();
+      });
+    } catch(e) {
+      tryBroker();
+    }
+  }
+
+  tryBroker();
+}
+
+function pushProfileToCloud() {
+  const user = authState.currentUser;
+  if (!user || !user.email || user.id === 'guest') return;
+  const topic = getCloudSyncTopic(user.email);
+  if (!topic) return;
+
+  const pls = getUserPlaylistsFromStorage() || (state.playlists || []);
+  const rawLikes = getUserLikedSet();
+  const likes = Array.from(rawLikes);
+
+  const syncPayload = {
+    email: user.email.toLowerCase().trim(),
+    name: user.name,
+    avatarColor: user.avatarColor,
+    bio: user.bio,
+    provider: user.provider,
+    playlists: pls,
+    likes: likes,
+    lastUpdated: Date.now()
+  };
+
+  getCloudMqttClient(client => {
+    if (!client) return;
+    try {
+      client.publish(topic, JSON.stringify(syncPayload), { retain: true, qos: 1 });
+      console.log('[CloudSync] Pushed profile to cloud:', topic, syncPayload.playlists.length, 'playlists');
+    } catch(e) {
+      console.warn('[CloudSync] Push error:', e);
+    }
+  });
+}
+
+function pushProfileToCloudDebounced() {
+  clearTimeout(_cloudPushTimer);
+  _cloudPushTimer = setTimeout(() => {
+    pushProfileToCloud();
+  }, 1000);
+}
+
+function pullProfileFromCloud(onDone) {
+  const user = authState.currentUser;
+  if (!user || !user.email || user.id === 'guest') {
+    if (onDone) onDone(false);
+    return;
+  }
+  const topic = getCloudSyncTopic(user.email);
+  if (!topic) {
+    if (onDone) onDone(false);
+    return;
+  }
+
+  getCloudMqttClient(client => {
+    if (!client) {
+      if (onDone) onDone(false);
+      return;
+    }
+
+    let handled = false;
+    const msgHandler = (recvTopic, payload) => {
+      if (recvTopic !== topic) return;
+      try {
+        const data = JSON.parse(payload.toString());
+        if (!data || !data.email || data.email.toLowerCase().trim() !== user.email.toLowerCase().trim()) return;
+
+        handled = true;
+        client.removeListener('message', msgHandler);
+
+        // Merge playlists
+        const localPls = getUserPlaylistsFromStorage() || (state.playlists || []);
+        const cloudPls = Array.isArray(data.playlists) ? data.playlists : [];
+        const mergedPls = [...localPls];
+        let hasNewPl = false;
+
+        cloudPls.forEach(cp => {
+          if (!cp || !cp.name) return;
+          const match = mergedPls.find(lp => lp.name && lp.name.toLowerCase().trim() === cp.name.toLowerCase().trim());
+          if (match) {
+            const songSet = new Set([...(match.songs || []), ...(cp.songs || [])]);
+            if (songSet.size > (match.songs || []).length) {
+              match.songs = Array.from(songSet);
+              hasNewPl = true;
+            }
+          } else {
+            mergedPls.push(cp);
+            hasNewPl = true;
+          }
+        });
+
+        if (hasNewPl || (cloudPls.length > 0 && localPls.length === 0)) {
+          saveUserPlaylistsToStorage(mergedPls);
+          state.playlists = mergedPls;
+          renderPlaylists();
+        }
+
+        // Merge likes
+        const localLikes = getUserLikedSet();
+        const cloudLikes = Array.isArray(data.likes) ? data.likes : [];
+        let hasNewLike = false;
+        cloudLikes.forEach(sId => {
+          if (!localLikes.has(sId)) {
+            localLikes.add(sId);
+            hasNewLike = true;
+          }
+        });
+        if (hasNewLike) {
+          saveUserLikedSet(localLikes);
+        }
+
+        // Sync name/bio/color if current was default
+        if (data.name && (!user.name || user.name.length < data.name.length)) {
+          user.name = data.name;
+        }
+        if (data.bio && !user.bio) {
+          user.bio = data.bio;
+        }
+        if (data.avatarColor && !user.avatarColor) {
+          user.avatarColor = data.avatarColor;
+        }
+        saveStoredUsers(authState.users);
+        updateAuthUI();
+
+        console.log('[CloudSync] Pulled & merged cloud profile successfully!');
+        if (onDone) onDone(true, { mergedPlaylists: mergedPls.length });
+      } catch(e) {
+        console.warn('[CloudSync] Pull parse error:', e);
+        if (onDone) onDone(false);
+      }
+    };
+
+    client.on('message', msgHandler);
+    client.subscribe(topic, { qos: 1 });
+
+    // Wait up to 3.5 seconds for retained message
+    setTimeout(() => {
+      if (!handled) {
+        client.removeListener('message', msgHandler);
+        // If no message arrived, push our local state to cloud so it seeds the cloud
+        pushProfileToCloud();
+        if (onDone) onDone(true, { seeded: true });
+      }
+    }, 3500);
+  });
+}
+
+function triggerProfileCloudSync(btn) {
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Syncing...';
+  }
+  showToast('☁️ Syncing profile & playlists across devices...');
+
+  pullProfileFromCloud((success, info) => {
+    // Then push local unified state
+    pushProfileToCloud();
+
+    setTimeout(() => {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '✅ Synced!';
+        setTimeout(() => {
+          btn.innerHTML = '☁️ Sync Devices';
+        }, 3000);
+      }
+      showToast('✅ Profile & playlists synced across all your devices!');
+      renderPlaylists();
+      updateAuthUI();
+      if (typeof renderProfileView === 'function') renderProfileView();
+    }, 800);
+  });
 }
 
 /* ── In-App Create Playlist Modal ────────────── */
