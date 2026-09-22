@@ -224,8 +224,11 @@ function onYTPlayerStateChange(event) {
   } else if (event.data === YT.PlayerState.ENDED) {
     stopYTSimulatedBeatFFT();
     if (state.isRepeat) {
+      state.progress = 0;
+      updateProgress();
       if (ytPlayer && ytPlayer.seekTo) ytPlayer.seekTo(0, true);
       if (ytPlayer && ytPlayer.playVideo) ytPlayer.playVideo();
+      startPlaying();
     } else {
       nextSong();
     }
@@ -680,7 +683,11 @@ function resolveAudioSource(song) {
 globalAudioPlayer.addEventListener('ended', () => {
   if (state.isRepeat) {
     globalAudioPlayer.currentTime = 0;
+    state.progress = 0;
+    updateProgress();
     globalAudioPlayer.play().catch(() => {});
+    startPlaying();
+    if (typeof showToast === 'function') showToast('🔂 Looping track');
   } else {
     nextSong();
   }
@@ -1558,6 +1565,8 @@ function updatePlayUI() {
   const show = (id, visible) => { const el=document.getElementById(id); if(el) el.style.display = visible?'block':'none'; };
   show('play-icon',     !state.isPlaying); show('pause-icon',    state.isPlaying);
   show('pb-play-icon',  !state.isPlaying); show('pb-pause-icon', state.isPlaying);
+  ['shuffle-btn','pb-shuffle'].forEach(id => { const el=document.getElementById(id); if(el) el.classList.toggle('active', !!state.isShuffle); });
+  ['repeat-btn','pb-repeat'].forEach(id => { const el=document.getElementById(id); if(el) el.classList.toggle('active', !!state.isRepeat); });
   if (typeof updatePVPOverlayUI === 'function') updatePVPOverlayUI(state.isPlaying);
 }
 
@@ -1565,65 +1574,126 @@ async function nextSong() {
   stopPlaying();
   state.progress = 0;
 
-  /* Try dequeue first */
-  const dequeued = await apiDelete('/queue');
-  if (dequeued && dequeued.id !== undefined) {
-    await apiPut(`/songs/${dequeued.id}/play`);
-    state.currentSong = dequeued;
-    loadSongUI(dequeued);
-    startPlaying();
-    refreshQueue();
-    return;
+  /* 1. Client-side queue */
+  if (state.queue && state.queue.length > 0) {
+    if (state.currentSong && state.queue[0] && (String(state.queue[0].id) === String(state.currentSong.id) || state.queue[0].id == state.currentSong.id)) {
+      state.queue.shift();
+    }
   }
 
-  /* Fall back to top auto-recommendation or next in loaded songs list */
-  if (state.songs.length === 0) return;
-  if (!state.isShuffle && typeof getAutoRecommendations === 'function') {
-    const recs = getAutoRecommendations(state.currentSong, 1);
-    if (recs && recs.length > 0 && recs[0].song) {
-      const recSong = recs[0].song;
-      await apiPut(`/songs/${recSong.id}/play`);
-      state.currentSong = recSong;
-      loadSongUI(recSong);
-      startPlaying();
+  if (state.queue && state.queue.length > 0) {
+    let nextTrack;
+    if (state.isShuffle) {
+      const qIdx = Math.floor(Math.random() * state.queue.length);
+      [nextTrack] = state.queue.splice(qIdx, 1);
+    } else {
+      nextTrack = state.queue.shift();
+    }
+    if (typeof renderQueue === 'function') renderQueue();
+    if (nextTrack) {
+      openPlayerById(nextTrack.id);
       return;
     }
   }
 
-  let idx = state.songs.findIndex(s => s.id === state.currentSong?.id);
-  idx = state.isShuffle
-    ? Math.floor(Math.random() * state.songs.length)
-    : (idx + 1) % state.songs.length;
-  const song = state.songs[idx];
-  if (song) {
-    await apiPut(`/songs/${song.id}/play`);
-    state.currentSong = song;
-    loadSongUI(song);
-    startPlaying();
+  /* 2. Try backend dequeue if available (C server) */
+  try {
+    const dequeued = await apiDelete('/queue');
+    if (dequeued && dequeued.id !== undefined) {
+      await apiPut(`/songs/${dequeued.id}/play`).catch(() => {});
+      openPlayerById(dequeued.id);
+      if (typeof refreshQueue === 'function') refreshQueue();
+      return;
+    }
+  } catch(e) {}
+
+  /* 3. Comprehensive song pool */
+  const songPool = (state.songs && state.songs.length > 0)
+    ? state.songs
+    : (typeof _libAllSongs !== 'undefined' && _libAllSongs && _libAllSongs.length > 0 ? _libAllSongs : []);
+
+  if (songPool.length === 0) return;
+
+  const currId = state.currentSong?.id;
+  let currIdx = songPool.findIndex(s => s && (String(s.id) === String(currId) || s.id == currId));
+  let nextIdx = currIdx;
+
+  if (state.isShuffle) {
+    if (songPool.length > 1) {
+      let attempts = 0;
+      while (nextIdx === currIdx && attempts < 15) {
+        nextIdx = Math.floor(Math.random() * songPool.length);
+        attempts++;
+      }
+      if (nextIdx === currIdx) {
+        nextIdx = (currIdx + 1) % songPool.length;
+      }
+    } else {
+      nextIdx = 0;
+    }
+  } else {
+    /* If not shuffle, try auto-recommendations */
+    if (typeof getAutoRecommendations === 'function' && state.currentSong) {
+      try {
+        const recs = getAutoRecommendations(state.currentSong, 1);
+        if (recs && recs.length > 0 && recs[0].song) {
+          const recSong = recs[0].song;
+          openPlayerById(recSong.id);
+          return;
+        }
+      } catch(e) {}
+    }
+    nextIdx = currIdx >= 0 ? (currIdx + 1) % songPool.length : 0;
+  }
+
+  const nextSongObj = songPool[nextIdx];
+  if (nextSongObj) {
+    openPlayerById(nextSongObj.id);
   }
 }
 
 async function prevSong() {
   stopPlaying();
   /* If progress > 10%, restart */
-  if (state.progress > 10) { state.progress = 0; updateProgress(); startPlaying(); return; }
-
-  /* Try history back */
-  const prev = await apiPost('/history/back');
-  if (prev && prev.id !== undefined) {
-    state.currentSong = prev;
-    loadSongUI(prev);
+  if (state.progress > 10) {
     state.progress = 0;
+    updateProgress();
+    if (isCurrentSongYT() && ytPlayer && ytPlayer.seekTo) {
+      try { ytPlayer.seekTo(0, true); } catch(e){}
+    } else if (globalAudioPlayer) {
+      globalAudioPlayer.currentTime = 0;
+    }
     startPlaying();
     return;
   }
 
-  /* Fall back to previous in list */
-  if (state.songs.length === 0) return;
-  let idx = state.songs.findIndex(s => s.id === state.currentSong?.id);
-  idx = (idx - 1 + state.songs.length) % state.songs.length;
-  const song = state.songs[idx];
-  if (song) { state.currentSong = song; loadSongUI(song); state.progress = 0; startPlaying(); }
+  /* Try history back */
+  try {
+    const prev = await apiPost('/history/back');
+    if (prev && prev.id !== undefined) {
+      openPlayerById(prev.id);
+      return;
+    }
+  } catch(e) {}
+
+  /* Fall back to previous in pool */
+  const songPool = (state.songs && state.songs.length > 0)
+    ? state.songs
+    : (typeof _libAllSongs !== 'undefined' && _libAllSongs && _libAllSongs.length > 0 ? _libAllSongs : []);
+  if (songPool.length === 0) return;
+
+  const currId = state.currentSong?.id;
+  let currIdx = songPool.findIndex(s => s && (String(s.id) === String(currId) || s.id == currId));
+  let prevIdx;
+  if (state.isShuffle && songPool.length > 1) {
+    prevIdx = Math.floor(Math.random() * songPool.length);
+  } else {
+    prevIdx = currIdx >= 0 ? (currIdx - 1 + songPool.length) % songPool.length : 0;
+  }
+  const song = songPool[prevIdx];
+  if (song) {
+    openPlayerById(song.id);
+  }
 }
 
 function updateProgress() {
@@ -1669,12 +1739,37 @@ function seekSong(e) {
 
 function toggleShuffle() {
   state.isShuffle = !state.isShuffle;
-  ['shuffle-btn','pb-shuffle'].forEach(id => { const el=document.getElementById(id); if(el) el.classList.toggle('active', state.isShuffle); });
+  ['shuffle-btn','pb-shuffle'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('active', !!state.isShuffle);
+  });
+  if (state.isShuffle && state.queue && state.queue.length > 1) {
+    for (let i = state.queue.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [state.queue[i], state.queue[j]] = [state.queue[j], state.queue[i]];
+    }
+    if (typeof renderQueue === 'function') renderQueue();
+  }
+  if (typeof showToast === 'function') {
+    showToast(state.isShuffle ? '🔀 Shuffle On' : '➡️ Shuffle Off');
+  }
 }
 
 function toggleRepeat() {
   state.isRepeat = !state.isRepeat;
-  ['repeat-btn','pb-repeat'].forEach(id => { const el=document.getElementById(id); if(el) el.classList.toggle('active', state.isRepeat); });
+  ['repeat-btn','pb-repeat'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('active', !!state.isRepeat);
+  });
+  if (globalAudioPlayer) {
+    globalAudioPlayer.loop = !!state.isRepeat;
+  }
+  if (ytPlayer && typeof ytPlayer.setLoop === 'function') {
+    try { ytPlayer.setLoop(!!state.isRepeat); } catch(e){}
+  }
+  if (typeof showToast === 'function') {
+    showToast(state.isRepeat ? '🔂 Repeat / Loop On' : '➡️ Repeat Off');
+  }
 }
 
 /* ── Volume ───────────────────────────────────── */

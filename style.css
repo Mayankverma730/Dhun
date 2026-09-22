@@ -1614,8 +1614,24 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
   transition: all 0.2s;
 }
-.ctrl-btn:hover { color: var(--text-1); background: rgba(255,255,255,0.07); }
-.ctrl-btn.active { color: var(--purple); }
+.ctrl-btn.active {
+  color: #c084fc !important;
+  background: rgba(168, 85, 247, 0.24) !important;
+  box-shadow: 0 0 16px rgba(168, 85, 247, 0.6) !important;
+  position: relative;
+}
+.ctrl-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  background: #c084fc;
+  border-radius: 50%;
+  box-shadow: 0 0 6px #c084fc;
+}
 .play-pause-main {
   width: 64px; height: 64px; border-radius: 50%; background: var(--grad-main); border: none;
   color: white; cursor: pointer; display: flex; align-items: center; justify-content: center;
@@ -1817,8 +1833,24 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   padding: 6px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
   transition: all 0.2s;
 }
-.pb-ctrl:hover { color: var(--text-1); }
-.pb-ctrl.active { color: var(--purple); }
+.pb-ctrl.active {
+  color: #c084fc !important;
+  background: rgba(168, 85, 247, 0.24) !important;
+  box-shadow: 0 0 14px rgba(168, 85, 247, 0.6) !important;
+  position: relative;
+}
+.pb-ctrl.active::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  background: #c084fc;
+  border-radius: 50%;
+  box-shadow: 0 0 6px #c084fc;
+}
 .pb-play {
   width: 38px; height: 38px; border-radius: 50%; background: var(--grad-main); border: none;
   color: white; cursor: pointer; display: flex; align-items: center; justify-content: center;
