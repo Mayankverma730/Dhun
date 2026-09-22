@@ -776,7 +776,7 @@ const audioEngine = {
   },
 
   setVolume(pct) {
-    pct = Math.max(0, Math.min(100, Number(pct)));
+    pct = Math.max(0, Math.min(150, Number(pct)));
     if (pct > 0) {
       this.volume = pct / 100;
       this.isMuted = false;
@@ -790,7 +790,9 @@ const audioEngine = {
       this.masterGain.gain.setValueAtTime(effectiveGain, this.ctx.currentTime);
     }
     if (globalAudioPlayer) {
-      globalAudioPlayer.volume = effectiveGain;
+      try {
+        globalAudioPlayer.volume = Math.min(1.0, effectiveGain);
+      } catch (e) {}
     }
   },
 
@@ -1228,10 +1230,9 @@ function toggleMobileSidebar(forceState) {
 }
 
 function navigate(page) {
-  // Cleanup visualizer when leaving player page
+  // Cleanup visualizer canvas loop when leaving player page (keeps audio playing continuously)
   if (state.currentPage === 'player' && page !== 'player') {
     if (typeof cleanupVisualizer === 'function') cleanupVisualizer();
-    if (typeof cleanupAudioEngine === 'function') cleanupAudioEngine();
   }
 
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -1790,37 +1791,81 @@ function toggleRepeat() {
   }
 }
 
-/* ── Volume ───────────────────────────────────── */
+/* ── Volume & 150% VLC-Style Boost ───────────────── */
 function setVolume(val) {
-  val = Math.max(0, Math.min(100, Math.round(Number(val))));
+  val = Math.max(0, Math.min(150, Math.round(Number(val))));
   audioEngine.setVolume(val);
   if (ytPlayer && ytPlayer.setVolume) {
-    try { ytPlayer.setVolume(val); } catch(e){}
+    try { ytPlayer.setVolume(Math.min(100, val)); } catch(e){}
   }
 
   const isMuted = (val === 0);
-  const icon = isMuted ? '🔇' : (val < 40 ? '🔉' : '🔊');
+  const isBoosted = (val > 100);
+  const icon = isMuted ? '🔇' : (val < 40 ? '🔉' : (isBoosted ? '📢' : '🔊'));
+
+  // Calculate slider background fill relative to 150 max
+  const fillPct = ((val / 150) * 100).toFixed(1);
+  const normalBoundaryPct = ((100 / 150) * 100).toFixed(1); // 66.7%
+
+  let sliderBg;
+  if (val <= 100) {
+    sliderBg = `linear-gradient(to right, var(--purple, #7c3aed) ${fillPct}%, rgba(255,255,255,0.15) ${fillPct}%)`;
+  } else {
+    // VLC-style boost: purple up to 100%, fiery flame gradient for 101%-150%
+    sliderBg = `linear-gradient(to right, var(--purple, #7c3aed) 0%, var(--purple, #7c3aed) ${normalBoundaryPct}%, #f59e0b ${normalBoundaryPct}%, #ef4444 ${fillPct}%, rgba(255,255,255,0.15) ${fillPct}%)`;
+  }
 
   // Bottom bar volume slider
   const pbSlider = document.getElementById('vol-slider');
   if (pbSlider) {
     pbSlider.value = val;
-    pbSlider.style.background = `linear-gradient(to right, var(--purple, #7c3aed) ${val}%, rgba(255,255,255,0.15) ${val}%)`;
+    pbSlider.style.background = sliderBg;
+    pbSlider.title = `Volume: ${val}%${isBoosted ? ' (150% VLC Boost)' : ''}`;
   }
   const pbIcon = document.querySelector('.volume-control .vol-icon');
-  if (pbIcon) pbIcon.textContent = icon;
+  if (pbIcon) {
+    pbIcon.textContent = icon;
+    pbIcon.style.color = isBoosted ? '#f59e0b' : '';
+    pbIcon.title = isBoosted ? 'VLC Volume Boost Active (150%)' : 'Click to mute / Double-click for 150% boost';
+  }
 
   // In-player dedicated volume slider
   const pSlider = document.getElementById('player-vol-slider');
   if (pSlider) {
     pSlider.value = val;
-    pSlider.style.background = `linear-gradient(to right, var(--purple, #7c3aed) ${val}%, rgba(255,255,255,0.15) ${val}%)`;
+    pSlider.style.background = sliderBg;
+    pSlider.title = `Volume: ${val}%${isBoosted ? ' (150% VLC Boost)' : ''}`;
   }
   const pIcon = document.getElementById('player-vol-icon');
-  if (pIcon) pIcon.textContent = icon;
+  if (pIcon) {
+    pIcon.textContent = icon;
+    pIcon.style.color = isBoosted ? '#f59e0b' : '';
+  }
 
   const pPct = document.getElementById('player-vol-pct');
-  if (pPct) pPct.textContent = `${val}%`;
+  if (pPct) {
+    pPct.textContent = isBoosted ? `${val}% 🚀` : `${val}%`;
+    pPct.style.color = isBoosted ? '#f59e0b' : 'var(--text-2)';
+    pPct.style.fontWeight = isBoosted ? '800' : '700';
+    pPct.style.textShadow = isBoosted ? '0 0 10px rgba(245,158,11,0.6)' : 'none';
+  }
+
+  const pBoostBtn = document.getElementById('player-vol-boost-btn');
+  if (pBoostBtn) {
+    pBoostBtn.classList.toggle('active', isBoosted);
+    pBoostBtn.textContent = isBoosted ? '🔥 150%' : '🚀 150%';
+  }
+}
+
+function toggleBoostVolume() {
+  const currentVal = Math.round((audioEngine.volume || 0.75) * 100);
+  if (currentVal >= 145) {
+    setVolume(100);
+    if (typeof showToast === 'function') showToast('🔉 Volume: Standard 100%');
+  } else {
+    setVolume(150);
+    if (typeof showToast === 'function') showToast('🚀 Volume Boosted to 150% (VLC Mode)');
+  }
 }
 
 function toggleMute() {

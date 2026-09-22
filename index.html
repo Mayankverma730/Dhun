@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap"
     rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=11.0" />
+  <link rel="stylesheet" href="style.css?v=12.0" />
   <script>
     (function () {
       try {
@@ -1001,13 +1001,14 @@
               <div class="player-utilities-bar">
                 <!-- In-Player Volume Control Bar -->
                 <div class="player-vol-wrap">
-                  <button class="player-vol-icon-btn" id="player-vol-mute" onclick="toggleMute()" aria-label="Mute or Unmute" title="Mute / Unmute">
+                  <button class="player-vol-icon-btn" id="player-vol-mute" onclick="toggleMute()" ondblclick="toggleBoostVolume()" aria-label="Mute or Unmute" title="Mute / Unmute (Double-click for 150% Boost)">
                     <span id="player-vol-icon">🔊</span>
                   </button>
                   <div class="player-vol-track-wrap">
-                    <input type="range" class="vol-slider" id="player-vol-slider" min="0" max="100" value="75" aria-label="Volume Slider" oninput="setVolume(this.value)" />
+                    <input type="range" class="vol-slider" id="player-vol-slider" min="0" max="150" value="75" aria-label="Volume Slider" oninput="setVolume(this.value)" />
                   </div>
                   <span class="player-vol-label" id="player-vol-pct">75%</span>
+                  <button type="button" class="vol-boost-btn" id="player-vol-boost-btn" onclick="toggleBoostVolume()" title="Quick 150% Volume Boost (VLC Style)">🚀 150%</button>
                 </div>
 
                 <!-- Social & Community Actions -->
@@ -1294,8 +1295,8 @@
           </svg>
         </button>
         <div class="volume-control">
-          <span class="vol-icon">🔊</span>
-          <input type="range" class="vol-slider" id="vol-slider" min="0" max="100" value="75" aria-label="Volume"
+          <span class="vol-icon" onclick="toggleMute()" ondblclick="toggleBoostVolume()" style="cursor:pointer" title="Click to mute / Double-click for 150% boost">🔊</span>
+          <input type="range" class="vol-slider" id="vol-slider" min="0" max="150" value="75" aria-label="Volume (up to 150%)"
             oninput="setVolume(this.value)" />
         </div>
       </div>
@@ -1759,7 +1760,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.5/dist/mqtt.min.js"></script>
   <script src="ytmusic_api.js?v=8.0"></script>
-  <script src="app.js?v=11.0"></script>
+  <script src="app.js?v=12.0"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 
