@@ -158,10 +158,13 @@ function initYouTubePlayer() {
         modestbranding: 1,
         rel: 0,
         iv_load_policy: 3,
+        cc_load_policy: 0,
+        cc_lang_pref: 'none',
         playsinline: 1,
         enablejsapi: 1,
         origin: effectiveOrigin,
-        widget_referrer: effectiveReferrer
+        widget_referrer: effectiveReferrer,
+        vq: 'hd1080'
       },
       events: {
         onReady: onYTPlayerReady,
@@ -174,12 +177,39 @@ function initYouTubePlayer() {
   }
 }
 
-function enforce1080pQuality() {
-  /* Let YouTube use adaptive bitrate streaming to eliminate buffer stalls */
+function disableYTCaptions() {
   if (!ytPlayer) return;
   try {
-    if (ytPlayer.setPlaybackQuality) {
-      ytPlayer.setPlaybackQuality('default');
+    if (ytPlayer.unloadModule) {
+      ytPlayer.unloadModule('captions');
+      ytPlayer.unloadModule('cc');
+    }
+  } catch(e){}
+  try {
+    if (ytPlayer.setOption) {
+      ytPlayer.setOption('captions', 'track', {});
+      ytPlayer.setOption('cc', 'track', {});
+      ytPlayer.setOption('captions', 'reload', false);
+    }
+  } catch(e){}
+}
+
+function enforce1080pDefaultQuality() {
+  if (!ytPlayer) return;
+  try {
+    if (ytPlayer.setPlaybackQualityRange) {
+      ytPlayer.setPlaybackQualityRange('hd1080', 'highres');
+    }
+    if (ytPlayer.getAvailableQualityLevels) {
+      const levels = ytPlayer.getAvailableQualityLevels();
+      if (levels && levels.length > 0) {
+        const best = levels.find(l => l === 'hd1080') || levels.find(l => l === 'highres') || levels.find(l => l === 'hd720') || levels[0];
+        if (best && ytPlayer.setPlaybackQuality) ytPlayer.setPlaybackQuality(best);
+      } else if (ytPlayer.setPlaybackQuality) {
+        ytPlayer.setPlaybackQuality('hd1080');
+      }
+    } else if (ytPlayer.setPlaybackQuality) {
+      ytPlayer.setPlaybackQuality('hd1080');
     }
   } catch(e){}
 }
@@ -195,6 +225,8 @@ if (window.YT && window.YT.Player) {
 function onYTPlayerReady(event) {
   ytPlayerReady = true;
   console.log('[YT] YouTube IFrame API Ready!');
+  disableYTCaptions();
+  enforce1080pDefaultQuality();
   if (ytPlayer && ytPlayer.setVolume) {
     try { ytPlayer.setVolume(Math.round((audioEngine.volume || 0.75) * 100)); } catch(e){}
   }
@@ -214,6 +246,8 @@ function onYTPlayerStateChange(event) {
     state.isPlaying = true;
     updatePlayUI();
     startYTSimulatedBeatFFT();
+    disableYTCaptions();
+    enforce1080pDefaultQuality();
   } else if (event.data === YT.PlayerState.BUFFERING || event.data === 5) {
     /* Never re-request quality during BUFFERING as it cancels and restarts the media pipeline */
   } else if (event.data === YT.PlayerState.PAUSED) {
@@ -304,7 +338,7 @@ function embedDirectYTFrame(videoId) {
   
   const originParam = location.origin;
   container.innerHTML = `<iframe id="yt-direct-iframe" width="100%" height="100%" 
-    src="https://www.youtube.com/embed/${videoId}?autoplay=1&controls=0&disablekb=1&fs=0&modestbranding=1&rel=0&iv_load_policy=3&enablejsapi=1&origin=${encodeURIComponent(originParam)}" 
+    src="https://www.youtube.com/embed/${videoId}?autoplay=1&controls=0&disablekb=1&fs=0&modestbranding=1&rel=0&iv_load_policy=3&enablejsapi=1&cc_load_policy=0&vq=hd1080&origin=${encodeURIComponent(originParam)}" 
     title="YouTube Audio Stream" frameborder="0" 
     referrerpolicy="strict-origin-when-cross-origin"
     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
@@ -400,13 +434,17 @@ function playYTVideo(videoId) {
 
     if (isSameVideo && ytPlayer.getPlayerState && ytPlayer.getPlayerState() === YT.PlayerState.PAUSED) {
       ytPlayer.playVideo();
+      disableYTCaptions();
+      enforce1080pDefaultQuality();
     } else {
       ytPlayer.loadVideoById({
         videoId: videoId,
         startSeconds: 0,
-        suggestedQuality: 'default'
+        suggestedQuality: 'hd1080'
       });
       ytPlayer.playVideo();
+      disableYTCaptions();
+      enforce1080pDefaultQuality();
     }
 
     if (ytPlayer.setVolume) {
@@ -476,8 +514,10 @@ function setSongVideoMode(mode) {
       if (videoId) {
         if (placeholder) placeholder.classList.add('hidden');
         if (ytPlayer && ytPlayer.loadVideoById) {
-          ytPlayer.loadVideoById({ videoId, startSeconds: Math.floor(curTime), suggestedQuality: 'default' });
+          ytPlayer.loadVideoById({ videoId, startSeconds: Math.floor(curTime), suggestedQuality: 'hd1080' });
           ytPlayer.playVideo();
+          disableYTCaptions();
+          enforce1080pDefaultQuality();
         }
       } else {
         if (placeholder) {
@@ -499,8 +539,10 @@ function setSongVideoMode(mode) {
               });
               if (placeholder) placeholder.classList.add('hidden');
               if (ytPlayer && ytPlayer.loadVideoById) {
-                ytPlayer.loadVideoById({ videoId: vid, startSeconds: Math.floor(curTime), suggestedQuality: 'default' });
+                ytPlayer.loadVideoById({ videoId: vid, startSeconds: Math.floor(curTime), suggestedQuality: 'hd1080' });
                 ytPlayer.playVideo();
+                disableYTCaptions();
+                enforce1080pDefaultQuality();
               }
             } else {
               const pt2 = document.getElementById('pvp-ph-text');
