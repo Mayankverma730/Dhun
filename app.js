@@ -2452,8 +2452,9 @@ function saveProfile() {
 }
 
 function renderProfileStats() {
+  const userPls    = getUserPlaylistsFromStorage() || state.playlists || [];
   const songsCount = (state.songs || []).length;
-  const plCount    = (state.playlists || []).length;
+  const plCount    = userPls.length;
   const likedSet   = getUserLikedSet();
   const likesCount = (state.songs || []).filter(s => likedSet.has(Number(s.id)) || likedSet.has(String(s.id)) || s.liked).length;
   const playsTotal = (state.songs || []).reduce((acc, s) => acc + (s.play_count || 0), 0);
@@ -3064,11 +3065,47 @@ async function refreshHome() {
   if (songs) state.songs = songs;
   await inbuiltLibraryDeduplication();
   renderHero();
+  renderPlaylistsFeatured();
   renderRecommended();
   renderTrending();
   renderRecentlyPlayed();
   renderRelated();
   renderProfileStats();
+}
+
+function renderPlaylistsFeatured() {
+  const row = document.getElementById('featured-playlists-row');
+  if (!row) return;
+  const pls = getUserPlaylistsFromStorage() || state.playlists || [];
+  const plCards = pls.map(pl => {
+    const cleanName = formatPlaylistName(pl.name);
+    const count = (pl.songs ? pl.songs.length : (pl.song_count || 0));
+    return `
+      <div class="feat-card" onclick="openPlaylist('${escapeHtmlAttr(String(pl.id))}')" style="cursor:pointer" title="${escapeHtmlAttr(cleanName)}">
+        <div class="feat-thumb" style="background:${gradientFor(pl.id)};display:flex;align-items:center;justify-content:center;overflow:hidden">
+          <img src="${getPlaylistThumbnail(pl)}" alt="${escapeHtmlAttr(cleanName)}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'"/>
+        </div>
+        <div class="feat-info">
+          <span class="feat-tag">🎵 Playlist</span>
+          <h3 class="feat-name">${escapeHtmlText(cleanName)}</h3>
+          <p class="feat-meta">${count} song${count === 1 ? '' : 's'}</p>
+          <button class="feat-play" onclick="event.stopPropagation();openPlaylist('${escapeHtmlAttr(String(pl.id))}')">▶ Play</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  row.innerHTML = plCards + `
+    <div class="feat-card" onclick="createPlaylist()" style="cursor:pointer">
+      <div class="feat-thumb" style="background:linear-gradient(135deg,#7c3aed,#2563eb);display:flex;align-items:center;justify-content:center;font-size:28px;color:#fff">+</div>
+      <div class="feat-info">
+        <span class="feat-tag">🎵 Custom</span>
+        <h3 class="feat-name">Create Playlist</h3>
+        <p class="feat-meta">Organize your favorite music</p>
+        <button class="feat-play">＋ New</button>
+      </div>
+    </div>
+  `;
 }
 
 function renderHero() {
