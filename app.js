@@ -454,6 +454,7 @@ function setSongVideoMode(mode) {
     if (btnSong)  { btnSong.classList.remove('active');  btnSong.setAttribute('aria-pressed', 'false'); }
     if (btnVideo) { btnVideo.classList.add('active');    btnVideo.setAttribute('aria-pressed', 'true'); }
     vizWrap.style.display = 'none';
+    videoPanel.classList.remove('pvp-mode-song');
     videoPanel.style.display = '';
     if (playerLeft) playerLeft.classList.add('video-mode');
 
@@ -521,15 +522,13 @@ function setSongVideoMode(mode) {
       }
     }
 
-    /* Position the dock over the 16:9 frame wrap */
-    syncVideoDockPosition();
     updatePVPOverlayUI(state.isPlaying);
 
   } else {
     /* Restore Song mode */
     if (btnVideo) { btnVideo.classList.remove('active'); btnVideo.setAttribute('aria-pressed', 'false'); }
     if (btnSong)  { btnSong.classList.add('active');     btnSong.setAttribute('aria-pressed', 'true'); }
-    videoPanel.style.display = 'none';
+    videoPanel.classList.add('pvp-mode-song');
     vizWrap.style.display = '';
     if (playerLeft) playerLeft.classList.remove('video-mode');
 
@@ -543,43 +542,11 @@ function setSongVideoMode(mode) {
         if (state.isPlaying) globalAudioPlayer.play().catch(()=>{});
       } catch(e){}
     }
-
-    /* Return dock to offscreen background */
-    syncVideoDockPosition();
   }
 }
 
 function syncVideoDockPosition() {
-  const dock = document.getElementById('yt-player-dock');
-  const frameWrap = document.getElementById('pvp-frame-wrap');
-  if (!dock) return;
-
-  if (_currentSVMode !== 'video' || state.currentPage !== 'player' || !frameWrap) {
-    dock.classList.remove('pvp-dock-visible');
-    dock.style.left = '-9999px';
-    dock.style.top = '-9999px';
-    dock.style.width = '320px';
-    dock.style.height = '240px';
-    dock.style.opacity = '0.001';
-    dock.style.pointerEvents = 'none';
-    dock.style.zIndex = '-9999';
-    return;
-  }
-
-  const rect = frameWrap.getBoundingClientRect();
-  if (rect.width <= 0 || rect.height <= 0) return;
-
-  dock.classList.add('pvp-dock-visible');
-  dock.style.position = 'fixed';
-  dock.style.left = rect.left + 'px';
-  dock.style.top = rect.top + 'px';
-  dock.style.width = rect.width + 'px';
-  dock.style.height = rect.height + 'px';
-  dock.style.opacity = '1';
-  dock.style.pointerEvents = 'auto';
-  dock.style.zIndex = '30';
-  dock.style.borderRadius = '0';
-  dock.style.overflow = 'hidden';
+  /* Dock is natively mounted inside #pvp-frame-wrap with pure CSS */
 }
 
 function togglePVPFullscreen(event) {
@@ -613,28 +580,6 @@ function updatePVPOverlayUI(isPlaying) {
     ph.classList.add('hidden');
   }
 }
-
-/* Event listeners to keep video dock perfectly locked in place */
-window.addEventListener('resize', () => {
-  if (_currentSVMode === 'video') syncVideoDockPosition();
-});
-window.addEventListener('scroll', () => {
-  if (_currentSVMode === 'video') syncVideoDockPosition();
-}, { passive: true });
-document.addEventListener('DOMContentLoaded', () => {
-  const playerLeft = document.querySelector('.player-left');
-  if (playerLeft) {
-    playerLeft.addEventListener('scroll', () => {
-      if (_currentSVMode === 'video') syncVideoDockPosition();
-    }, { passive: true });
-  }
-  const frameWrap = document.getElementById('pvp-frame-wrap');
-  if (frameWrap && window.ResizeObserver) {
-    new ResizeObserver(() => {
-      if (_currentSVMode === 'video') syncVideoDockPosition();
-    }).observe(frameWrap);
-  }
-});
 
 
 
@@ -1265,10 +1210,8 @@ function navigate(page) {
   state.currentPage = page;
 
   const breadcrumb = document.getElementById('breadcrumb');
-  const searchWrap = document.getElementById('topbar-search-wrap');
   const labels = { home:'Home', search:'Discover', player:'Now Playing', profile:'Profile', library:'Library' };
   if (breadcrumb) breadcrumb.textContent = labels[page] || page;
-  if (searchWrap) searchWrap.style.display = (page === 'search') ? 'block' : 'none';
 
   /* Hide bottom bar on Now Playing page (in-page controls shown there),
      show it on all other pages */

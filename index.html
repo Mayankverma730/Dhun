@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap"
     rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=7.0" />
+  <link rel="stylesheet" href="style.css?v=8.0" />
   <script>
     (function () {
       try {
@@ -294,17 +294,7 @@
           </button>
           <div class="breadcrumb" id="breadcrumb">Home</div>
         </div>
-        <div class="topbar-center" id="topbar-search-wrap" style="display:none">
-          <div class="topbar-search">
-            <span>🔍</span>
-            <input type="search" id="search-input-top" placeholder="Search YouTube Music library, artist, album..." autocomplete="off"
-              aria-label="Search" oninput="handleSearch(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();handleSearch(this.value, true);}" onfocus="showSugg()" />
-            <button type="button" onclick="handleSearch(document.getElementById('search-input-top').value, true)" aria-label="Submit search" style="background:none;border:none;color:var(--text-1);cursor:pointer;padding:0 6px;font-size:14px">🔍</button>
-            <button id="voice-btn-top" onclick="startVoiceSearch()" aria-label="Voice search">🎙️</button>
-            <button id="clear-btn-top" onclick="clearSearch()" style="display:none" aria-label="Clear search">✕</button>
-          </div>
-          <div class="suggestions-box glass-card" id="suggestions-box" style="display:none"></div>
-        </div>
+
         <div class="topbar-right">
           <!-- Button to Add Song from PC directly without manual input -->
           <button class="topbar-pc-btn" id="add-pc-topbar-btn" onclick="triggerAddSongFromPC()" title="Add song from PC (auto-detects title, artist & duration)">
@@ -681,6 +671,19 @@
                       <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor" opacity="0.4"><path d="M17 10.5V7a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h12a1 1 0 001-1v-3.5l4 4v-11l-4 4z"/></svg>
                     </div>
                     <p class="pvp-ph-text">Loading video…</p>
+                  </div>
+                  <!-- YouTube Audio/Video Engine Dock directly inside video frame wrap -->
+                  <div id="yt-player-dock" class="yt-player-dock">
+                    <div id="yt-hidden-player" style="width:100%;height:100%;"></div>
+                    <!-- Clean Interactive Video Overlay: Click to play/pause, hover center badge, fs button -->
+                    <div class="pvp-dock-overlay" id="pvp-dock-overlay" onclick="togglePlay()" title="Click to Play/Pause">
+                      <button class="pvp-fs-btn" id="pvp-dock-fs" onclick="togglePVPFullscreen(event)" title="Fullscreen" aria-label="Fullscreen">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+                      </button>
+                      <div class="pvp-center-badge" id="pvp-center-badge">
+                        <span id="pvp-badge-icon">▶</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <!-- Video Song Info Bar -->
@@ -1753,23 +1756,11 @@
     </div>
   </div>
 
-  <!-- YouTube Audio/Video Engine Dock (Offscreen in Song mode, overlay in Video mode) -->
-  <div id="yt-player-dock" class="yt-player-dock" aria-hidden="true">
-    <div id="yt-hidden-player" style="width:100%;height:100%;"></div>
-    <!-- Clean Interactive Video Overlay: Click to play/pause, hover center badge, fs button -->
-    <div class="pvp-dock-overlay" id="pvp-dock-overlay" onclick="togglePlay()" title="Click to Play/Pause">
-      <button class="pvp-fs-btn" id="pvp-dock-fs" onclick="togglePVPFullscreen(event)" title="Fullscreen" aria-label="Fullscreen">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
-      </button>
-      <div class="pvp-center-badge" id="pvp-center-badge">
-        <span id="pvp-badge-icon">▶</span>
-      </div>
-    </div>
-  </div>
+
 
   <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.5/dist/mqtt.min.js"></script>
-  <script src="ytmusic_api.js?v=7.0"></script>
-  <script src="app.js?v=7.0"></script>
+  <script src="ytmusic_api.js?v=8.0"></script>
+  <script src="app.js?v=8.0"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 
