@@ -874,7 +874,17 @@ const GRADIENTS = [
   'linear-gradient(135deg,#f59e0b,#10b981)',
   'linear-gradient(135deg,#0ea5e9,#10b981)',
 ];
-function gradientFor(id) { return GRADIENTS[id % GRADIENTS.length]; }
+function gradientFor(id) {
+  if (typeof id === 'string') {
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) hash = ((hash << 5) - hash) + id.charCodeAt(i);
+    return GRADIENTS[Math.abs(hash) % GRADIENTS.length];
+  }
+  const n = Number(id);
+  if (!isNaN(n)) return GRADIENTS[Math.abs(n) % GRADIENTS.length];
+  return GRADIENTS[0];
+}
+
 
 /* Album images cycle for visual variety (fallback) */
 const ALBUM_IMGS = ['album1.jpg','album2.jpg','album3.jpg'];
@@ -1067,6 +1077,16 @@ const playlistThumbnailMap = new Map();
 function getPlaylistThumbnail(pl) {
   if (!pl) return ALBUM_IMGS[0];
   if (playlistThumbnailMap.has(pl.id)) return playlistThumbnailMap.get(pl.id);
+  if (playlistThumbnailMap.has(String(pl.id))) return playlistThumbnailMap.get(String(pl.id));
+
+  // If playlist has songs, use the thumbnail of the first song
+  if (Array.isArray(pl.songs) && pl.songs.length > 0) {
+    const firstSongThumb = imgFor(pl.songs[0]);
+    if (firstSongThumb) {
+      playlistThumbnailMap.set(pl.id, firstSongThumb);
+      return firstSongThumb;
+    }
+  }
 
   if (state.songs && state.songs.length > 0) {
     const name = (pl.name || '').toLowerCase();
@@ -1091,7 +1111,8 @@ function getPlaylistThumbnail(pl) {
     }
   }
 
-  return ALBUM_IMGS[pl.id % ALBUM_IMGS.length];
+  const num = typeof pl.id === 'number' ? Math.abs(pl.id) : (parseInt(pl.id, 10) || 0);
+  return ALBUM_IMGS[num % ALBUM_IMGS.length] || ALBUM_IMGS[0];
 }
 
 /* ── Preload YouTube Thumbnails for Entire Library ─────────────── */
@@ -2496,8 +2517,9 @@ function submitCreatePlaylistModal() {
     return;
   }
   const clean = name;
+  const plId = Date.now();
   const newPl = {
-    id: Date.now(),
+    id: plId,
     name: clean,
     song_count: 0,
     songs: []
@@ -2514,21 +2536,46 @@ function submitCreatePlaylistModal() {
   renderProfilePlaylists();
   renderProfileStats();
 
-  // If this was opened from the add song flow, re-open add modal
-  if (_pendingAddSongId !== null) {
-    openPlaylistAddModal(_pendingAddSongId);
+  // If this was opened from the add song flow, immediately add the song to this newly created playlist!
+  if (_pendingAddSongId !== null && _pendingAddSongId !== undefined) {
+    const songToAdd = _pendingAddSongId;
+    _pendingAddSongId = null;
+    addSongToSpecificPlaylist(plId, songToAdd);
   }
 }
 
 /* ── In-App Add Song to Playlist Modal ───────── */
-function addToPlaylistPrompt(songId) {
-  openPlaylistAddModal(songId);
+function addToPlaylistPrompt(songId, event) {
+  if (event) {
+    try {
+      event.stopPropagation();
+      event.preventDefault();
+    } catch (e) {}
+  }
+  openPlaylistAddModal(songId, event);
 }
 
-function openPlaylistAddModal(songId) {
-  _pendingAddSongId = Number(songId);
+function openPlaylistAddModal(songId, event) {
+  if (event) {
+    try {
+      event.stopPropagation();
+      event.preventDefault();
+    } catch (e) {}
+  }
+  _pendingAddSongId = songId;
   const modal = document.getElementById('playlist-add-modal');
   if (!modal) return;
+
+  // Find song title for modal header subtitle
+  const allKnown = [...(state.songs || []), ...(_libAllSongs || []), ...(state.history || [])];
+  const foundSong = allKnown.find(s => s && (String(s.id) === String(songId) || s.id == songId)) ||
+                    pcSongAudioMap.get(songId) || pcSongAudioMap.get(Number(songId));
+  const songTitle = foundSong ? foundSong.title : 'this track';
+
+  const subEl = document.getElementById('playlist-add-modal-sub') || modal.querySelector('.auth-modal-sub');
+  if (subEl) {
+    subEl.textContent = `Choose a playlist to save "${songTitle}"`;
+  }
 
   const listContainer = document.getElementById('playlist-add-list');
   const userPlaylists = getUserPlaylistsFromStorage() || state.playlists || [];
@@ -2548,17 +2595,17 @@ function openPlaylistAddModal(songId) {
       listContainer.innerHTML = userPlaylists.map(pl => {
         const cleanName = formatPlaylistName(pl.name);
         const count = (pl.songs ? pl.songs.length : (pl.song_count || 0));
-        const alreadyHas = pl.songs && pl.songs.includes(_pendingAddSongId);
+        const alreadyHas = pl.songs && pl.songs.some(sid => String(sid) === String(_pendingAddSongId) || sid == _pendingAddSongId);
         return `
-          <div class="playlist-chooser-item" onclick="addSongToSpecificPlaylist(${pl.id}, ${_pendingAddSongId})">
+          <div class="playlist-chooser-item" data-pl-id="${escapeHtmlAttr(String(pl.id))}" onclick="addSongToSpecificPlaylist('${escapeHtmlAttr(String(pl.id))}', _pendingAddSongId)">
             <div class="playlist-chooser-thumb" style="background:${gradientFor(pl.id)}">
               <img src="${getPlaylistThumbnail(pl)}" alt="${escapeHtmlAttr(cleanName)}" onerror="this.style.display='none'"/>
             </div>
             <div class="playlist-chooser-info">
               <p class="playlist-chooser-name">${escapeHtmlText(cleanName)}</p>
-              <p class="playlist-chooser-count">${count} song${count === 1 ? '' : 's'} ${alreadyHas ? '· <em>Already in playlist</em>' : ''}</p>
+              <p class="playlist-chooser-count">${count} song${count === 1 ? '' : 's'} ${alreadyHas ? '· <em style="color:var(--purple-bright);font-weight:600">Already in playlist</em>' : ''}</p>
             </div>
-            <span class="playlist-chooser-add-btn">${alreadyHas ? '✓' : '＋'}</span>
+            <span class="playlist-chooser-add-btn" style="${alreadyHas ? 'color:var(--green);font-size:15px;' : ''}">${alreadyHas ? '✓' : '＋'}</span>
           </div>
         `;
       }).join('');
@@ -2575,31 +2622,70 @@ function closePlaylistAddModal() {
 }
 
 function openCreatePlaylistFromAddModal() {
-  closePlaylistAddModal();
+  const songToKeep = _pendingAddSongId;
+  const modal = document.getElementById('playlist-add-modal');
+  if (modal) modal.style.display = 'none';
+  _pendingAddSongId = songToKeep;
   openPlaylistCreateModal();
 }
 
 function addSongToSpecificPlaylist(playlistId, songId) {
-  let pls = getUserPlaylistsFromStorage() || state.playlists || [];
-  const pl = pls.find(p => p.id === playlistId);
-  if (!pl) return;
-
-  if (!pl.songs) pl.songs = [];
-  const sId = Number(songId);
-  if (!pl.songs.includes(sId)) {
-    pl.songs.push(sId);
-    pl.song_count = pl.songs.length;
-    saveUserPlaylistsToStorage(pls);
-    state.playlists = pls;
-    apiPost(`/playlists/${pl.id}/songs`, { song_id: songId }, { silent: true }).catch(() => {});
-    showToast(`Added to "${pl.name}" ✅`);
-  } else {
-    showToast(`"${pl.name}" already has this track 🎵`);
+  const sId = (songId !== undefined && songId !== null) ? songId : _pendingAddSongId;
+  if (sId === undefined || sId === null || sId === '') {
+    showToast('⚠️ No track selected to add');
+    return;
   }
+
+  let pls = getUserPlaylistsFromStorage() || state.playlists || [];
+  const pl = pls.find(p => String(p.id) === String(playlistId) || p.id == playlistId) ||
+             (state.playlists || []).find(p => String(p.id) === String(playlistId) || p.id == playlistId);
+  if (!pl) {
+    showToast('⚠️ Playlist not found');
+    return;
+  }
+
+  if (!Array.isArray(pl.songs)) pl.songs = [];
+
+  // Check duplicate loosely
+  const alreadyHas = pl.songs.some(sid => String(sid) === String(sId) || sid == sId);
+  if (alreadyHas) {
+    showToast(`"${pl.name}" already has this track 🎵`);
+    closePlaylistAddModal();
+    return;
+  }
+
+  // Preserve numeric ID if numeric, otherwise store as string
+  const finalId = (!isNaN(Number(sId)) && typeof sId !== 'boolean' && String(sId).trim() !== '') ? Number(sId) : sId;
+  pl.songs.push(finalId);
+  pl.song_count = pl.songs.length;
+
+  // Update thumbnail if newly added
+  const allKnown = [...(state.songs || []), ...(_libAllSongs || []), ...(state.history || [])];
+  const songObj = allKnown.find(s => s && (String(s.id) === String(finalId) || s.id == finalId)) ||
+                  pcSongAudioMap.get(finalId) || pcSongAudioMap.get(Number(finalId));
+  if (songObj) {
+    playlistThumbnailMap.set(pl.id, imgFor(songObj.id || finalId));
+  }
+
+  // Persist to user-isolated storage
+  saveUserPlaylistsToStorage(pls);
+  state.playlists = pls;
+
+  // Background sync to backend if present
+  apiPost(`/playlists/${pl.id}/songs`, { song_id: finalId }, { silent: true }).catch(() => {});
+
+  const songName = songObj ? songObj.title : 'Track';
+  showToast(`Added "${songName}" to "${pl.name}" ✅`);
 
   closePlaylistAddModal();
   renderSidebarPlaylists();
   renderProfilePlaylists();
+  renderProfileStats();
+
+  // If this playlist is currently open, dynamically refresh its view
+  if (state.activePlaylistId && (String(state.activePlaylistId) === String(playlistId) || state.activePlaylistId == playlistId)) {
+    openPlaylist(playlistId);
+  }
 }
 
 /* ── Add Song Form ────────────────────────────── */
@@ -3035,7 +3121,7 @@ function renderRecommended() {
     ? recResults.map(r => r.song)
     : state.songs.slice(0, 8);
   container.innerHTML = songs.map((s, i) => `
-    <div class="st-row" id="str-api-${s.id}" onclick="openPlayerById(${s.id})">
+    <div class="st-row" id="str-api-${s.id}" onclick="openPlayerById('${escapeHtmlAttr(String(s.id))}')">
       <span class="st-num">${i+1}</span>
       <div class="st-title-col">
         <div class="st-thumb" style="background:${gradientFor(s.id)}">
@@ -3055,9 +3141,9 @@ function renderRecommended() {
           ${s.liked ? '❤️' : '♡'}
         </button>
         <button class="icon-act" title="Add to queue"
-          onclick="enqueueSong(${s.id},event)" aria-label="Queue">＋</button>
+          onclick="enqueueSong('${escapeHtmlAttr(String(s.id))}',event)" aria-label="Queue">＋</button>
         <button class="icon-act" title="Add to playlist"
-          onclick="addToPlaylistPrompt(${s.id})" aria-label="Add to playlist">⋯</button>
+          onclick="addToPlaylistPrompt('${escapeHtmlAttr(String(s.id))}',event)" aria-label="Add to playlist">⋯</button>
       </div>
     </div>`).join('');
 }
@@ -3339,16 +3425,19 @@ async function refreshPlaylists() {
 function renderSidebarPlaylists() {
   const container = document.getElementById('sidebar-playlists');
   if (!container) return;
-  container.innerHTML = state.playlists.map(pl => {
+  const pls = getUserPlaylistsFromStorage() || state.playlists || [];
+  state.playlists = pls;
+  container.innerHTML = pls.map(pl => {
     const cleanName = formatPlaylistName(pl.name);
+    const count = (pl.songs ? pl.songs.length : (pl.song_count || 0));
     return `
-    <div class="nav-item playlist-item" onclick="openPlaylist(${pl.id})" role="button" tabindex="0" title="${escapeHtmlAttr(cleanName)}">
+    <div class="nav-item playlist-item" onclick="openPlaylist('${escapeHtmlAttr(String(pl.id))}')" role="button" tabindex="0" title="${escapeHtmlAttr(cleanName)}">
       <div class="pl-thumb-mini" style="background:${gradientFor(pl.id)}">
         <img src="${getPlaylistThumbnail(pl)}" alt="${escapeHtmlAttr(cleanName)}" onerror="this.style.display='none'"/>
       </div>
       <span class="pl-name">${escapeHtmlText(cleanName)}</span>
-      <span class="pl-count">${pl.song_count || (pl.songs ? pl.songs.length : 0)}</span>
-      <button class="pl-del-btn" onclick="event.stopPropagation();deletePlaylistConfirm(${pl.id})" title="Remove playlist" aria-label="Remove playlist">✕</button>
+      <span class="pl-count">${count}</span>
+      <button class="pl-del-btn" onclick="event.stopPropagation();deletePlaylistConfirm('${escapeHtmlAttr(String(pl.id))}')" title="Remove playlist" aria-label="Remove playlist">✕</button>
     </div>`;
   }).join('') + `
     <button class="nav-item playlist-item" style="color:var(--text-muted)" onclick="createPlaylist()">
@@ -3361,18 +3450,21 @@ function renderSidebarPlaylists() {
 function renderProfilePlaylists() {
   const container = document.getElementById('tab-content-playlists');
   if (!container) return;
+  const pls = getUserPlaylistsFromStorage() || state.playlists || [];
+  state.playlists = pls;
   container.innerHTML = `<div class="content-grid">
-    ${state.playlists.map(pl => {
+    ${pls.map(pl => {
       const cleanName = formatPlaylistName(pl.name);
+      const count = (pl.songs ? pl.songs.length : (pl.song_count || 0));
       return `
-      <div class="grid-card" onclick="openPlaylist(${pl.id})">
+      <div class="grid-card" onclick="openPlaylist('${escapeHtmlAttr(String(pl.id))}')">
         <div class="gc-thumb" style="background:${gradientFor(pl.id)}">
           <img src="${getPlaylistThumbnail(pl)}" alt="${escapeHtmlAttr(cleanName)}"/>
         </div>
         <p class="gc-name">${escapeHtmlText(cleanName)}</p>
-        <p class="gc-meta">${pl.song_count || (pl.songs ? pl.songs.length : 0)} songs</p>
+        <p class="gc-meta">${count} songs</p>
         <button class="pl-card-del-btn"
-          onclick="event.stopPropagation();deletePlaylistConfirm(${pl.id})" title="Delete playlist" aria-label="Delete playlist">🗑️</button>
+          onclick="event.stopPropagation();deletePlaylistConfirm('${escapeHtmlAttr(String(pl.id))}')" title="Delete playlist" aria-label="Delete playlist">🗑️</button>
       </div>`;
     }).join('')}
     <div class="grid-card create-card" onclick="createPlaylist()">
@@ -3383,20 +3475,21 @@ function renderProfilePlaylists() {
 }
 
 async function deletePlaylistConfirm(id) {
-  const pl = (state.playlists || []).find(p => p.id === id);
+  const pls = getUserPlaylistsFromStorage() || state.playlists || [];
+  const pl = pls.find(p => String(p.id) === String(id) || p.id == id);
   const name = pl ? `"${pl.name}"` : 'this playlist';
   
   showAppConfirm('Delete Playlist?', `Are you sure you want to remove playlist ${name}?`, 'Delete', true, async () => {
-    let pls = (getUserPlaylistsFromStorage() || state.playlists || []).filter(p => p.id !== id);
-    saveUserPlaylistsToStorage(pls);
-    state.playlists = pls;
+    let updated = (getUserPlaylistsFromStorage() || state.playlists || []).filter(p => String(p.id) !== String(id) && p.id != id);
+    saveUserPlaylistsToStorage(updated);
+    state.playlists = updated;
 
     apiDelete(`/playlists/${id}`, { silent: true }).catch(() => {});
     showToast(`Playlist ${name} removed 🗑️`);
     await refreshPlaylists();
     renderProfileStats();
 
-    if (state.activePlaylistId === id) {
+    if (state.activePlaylistId && (String(state.activePlaylistId) === String(id) || state.activePlaylistId == id)) {
       state.activePlaylistId = null;
       const resView = document.getElementById('search-results-view');
       const defView = document.getElementById('search-default-view');
@@ -3415,25 +3508,31 @@ function deleteCurrentOpenPlaylist() {
   }
 }
 
-async function removeSongFromPlaylist(playlistId, songId) {
+async function removeSongFromPlaylist(playlistId, songId, event) {
+  if (event) {
+    try { event.stopPropagation(); event.preventDefault(); } catch (e) {}
+  }
   let pls = getUserPlaylistsFromStorage() || state.playlists || [];
-  const pl = pls.find(p => p.id === playlistId);
+  const pl = pls.find(p => String(p.id) === String(playlistId) || p.id == playlistId);
   if (pl && Array.isArray(pl.songs)) {
-    pl.songs = pl.songs.filter(id => id != songId);
+    pl.songs = pl.songs.filter(id => String(id) !== String(songId) && id != songId);
     pl.song_count = pl.songs.length;
     saveUserPlaylistsToStorage(pls);
     state.playlists = pls;
   }
   apiDelete(`/playlists/${playlistId}/songs/${songId}`, { silent: true }).catch(() => {});
+  showToast('Removed from playlist');
   openPlaylist(playlistId);
   renderSidebarPlaylists();
   renderProfilePlaylists();
+  renderProfileStats();
 }
 
 async function openPlaylist(id) {
   state.activePlaylistId = id;
   let pls = getUserPlaylistsFromStorage() || state.playlists || [];
-  const pl = pls.find(p => p.id === id) || (state.playlists || []).find(p => p.id === id);
+  const pl = pls.find(p => String(p.id) === String(id) || p.id == id) ||
+             (state.playlists || []).find(p => String(p.id) === String(id) || p.id == id);
   let songs = [];
 
   const apiSongs = await apiGet(`/playlists/${id}/songs`, { silent: true });
@@ -3442,9 +3541,9 @@ async function openPlaylist(id) {
   } else if (pl && Array.isArray(pl.songs) && pl.songs.length > 0) {
     const allKnown = [...(state.songs || []), ...(_libAllSongs || []), ...(state.history || [])];
     songs = pl.songs.map(sid => {
-      const match = allKnown.find(s => s && s.id == sid);
+      const match = allKnown.find(s => s && (String(s.id) === String(sid) || s.id == sid));
       if (match) return match;
-      const pcItem = pcSongAudioMap.get(sid) || pcSongAudioMap.get(Number(sid));
+      const pcItem = pcSongAudioMap.get(sid) || pcSongAudioMap.get(Number(sid)) || pcSongAudioMap.get(String(sid));
       if (pcItem) {
         return {
           id: sid,
@@ -3454,7 +3553,13 @@ async function openPlaylist(id) {
           genre: 'Music'
         };
       }
-      return null;
+      return {
+        id: sid,
+        title: `Track #${sid}`,
+        artist: 'Dhun Artist',
+        duration: 3.5,
+        genre: 'Music'
+      };
     }).filter(Boolean);
   }
 
@@ -3472,21 +3577,21 @@ async function openPlaylist(id) {
   if (resList) {
     resList.innerHTML = songs.length
       ? songs.map((s, i) => `
-          <div class="st-row" onclick="openPlayerById(${s.id})">
+          <div class="st-row" onclick="openPlayerById('${escapeHtmlAttr(String(s.id))}')">
             <span class="st-num">${i+1}</span>
             <div class="st-title-col">
               <div class="st-thumb" style="background:${gradientFor(s.id)}">
-                <img src="${imgFor(s.id)}" alt="${s.title}" data-song-id="${s.id}"/>
+                <img src="${imgFor(s.id)}" alt="${escapeHtmlAttr(s.title)}" data-song-id="${s.id}"/>
               </div>
-              <div><p class="st-song-name">${s.title}</p><p class="st-artist">${s.artist}</p></div>
+              <div><p class="st-song-name">${escapeHtmlText(s.title)}</p><p class="st-artist">${escapeHtmlText(s.artist)}</p></div>
             </div>
-            <span class="st-cell">${s.album || ''}</span>
-            <span class="st-cell">${s.genre || ''}</span>
+            <span class="st-cell">${escapeHtmlText(s.album || '')}</span>
+            <span class="st-cell">${escapeHtmlText(s.genre || '')}</span>
             <span class="st-dur">${fmtDur(s.duration)}</span>
             <div class="st-acts">
               <button class="icon-act like-btn ${isSongLikedByUser(s.id) ? 'liked' : ''}" data-song-id="${s.id}"
                 onclick="toggleLike(this,event)">${isSongLikedByUser(s.id) ? '❤️' : '♡'}</button>
-              <button class="icon-act" onclick="event.stopPropagation();removeSongFromPlaylist(${id}, ${s.id})" title="Remove from playlist">✕</button>
+              <button class="icon-act" onclick="removeSongFromPlaylist('${escapeHtmlAttr(String(id))}', '${escapeHtmlAttr(String(s.id))}', event)" title="Remove from playlist">✕</button>
             </div>
           </div>`).join('')
       : '<p style="padding:24px;color:var(--text-2);text-align:center">Playlist is empty 🎵</p>';
@@ -3501,17 +3606,20 @@ async function refreshLikedSongs() {
   container.innerHTML = `<div class="songs-table">` +
     (liked.length
       ? liked.map((s, i) => `
-          <div class="st-row" onclick="openPlayerById(${s.id})">
+          <div class="st-row" onclick="openPlayerById('${escapeHtmlAttr(String(s.id))}')">
             <span class="st-num">${i+1}</span>
             <div class="st-title-col">
               <div class="st-thumb" style="background:${gradientFor(s.id)}">
-                <img src="${imgFor(s.id)}" alt="${s.title}" data-song-id="${s.id}"/>
+                <img src="${imgFor(s.id)}" alt="${escapeHtmlAttr(s.title)}" data-song-id="${s.id}"/>
               </div>
-              <div><p class="st-song-name">${s.title}</p><p class="st-artist">${s.artist}</p></div>
+              <div><p class="st-song-name">${escapeHtmlText(s.title)}</p><p class="st-artist">${escapeHtmlText(s.artist)}</p></div>
             </div>
-            <span class="st-cell">${s.album || ''}</span>
+            <span class="st-cell">${escapeHtmlText(s.album || '')}</span>
             <span class="st-dur">${fmtDur(s.duration)}</span>
-            <span class="liked-heart" style="cursor:pointer" onclick="toggleLike(this,event)" data-song-id="${s.id}">❤️</span>
+            <div class="st-acts">
+              <span class="liked-heart" style="cursor:pointer" onclick="toggleLike(this,event)" data-song-id="${s.id}">❤️</span>
+              <button class="icon-act" title="Add to playlist" onclick="addToPlaylistPrompt('${escapeHtmlAttr(String(s.id))}',event)" aria-label="Add to playlist">⋯</button>
+            </div>
           </div>`).join('')
       : '<p style="padding:24px;color:var(--text-2);text-align:center">No liked songs yet ♡</p>')
     + `</div>`;
@@ -3570,31 +3678,31 @@ function renderLibrary(songs) {
     return;
   }
   container.innerHTML = header + songs.map((s, i) => `
-    <div class="st-row" id="lib-str-${s.id}" onclick="openPlayerById(${s.id})">
+    <div class="st-row" id="lib-str-${s.id}" onclick="openPlayerById('${escapeHtmlAttr(String(s.id))}')">
       <span class="st-num">${i + 1}</span>
       <div class="st-title-col">
         <div class="st-thumb" style="background:${gradientFor(s.id)}">
-          <img src="${imgFor(s.id)}" alt="${s.title}" data-song-id="${s.id}"/>
+          <img src="${imgFor(s.id)}" alt="${escapeHtmlAttr(s.title)}" data-song-id="${s.id}"/>
         </div>
         <div>
-          <p class="st-song-name">${s.title} ${isYTSong(s.id) ? '<span class="yt-badge">🔴 YT Music</span>' : ''}</p>
-          <p class="st-artist">${s.artist}</p>
+          <p class="st-song-name">${escapeHtmlText(s.title)} ${isYTSong(s.id) ? '<span class="yt-badge">🔴 YT Music</span>' : ''}</p>
+          <p class="st-artist">${escapeHtmlText(s.artist)}</p>
         </div>
       </div>
-      <span class="st-cell">${s.album}</span>
+      <span class="st-cell">${escapeHtmlText(s.album)}</span>
       <span class="st-cell">
-        <span class="genre-tag">${s.genre}</span>
+        <span class="genre-tag">${escapeHtmlText(s.genre)}</span>
       </span>
       <span class="st-dur">${fmtDur(s.duration)}</span>
       <div class="st-acts">
         <button class="icon-act like-btn" data-song-id="${s.id}"
           onclick="toggleLike(this,event)" aria-label="Like">${s.liked ? '❤️' : '♡'}</button>
         <button class="icon-act" title="Add to queue"
-          onclick="enqueueSong(${s.id},event)" aria-label="Queue">＋</button>
+          onclick="enqueueSong('${escapeHtmlAttr(String(s.id))}',event)" aria-label="Queue">＋</button>
         <button class="icon-act" title="Add to playlist"
-          onclick="addToPlaylistPrompt(${s.id})" aria-label="Playlist">⋯</button>
+          onclick="addToPlaylistPrompt('${escapeHtmlAttr(String(s.id))}',event)" aria-label="Playlist">⋯</button>
         <button class="icon-act lib-del-btn" title="Remove from library"
-          onclick="deleteSong(${s.id},event)" aria-label="Remove song">🗑️</button>
+          onclick="deleteSong('${escapeHtmlAttr(String(s.id))}',event)" aria-label="Remove song">🗑️</button>
       </div>
     </div>`).join('');
 }
@@ -3680,7 +3788,7 @@ async function performUnifiedSearch(q) {
   if (resList) {
     if (localMatches.length > 0) {
       resList.innerHTML = localMatches.map((s, i) => `
-        <div class="st-row" onclick="openPlayerById(${s.id})">
+        <div class="st-row" onclick="openPlayerById('${escapeHtmlAttr(String(s.id))}')">
           <span class="st-num">${i + 1}</span>
           <div class="st-title-col">
             <div class="st-thumb" style="background:${gradientFor(s.id)}">
@@ -3696,7 +3804,8 @@ async function performUnifiedSearch(q) {
           <span class="st-dur">${fmtDur(s.duration)}</span>
           <div class="st-acts">
             <button class="icon-act like-btn" data-song-id="${s.id}" onclick="toggleLike(this,event)">${s.liked ? '❤️' : '♡'}</button>
-            <button class="icon-act" onclick="enqueueSong(${s.id},event)" title="Add to queue">＋</button>
+            <button class="icon-act" onclick="enqueueSong('${escapeHtmlAttr(String(s.id))}',event)" title="Add to queue">＋</button>
+            <button class="icon-act" onclick="addToPlaylistPrompt('${escapeHtmlAttr(String(s.id))}',event)" title="Add to playlist">⋯</button>
           </div>
         </div>`).join('');
     } else {
@@ -7049,6 +7158,9 @@ function renderYTMusicGrid(tracks) {
           <button class="yt-btn-queue" onclick="enqueueYTMusicIndex(${idx})" title="Queue & Auto-Add to Library">
             <span>＋ Queue</span>
           </button>
+          <button class="yt-btn-queue" onclick="addYTMusicIndexToPlaylist(${idx}, event)" title="Add to Playlist" style="padding:6px 9px">
+            <span>⋯ Playlist</span>
+          </button>
         </div>
       </div>
     `;
@@ -7070,6 +7182,18 @@ function importYTMusicIndex(idx) {
 function enqueueYTMusicIndex(idx) {
   if (currentYTResults && currentYTResults[idx]) {
     enqueueYTMusicSong(currentYTResults[idx]);
+  }
+}
+
+async function addYTMusicIndexToPlaylist(idx, event) {
+  if (event) {
+    try { event.stopPropagation(); event.preventDefault(); } catch (e) {}
+  }
+  if (currentYTResults && currentYTResults[idx]) {
+    const track = currentYTResults[idx];
+    const song = await autoAddTrackToLibrary(track);
+    const sid = (song && song.id !== undefined) ? song.id : track.videoId;
+    addToPlaylistPrompt(sid, event);
   }
 }
 

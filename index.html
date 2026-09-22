@@ -1018,6 +1018,7 @@
                     🎧 <span id="social-jam-text">Listen Together</span>
                   </button>
                   <button class="social-btn" aria-label="Add to Queue" onclick="if(state.currentSong) enqueueSong(state.currentSong.id, event)">＋ <span>Queue</span></button>
+                  <button class="social-btn" id="player-add-playlist-btn" aria-label="Add to Playlist" onclick="if(state.currentSong) addToPlaylistPrompt(state.currentSong.id, event)" title="Add to Playlist">⋯ <span>Playlist</span></button>
                   <button class="social-btn social-del-btn" id="player-delete-song-btn" onclick="if(state.currentSong) deleteSong(state.currentSong.id, event)" aria-label="Remove from library" title="Remove song from library">🗑️ <span>Remove</span></button>
                   <button class="social-btn" aria-label="Share" onclick="showToast('Share link copied to clipboard 🔗')">🔗 <span>Share</span></button>
                 </div>
@@ -1276,6 +1277,11 @@
 
       <!-- Right: Volume + Extras -->
       <div class="pb-right">
+        <button class="pb-ctrl" aria-label="Add to Playlist" title="Add to Playlist" onclick="if(state.currentSong) addToPlaylistPrompt(state.currentSong.id, event)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 12H3M16 6H3M16 18H3M18 9v6M15 12h6"/>
+          </svg>
+        </button>
         <button class="pb-ctrl" aria-label="Queue" onclick="navigate('player')">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
             <path d="M9 18V5l12-2v13M9 9l12-2" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -1631,7 +1637,7 @@
       <button class="auth-modal-close" onclick="closePlaylistAddModal()" aria-label="Close">✕</button>
       <div style="margin-bottom:16px">
         <h2 class="auth-modal-title" style="text-align:left;font-size:20px">Add to Playlist</h2>
-        <p class="auth-modal-sub" style="text-align:left;margin:4px 0 0">Select a playlist to save this track</p>
+        <p class="auth-modal-sub" id="playlist-add-modal-sub" style="text-align:left;margin:4px 0 0">Select a playlist to save this track</p>
       </div>
       <div id="playlist-add-list" class="playlist-chooser-list">
         <!-- Populated dynamically with playlists -->
