@@ -6092,6 +6092,12 @@ function updateJamUI() {
   const liveDot = document.getElementById('jam-live-dot');
   const countBadge = document.getElementById('jam-count-badge');
   const btnText = document.getElementById('jam-btn-text');
+
+  const sideBtn = document.getElementById('listen-together-sidebar-btn');
+  const sideDot = document.getElementById('jam-sidebar-live-dot');
+  const sideBadge = document.getElementById('jam-sidebar-count-badge');
+  const sideText = document.getElementById('jam-sidebar-btn-text');
+
   const socialBtn = document.getElementById('social-jam-btn');
   const socialText = document.getElementById('social-jam-text');
   const activeCodeEl = document.getElementById('jam-active-code');
@@ -6105,6 +6111,15 @@ function updateJamUI() {
       countBadge.textContent = jamState.members.length;
     }
     if (btnText) btnText.textContent = jamState.roomId;
+
+    if (sideBtn) sideBtn.classList.add('active-session');
+    if (sideDot) sideDot.style.display = 'inline-block';
+    if (sideBadge) {
+      sideBadge.style.display = 'inline-block';
+      sideBadge.textContent = jamState.members.length;
+    }
+    if (sideText) sideText.textContent = `🎧 Jam: ${jamState.roomId}`;
+
     if (socialBtn) socialBtn.classList.add('in-session');
     if (socialText) socialText.textContent = `Live Jam (${jamState.members.length})`;
     if (activeCodeEl) activeCodeEl.textContent = jamState.roomId;
@@ -6125,6 +6140,12 @@ function updateJamUI() {
     if (liveDot) liveDot.style.display = 'none';
     if (countBadge) countBadge.style.display = 'none';
     if (btnText) btnText.textContent = 'Listen Together';
+
+    if (sideBtn) sideBtn.classList.remove('active-session');
+    if (sideDot) sideDot.style.display = 'none';
+    if (sideBadge) sideBadge.style.display = 'none';
+    if (sideText) sideText.textContent = '🎧 Listen Together';
+
     if (socialBtn) socialBtn.classList.remove('in-session');
     if (socialText) socialText.textContent = 'Listen Together';
     if (stack) stack.style.display = 'none';

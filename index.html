@@ -245,14 +245,16 @@
           <span>Profile</span>
         </button>
 
-        <!-- Quick Action: Add from PC directly -->
-        <button class="nav-item add-pc-nav-btn" onclick="triggerAddSongFromPC()" aria-label="Add song from PC" style="margin-top:10px;background:linear-gradient(135deg,rgba(124,58,237,0.18),rgba(37,99,235,0.12));border:1px dashed rgba(124,58,237,0.45);color:var(--text-1);font-weight:600">
+        <!-- Quick Action: Listen Together -->
+        <button class="nav-item sidebar-jam-btn" id="listen-together-sidebar-btn" onclick="openListenTogetherModal()" aria-label="Listen Together with Friends" style="margin-top:10px;background:linear-gradient(135deg,rgba(124,58,237,0.18),rgba(6,182,212,0.15));border:1px solid rgba(6,182,212,0.35);color:var(--text-1);font-weight:600">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="17 8 12 3 7 8"/>
-            <line x1="12" y1="3" x2="12" y2="15"/>
+            <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
+            <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
+            <circle cx="12" cy="12" r="2.5" fill="currentColor"/>
           </svg>
-          <span>📁 Add from PC</span>
+          <span id="jam-sidebar-btn-text">🎧 Listen Together</span>
+          <span class="jam-pulse-dot" id="jam-sidebar-live-dot" style="display:none;margin-left:auto;"></span>
+          <span class="jam-count-badge" id="jam-sidebar-count-badge" style="display:none;margin-left:auto;background:#10b981;color:#fff;font-size:11px;font-weight:700;padding:1px 6px;border-radius:10px;">0</span>
         </button>
 
         <p class="nav-section-label" style="margin-top:28px">Your Playlists</p>
@@ -303,18 +305,6 @@
           <div class="suggestions-box glass-card" id="suggestions-box" style="display:none"></div>
         </div>
         <div class="topbar-right">
-          <!-- Listen Together with Friends Button -->
-          <button class="topbar-jam-btn" id="listen-together-topbar-btn" onclick="openListenTogetherModal()" title="Listen Together with Friends">
-            <span class="jam-pulse-dot" id="jam-live-dot" style="display:none"></span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
-              <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
-              <circle cx="12" cy="12" r="2.5" fill="currentColor"/>
-            </svg>
-            <span id="jam-btn-text">Listen Together</span>
-            <span class="jam-count-badge" id="jam-count-badge" style="display:none">0</span>
-          </button>
-
           <!-- Button to Add Song from PC directly without manual input -->
           <button class="topbar-pc-btn" id="add-pc-topbar-btn" onclick="triggerAddSongFromPC()" title="Add song from PC (auto-detects title, artist & duration)">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
