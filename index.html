@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap"
     rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=2.9" />
+  <link rel="stylesheet" href="style.css?v=3.0" />
   <script>
     (function () {
       try {
@@ -540,28 +540,52 @@
       </section>
 
       <!-- ══ PAGE: SEARCH ════════════════════════ -->
+      <!-- ══ PAGE: SEARCH ════════════════════════ -->
       <section class="page" id="page-search">
-        <div class="page-header">
+        <div class="page-header" id="search-page-header">
           <h1 id="search-page-title">Discover Music</h1>
           <p id="search-page-sub">Explore millions of songs — automatically synced to your Dhun Library</p>
         </div>
 
-        <!-- Container for Discover feeds & search (hidden when viewing a playlist) -->
-        <div id="discover-feed-container">
-          <!-- Unified Search Bar -->
-          <div class="search-hero">
-            <div class="search-hero-bar" id="search-hero-bar">
-              <span class="shi-icon" id="search-bar-icon">🔍</span>
-              <input type="search" class="search-hero-input" id="search-input"
-                placeholder="Search any song, artist, album, or paste YouTube link..." autocomplete="off" aria-label="Search"
-                oninput="handleSearch(this.value)" onfocus="showSugg()" />
-              <button onclick="startVoiceSearch()" aria-label="Voice search" class="shi-voice">🎙️ Voice</button>
-              <button id="clear-btn" onclick="clearSearch()" style="display:none" aria-label="Clear search"
-                class="shi-clear">✕</button>
-            </div>
-            <div class="suggestions-box glass-card" id="suggestions-box-2" style="display:none"></div>
+        <!-- Unified Search Bar -->
+        <div class="search-hero" id="search-hero-section">
+          <div class="search-hero-bar" id="search-hero-bar">
+            <span class="shi-icon" id="search-bar-icon">🔍</span>
+            <input type="search" class="search-hero-input" id="search-input"
+              placeholder="Search any song, artist, album, or paste YouTube link..." autocomplete="off" aria-label="Search"
+              oninput="handleSearch(this.value)" onfocus="showSugg()" />
+            <button onclick="startVoiceSearch()" aria-label="Voice search" class="shi-voice">🎙️ Voice</button>
+            <button id="clear-btn" onclick="clearSearch()" style="display:none" aria-label="Clear search"
+              class="shi-clear">✕</button>
           </div>
+          <div class="suggestions-box glass-card" id="suggestions-box-2" style="display:none"></div>
+        </div>
 
+        <!-- ── Search Results & Playlist View (Active when searching or viewing a playlist) ── -->
+        <div id="search-results-view" style="display:none">
+          <div class="section-header" id="search-results-header">
+            <h2 class="section-title">Results for "<span id="results-query"></span>"</h2>
+            <button id="delete-playlist-view-btn" class="btn-secondary"
+              style="display:none;color:#f43f5e;border-color:rgba(244,63,94,0.3);padding:6px 14px;font-size:12px;cursor:pointer;"
+              onclick="deleteCurrentOpenPlaylist()">
+              🗑️ Delete Playlist
+            </button>
+          </div>
+          <!-- Local Library / Playlist Tracks Table -->
+          <div class="songs-table" id="search-results-list"></div>
+
+          <!-- Online Catalog Results Section -->
+          <div id="search-online-section" style="margin-top:28px;display:none">
+            <div class="section-header">
+              <h2 class="section-title" id="search-online-heading">🌐 Online Catalog Results</h2>
+              <span class="yt-results-badge" id="search-online-count">Tracks</span>
+            </div>
+            <div class="yt-cards-grid" id="search-online-grid"></div>
+          </div>
+        </div>
+
+        <!-- ── Discover Feeds Container (Hidden during active search and playlist view) ── -->
+        <div id="discover-feed-container">
           <!-- Trending & Personalized Feeds -->
           <div id="yt-mode-header">
             <div class="yt-trending-chips" id="yt-trending-chips">
@@ -603,74 +627,61 @@
               <!-- Populated dynamically via renderYTMusicGrid() -->
             </div>
           </div>
-        </div>
 
-        <!-- Recent Searches -->
-        <div id="search-default-view" style="display:none">
-          <div class="section-header">
-            <h2 class="section-title">🕐 Recent Searches</h2><button class="see-all-btn" onclick="clearRecent()">Clear
-              All</button>
-          </div>
-          <div class="recent-chips" id="recent-list">
-            <div class="recent-chip" onclick="selectSuggestion('Blinding Lights')">🕐 Blinding Lights <button
-                onclick="event.stopPropagation();this.parentElement.remove()" aria-label="Remove">✕</button></div>
-            <div class="recent-chip" onclick="selectSuggestion('The Weeknd')">🕐 The Weeknd <button
-                onclick="event.stopPropagation();this.parentElement.remove()" aria-label="Remove">✕</button></div>
-            <div class="recent-chip" onclick="selectSuggestion('Chill Vibes')">🕐 Chill Vibes Playlist <button
-                onclick="event.stopPropagation();this.parentElement.remove()" aria-label="Remove">✕</button></div>
-          </div>
+          <!-- Recent Searches & Browse Categories -->
+          <div id="search-default-view">
+            <div class="section-header">
+              <h2 class="section-title">🕐 Recent Searches</h2><button class="see-all-btn" onclick="clearRecent()">Clear
+                All</button>
+            </div>
+            <div class="recent-chips" id="recent-list">
+              <div class="recent-chip" onclick="selectSuggestion('Kesariya')">🕐 Kesariya <button
+                  onclick="event.stopPropagation();this.parentElement.remove()" aria-label="Remove">✕</button></div>
+              <div class="recent-chip" onclick="selectSuggestion('Arijit Singh')">🕐 Arijit Singh <button
+                  onclick="event.stopPropagation();this.parentElement.remove()" aria-label="Remove">✕</button></div>
+              <div class="recent-chip" onclick="selectSuggestion('Blinding Lights')">🕐 Blinding Lights <button
+                  onclick="event.stopPropagation();this.parentElement.remove()" aria-label="Remove">✕</button></div>
+            </div>
 
-          <!-- Categories -->
-          <div class="section-header" style="margin-top:32px">
-            <h2 class="section-title">🎨 Browse Categories</h2>
+            <!-- Categories -->
+            <div class="section-header" style="margin-top:32px">
+              <h2 class="section-title">🎨 Browse Categories</h2>
+            </div>
+            <div class="categories-grid">
+              <div class="cat-card" style="background:linear-gradient(135deg,#7c3aed,#2563eb)"
+                onclick="searchCategory('Pop')"><span class="cat-emoji">🎤</span>
+                <p>Pop</p>
+              </div>
+              <div class="cat-card" style="background:linear-gradient(135deg,#0ea5e9,#06b6d4)"
+                onclick="searchCategory('Electronic')"><span class="cat-emoji">⚡</span>
+                <p>Electronic</p>
+              </div>
+              <div class="cat-card" style="background:linear-gradient(135deg,#f97316,#fbbf24)"
+                onclick="searchCategory('Bollywood')"><span class="cat-emoji">🎶</span>
+                <p>Bollywood</p>
+              </div>
+              <div class="cat-card" style="background:linear-gradient(135deg,#ec4899,#f97316)"
+                onclick="searchCategory('Punjabi')"><span class="cat-emoji">⚡</span>
+                <p>Punjabi</p>
+              </div>
+              <div class="cat-card" style="background:linear-gradient(135deg,#10b981,#0ea5e9)"
+                onclick="searchCategory('Lo-Fi')"><span class="cat-emoji">☕</span>
+                <p>Lo-Fi</p>
+              </div>
+              <div class="cat-card" style="background:linear-gradient(135deg,#6366f1,#7c3aed)"
+                onclick="searchCategory('Rock')"><span class="cat-emoji">🎸</span>
+                <p>Rock</p>
+              </div>
+              <div class="cat-card" style="background:linear-gradient(135deg,#f43f5e,#ec4899)"
+                onclick="searchCategory('Romantic')"><span class="cat-emoji">💖</span>
+                <p>Romantic</p>
+              </div>
+              <div class="cat-card" style="background:linear-gradient(135deg,#f59e0b,#10b981)"
+                onclick="searchCategory('Hip-Hop')"><span class="cat-emoji">🎧</span>
+                <p>Hip-Hop</p>
+              </div>
+            </div>
           </div>
-          <div class="categories-grid">
-            <div class="cat-card" style="background:linear-gradient(135deg,#7c3aed,#2563eb)"
-              onclick="searchCategory('Pop')"><span class="cat-emoji">🎤</span>
-              <p>Pop</p>
-            </div>
-            <div class="cat-card" style="background:linear-gradient(135deg,#0ea5e9,#06b6d4)"
-              onclick="searchCategory('Electronic')"><span class="cat-emoji">⚡</span>
-              <p>Electronic</p>
-            </div>
-            <div class="cat-card" style="background:linear-gradient(135deg,#f97316,#fbbf24)"
-              onclick="searchCategory('Hip-Hop')"><span class="cat-emoji">🎧</span>
-              <p>Hip-Hop</p>
-            </div>
-            <div class="cat-card" style="background:linear-gradient(135deg,#ec4899,#f97316)"
-              onclick="searchCategory('R&B')"><span class="cat-emoji">🎹</span>
-              <p>R&amp;B</p>
-            </div>
-            <div class="cat-card" style="background:linear-gradient(135deg,#10b981,#0ea5e9)"
-              onclick="searchCategory('Indie')"><span class="cat-emoji">🎸</span>
-              <p>Indie</p>
-            </div>
-            <div class="cat-card" style="background:linear-gradient(135deg,#6366f1,#7c3aed)"
-              onclick="searchCategory('Classical')"><span class="cat-emoji">🎻</span>
-              <p>Classical</p>
-            </div>
-            <div class="cat-card" style="background:linear-gradient(135deg,#f43f5e,#ec4899)"
-              onclick="searchCategory('Mood')"><span class="cat-emoji">🌙</span>
-              <p>Mood</p>
-            </div>
-            <div class="cat-card" style="background:linear-gradient(135deg,#f59e0b,#10b981)"
-              onclick="searchCategory('Workout')"><span class="cat-emoji">💪</span>
-              <p>Workout</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Search Results -->
-        <div id="search-results-view" style="display:none">
-          <div class="section-header">
-            <h2 class="section-title">Results for "<span id="results-query"></span>"</h2>
-            <button id="delete-playlist-view-btn" class="btn-secondary"
-              style="display:none;color:#f43f5e;border-color:rgba(244,63,94,0.3);padding:6px 14px;font-size:12px;cursor:pointer;"
-              onclick="deleteCurrentOpenPlaylist()">
-              🗑️ Delete Playlist
-            </button>
-          </div>
-          <div class="songs-table" id="search-results-list"></div>
         </div>
       </section>
 
@@ -1786,8 +1797,8 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.5/dist/mqtt.min.js"></script>
-  <script src="ytmusic_api.js"></script>
-  <script src="app.js?v=2.9"></script>
+  <script src="ytmusic_api.js?v=3.0"></script>
+  <script src="app.js?v=3.0"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 

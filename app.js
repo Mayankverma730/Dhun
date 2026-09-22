@@ -4631,11 +4631,20 @@ async function openPlaylist(id) {
   navigate('search');
 
   // Hide Discover feed, search bar, and taste banner completely
+  const hero = document.getElementById('search-hero-section');
+  if (hero) hero.style.display = 'none';
+
   const discoverFeed = document.getElementById('discover-feed-container');
   if (discoverFeed) discoverFeed.style.display = 'none';
 
   const searchDef = document.getElementById('search-default-view');
   if (searchDef) searchDef.style.display = 'none';
+
+  const onlineSec = document.getElementById('search-online-section');
+  if (onlineSec) onlineSec.style.display = 'none';
+
+  const resHeader = document.getElementById('search-results-header');
+  if (resHeader) resHeader.style.display = 'none';
 
   const resView = document.getElementById('search-results-view');
   if (resView) resView.style.display = 'block';
@@ -4796,6 +4805,8 @@ async function shuffleEntirePlaylist(id) {
 
 function closePlaylistView() {
   state.activePlaylistId = null;
+  const hero = document.getElementById('search-hero-section');
+  if (hero) hero.style.display = '';
   const df = document.getElementById('discover-feed-container');
   if (df) df.style.display = '';
   const title = document.getElementById('search-page-title');
@@ -4804,6 +4815,12 @@ function closePlaylistView() {
   if (sub) sub.textContent = 'Explore millions of songs — automatically synced to your Dhun Library';
   const resView = document.getElementById('search-results-view');
   if (resView) resView.style.display = 'none';
+  const resHeader = document.getElementById('search-results-header');
+  if (resHeader) resHeader.style.display = '';
+  const onlineSec = document.getElementById('search-online-section');
+  if (onlineSec) onlineSec.style.display = 'none';
+  const delBtn = document.getElementById('delete-playlist-view-btn');
+  if (delBtn) delBtn.style.display = 'none';
 }
 
 async function refreshLikedSongs() {
@@ -4943,21 +4960,30 @@ let currentYTResults = [];
 
 /* Unified search: seamlessly searches both local library and online catalog */
 async function handleSearch(q) {
+  const query = typeof q === 'string' ? q : '';
   const clearBtn  = document.getElementById('clear-btn');
   const clearBtn2 = document.getElementById('clear-btn-top');
-  if (clearBtn)  clearBtn.style.display  = q ? 'block' : 'none';
-  if (clearBtn2) clearBtn2.style.display = q ? 'block' : 'none';
+  if (clearBtn)  clearBtn.style.display  = query ? 'block' : 'none';
+  if (clearBtn2) clearBtn2.style.display = query ? 'block' : 'none';
+
+  // Keep both search inputs synchronized in real-time
+  const in1 = document.getElementById('search-input');
+  const in2 = document.getElementById('search-input-top');
+  if (in1 && in1.value !== query) in1.value = query;
+  if (in2 && in2.value !== query) in2.value = query;
 
   showSugg();
 
-  const defView = document.getElementById('search-default-view');
-  const resView = document.getElementById('search-results-view');
-  const resList = document.getElementById('search-results-list');
-  const resQ    = document.getElementById('results-query');
+  const defView   = document.getElementById('discover-feed-container');
+  const resView   = document.getElementById('search-results-view');
+  const resList   = document.getElementById('search-results-list');
+  const resQ      = document.getElementById('results-query');
+  const onlineSec = document.getElementById('search-online-section');
 
-  if (!q.trim()) {
-    if (defView) defView.style.display = '';
-    if (resView) resView.style.display = 'none';
+  if (!query.trim()) {
+    if (defView)   defView.style.display = '';
+    if (resView)   resView.style.display = 'none';
+    if (onlineSec) onlineSec.style.display = 'none';
     const grid = document.getElementById('yt-music-grid');
     if (grid && (!grid.children || grid.children.length === 0)) {
       loadYTFeed(currentYTFeedCategory || 'for-you');
@@ -4965,28 +4991,18 @@ async function handleSearch(q) {
     return;
   }
 
+  // Active search state
   state.activePlaylistId = null;
   const delBtn = document.getElementById('delete-playlist-view-btn');
   if (delBtn) delBtn.style.display = 'none';
   if (defView) defView.style.display = 'none';
   if (resView) resView.style.display = 'block';
-  if (resQ)    resQ.textContent = q;
+  if (resList) resList.style.display = '';
+  if (resQ)    resQ.textContent = query;
 
-  clearTimeout(ytSearchDebounceTimer);
-  ytSearchDebounceTimer = setTimeout(async () => {
-    await performUnifiedSearch(q.trim());
-  }, 260);
-}
-
-async function performUnifiedSearch(q) {
-  const resList = document.getElementById('search-results-list');
-  const ytTitle = document.getElementById('yt-results-title');
-
-  if (ytTitle) ytTitle.textContent = `Online Catalog Results for "${q}"`;
-
-  // 1. Search in-memory library
-  const term = q.toLowerCase().trim();
-  const localMatches = state.songs.filter(s =>
+  // Instant zero-latency local library filter
+  const term = query.toLowerCase().trim();
+  const instantMatches = (state.songs || []).filter(s =>
     (s.title || '').toLowerCase().includes(term) ||
     (s.artist || '').toLowerCase().includes(term) ||
     (s.album || '').toLowerCase().includes(term) ||
@@ -4994,8 +5010,12 @@ async function performUnifiedSearch(q) {
   );
 
   if (resList) {
-    if (localMatches.length > 0) {
-      resList.innerHTML = localMatches.map((s, i) => `
+    if (instantMatches.length > 0) {
+      resList.innerHTML = `
+        <div style="margin-bottom:12px;font-size:12px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:0.8px;display:flex;align-items:center;gap:6px">
+          <span>📂 Library Matches</span>
+          <span style="background:rgba(124,58,237,0.18);color:var(--purple-bright);padding:2px 8px;border-radius:10px;font-size:11px">${instantMatches.length}</span>
+        </div>` + instantMatches.map((s, i) => `
         <div class="st-row" onclick="openPlayerById('${escapeHtmlAttr(String(s.id))}')">
           <span class="st-num">${i + 1}</span>
           <div class="st-title-col">
@@ -5017,28 +5037,71 @@ async function performUnifiedSearch(q) {
           </div>
         </div>`).join('');
     } else {
-      resList.innerHTML = '<p style="padding:16px;color:var(--text-2);text-align:center">No local match — fetching from online catalog…</p>';
+      resList.innerHTML = `<p style="padding:8px 0 14px;color:var(--text-muted);font-size:13px">No local library matches for "${escapeHtmlText(query)}". Searching online catalog…</p>`;
     }
   }
 
-  // 2. Fetch from online catalog
+  clearTimeout(ytSearchDebounceTimer);
+  ytSearchDebounceTimer = setTimeout(async () => {
+    await performUnifiedSearch(query.trim());
+  }, 220);
+}
+
+async function performUnifiedSearch(q) {
+  const query = (q || '').trim();
+  if (!query) return;
+
+  const resList     = document.getElementById('search-results-list');
+  const onlineSec   = document.getElementById('search-online-section');
+  const onlineHead  = document.getElementById('search-online-heading');
+  const onlineCount = document.getElementById('search-online-count');
+  const onlineGrid  = document.getElementById('search-online-grid') || document.getElementById('yt-music-grid');
+
+  if (onlineSec) onlineSec.style.display = 'block';
+  if (onlineHead) onlineHead.textContent = `🌐 Online Catalog Results for "${query}"`;
+  if (onlineCount) onlineCount.textContent = 'Searching…';
+
+  // 1. Re-evaluate local matches
+  const term = query.toLowerCase();
+  const localMatches = (state.songs || []).filter(s =>
+    (s.title || '').toLowerCase().includes(term) ||
+    (s.artist || '').toLowerCase().includes(term) ||
+    (s.album || '').toLowerCase().includes(term) ||
+    (s.genre || '').toLowerCase().includes(term)
+  );
+
+  // 2. Fetch from online catalog (Invidious + iTunes failover)
   if (typeof YTMusicAPI !== 'undefined') {
     try {
-      const onlineTracks = await YTMusicAPI.search(q);
-      renderYTMusicGrid(onlineTracks);
+      const onlineTracks = await YTMusicAPI.search(query, 24);
+      if (onlineGrid) {
+        renderYTMusicGrid(onlineTracks, onlineGrid, onlineCount);
+      }
+      if (localMatches.length === 0 && onlineTracks && onlineTracks.length > 0 && resList) {
+        resList.style.display = 'none'; // Hide empty local notice to keep online results prominent
+      }
     } catch (e) {
       console.warn('Unified online search error:', e);
+      if (onlineCount) onlineCount.textContent = '0 Tracks';
+      if (onlineGrid) {
+        onlineGrid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:24px 16px;color:var(--text-muted)">Unable to search online catalog. Please check your network connection.</div>`;
+      }
     }
   }
 }
 
 async function showSugg() {
-  const input = document.getElementById('search-input') || document.getElementById('search-input-top');
-  const q = input?.value || '';
+  const activeInput = (document.activeElement && (document.activeElement.id === 'search-input' || document.activeElement.id === 'search-input-top'))
+    ? document.activeElement
+    : (document.getElementById('search-input') || document.getElementById('search-input-top'));
+  const q = (activeInput?.value || '').trim();
   const boxes = ['suggestions-box','suggestions-box-2'];
-  if (!q.trim()) { boxes.forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; }); return; }
+  if (!q) {
+    boxes.forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+    return;
+  }
 
-  const localMatches = state.songs.filter(s => (s.title || '').toLowerCase().startsWith(q.toLowerCase())).slice(0, 3);
+  const localMatches = (state.songs || []).filter(s => (s.title || '').toLowerCase().startsWith(q.toLowerCase())).slice(0, 3);
   let onlineSugg = [];
   if (typeof YTMusicAPI !== 'undefined') {
     try {
@@ -5051,7 +5114,7 @@ async function showSugg() {
       html: `🎵 ${escapeHtmlText(s.title)} – ${escapeHtmlText(s.artist)}`,
       val: s.title
     })),
-    ...onlineSugg.slice(0, 4).map(s => ({
+    ...onlineSugg.slice(0, 5).map(s => ({
       html: `🔍 ${escapeHtmlText(s)}`,
       val: s
     }))
@@ -8244,7 +8307,7 @@ async function autoSeedLibraryWithOnlineMedia() {
 
 /* ── Auto-Add Track to Library ──────────────────────────────────── */
 async function autoAddTrackToLibrary(track) {
-  if (!track || !track.videoId) return null;
+  if (!track) return null;
   const durSec = track.durationSec || 210;
   const durMin = track.durationMin || +(durSec / 60).toFixed(2);
   const title = track.title || 'Untitled';
@@ -8252,17 +8315,23 @@ async function autoAddTrackToLibrary(track) {
   const album = track.album || 'Online Media';
   const genre = track.genre || 'Cloud Audio';
 
+  if (!track.videoId && typeof YTMusicAPI !== 'undefined' && YTMusicAPI.getVideoIdForTrack) {
+    const matched = YTMusicAPI.getVideoIdForTrack(title, artist);
+    if (matched) track.videoId = matched;
+  }
+
   // Check if song already exists in state.songs
   let existing = state.songs.find(s => {
     const audio = pcSongAudioMap.get(s.id);
-    if (audio && audio.videoId === track.videoId) return true;
+    if (audio && track.videoId && audio.videoId === track.videoId) return true;
     return s.title.toLowerCase().trim() === title.toLowerCase().trim();
   });
   if (existing) {
     const thumb = track.videoId ? `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg` : (track.thumbnail || ALBUM_IMGS[0]);
     const ytData = {
-      isYT: true,
-      videoId: track.videoId,
+      isYT: !!track.videoId,
+      videoId: track.videoId || null,
+      url: track.previewUrl || null,
       thumbnail: thumb,
       durationSec: durSec,
       title,
@@ -8313,8 +8382,9 @@ async function autoAddTrackToLibrary(track) {
   song.thumbnail = thumb;
   ytCoverArtCache.set(song.id, thumb);
   const ytData = {
-    isYT: true,
-    videoId: track.videoId,
+    isYT: !!track.videoId,
+    videoId: track.videoId || null,
+    url: track.previewUrl || null,
     thumbnail: thumb,
     durationSec: durSec,
     title,
@@ -8604,14 +8674,14 @@ async function performYTMusicSearch(query) {
 }
 
 /* ── Grid Renderer with Non-Overlapping Layout ───────── */
-function renderYTMusicGrid(tracks) {
+function renderYTMusicGrid(tracks, customGrid = null, customCount = null) {
   currentYTResults = Array.isArray(tracks) ? tracks : [];
-  const countEl = document.getElementById('yt-results-count');
+  const countEl = customCount || document.getElementById('yt-results-count');
   if (countEl && currentYTFeedCategory !== 'for-you') {
     countEl.textContent = `${currentYTResults.length} Tracks`;
   }
 
-  const grid = document.getElementById('yt-music-grid');
+  const grid = customGrid || document.getElementById('yt-music-grid');
   if (!grid) return;
 
   if (currentYTResults.length === 0) {
@@ -8636,11 +8706,11 @@ function renderYTMusicGrid(tracks) {
   );
 
   grid.innerHTML = currentYTResults.map((t, idx) => {
-    const isAlreadyInLib = savedLibraryKeys.has(t.videoId) ||
+    const isAlreadyInLib = (t.videoId && savedLibraryKeys.has(t.videoId)) ||
       savedLibraryKeys.has(`${(t.title || '').toLowerCase().trim()}:::${(t.artist || '').toLowerCase().trim()}`);
 
     const dur = t.durationFormatted || fmtDur(t.durationMin || (t.durationSec / 60));
-    const thumb = t.thumbnail || `https://i.ytimg.com/vi/${t.videoId}/hqdefault.jpg`;
+    const thumb = t.thumbnail || (t.videoId ? `https://i.ytimg.com/vi/${t.videoId}/hqdefault.jpg` : 'album1.jpg');
     const badgeText = t.matchBadge || (isAlreadyInLib ? '✓ In Library' : '⚡ Auto-Add');
     const isVibeMatch = !!t.matchBadge;
 
@@ -8712,7 +8782,15 @@ async function addYTMusicIndexToPlaylist(idx, event) {
 
 /* Playing any track automatically adds it to the library */
 async function playYTMusicTrack(track) {
-  if (!track || !track.videoId) return;
+  if (!track) return;
+
+  if (!track.videoId && typeof YTMusicAPI !== 'undefined' && YTMusicAPI.resolveVideoIdForTrack) {
+    const resolvedVid = await YTMusicAPI.resolveVideoIdForTrack(track.title, track.artist);
+    if (resolvedVid) {
+      track.videoId = resolvedVid;
+      track.id = `yt_${resolvedVid}`;
+    }
+  }
 
   // Auto-add to library if not yet added
   let song = await autoAddTrackToLibrary(track);
