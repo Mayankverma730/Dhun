@@ -1884,6 +1884,7 @@ function deduplicateUsers(users) {
       // Merge into the single individual profile for this Gmail
       const preferredName = (u.name && u.name.length >= existing.name.length) ? u.name : existing.name;
       const preferredAvatar = u.avatarColor || existing.avatarColor || '#7c3aed';
+      const preferredCover = u.coverUrl || existing.coverUrl || 'album2.jpg';
       const isGoogle = (u.provider === 'google' || existing.provider === 'google');
       const lastLogin = Math.max(u.lastLoginAt || 0, existing.lastLoginAt || 0);
 
@@ -1897,6 +1898,7 @@ function deduplicateUsers(users) {
         email: emailKey,
         name: preferredName,
         avatarColor: preferredAvatar,
+        coverUrl: preferredCover,
         provider: isGoogle ? 'google' : (existing.provider || u.provider),
         lastLoginAt: lastLogin
       });
@@ -2336,6 +2338,11 @@ function updateAuthUI() {
 
   _set('pname-display', u.name);
   _set('pbio-display', u.bio || '🎵 High-fidelity music listener & collector');
+
+  const coverImg = document.getElementById('pcover-img');
+  if (coverImg) {
+    coverImg.src = u.coverUrl || 'album2.jpg';
+  }
 
   const editName = document.getElementById('edit-name');
   const editBio  = document.getElementById('edit-bio');
@@ -3003,6 +3010,149 @@ function renderProfileStats() {
   }
 }
 
+/* ── Profile Cover Customization ──────────────── */
+let _pendingCoverUrl = null;
+
+function openProfileCoverModal() {
+  const modal = document.getElementById('profile-cover-modal');
+  if (!modal) return;
+  const currentCover = (authState.currentUser && authState.currentUser.coverUrl) || 'album2.jpg';
+  _pendingCoverUrl = currentCover;
+
+  const previewImg = document.getElementById('pcover-preview-img');
+  if (previewImg) previewImg.src = currentCover;
+
+  const previewName = document.getElementById('pcover-preview-name');
+  if (previewName && authState.currentUser) previewName.textContent = authState.currentUser.name;
+
+  const previewAvatar = document.getElementById('pcover-preview-avatar');
+  if (previewAvatar && authState.currentUser) {
+    previewAvatar.textContent = getProfileInitials(authState.currentUser.name);
+    previewAvatar.style.background = authState.currentUser.avatarColor || '#7c3aed';
+  }
+
+  // Highlight active preset if matching
+  document.querySelectorAll('.pcover-preset-card').forEach(card => {
+    const img = card.querySelector('img');
+    if (img && img.getAttribute('src') === currentCover) {
+      card.style.borderColor = 'var(--purple)';
+      card.classList.add('selected');
+    } else {
+      card.style.borderColor = 'transparent';
+      card.classList.remove('selected');
+    }
+  });
+
+  modal.style.display = 'flex';
+}
+
+function closeProfileCoverModal() {
+  const modal = document.getElementById('profile-cover-modal');
+  if (modal) modal.style.display = 'none';
+  _pendingCoverUrl = null;
+}
+
+function selectCoverPreset(url, element) {
+  _pendingCoverUrl = url;
+  const previewImg = document.getElementById('pcover-preview-img');
+  if (previewImg) previewImg.src = url;
+
+  document.querySelectorAll('.pcover-preset-card').forEach(card => {
+    card.style.borderColor = 'transparent';
+    card.classList.remove('selected');
+  });
+  if (element) {
+    element.style.borderColor = 'var(--purple)';
+    element.classList.add('selected');
+  }
+}
+
+function handleCoverFileSelected(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  if (!file.type.startsWith('image/')) {
+    showToast('⚠️ Please select a valid image file');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const rawDataUrl = e.target.result;
+    
+    // Scale and compress image using an offscreen canvas for optimal performance & storage
+    const img = new Image();
+    img.onload = function() {
+      const maxW = 1200;
+      const maxH = 675;
+      let width = img.width;
+      let height = img.height;
+
+      if (width > maxW) {
+        height = Math.round((height * maxW) / width);
+        width = maxW;
+      }
+      if (height > maxH) {
+        width = Math.round((width * maxH) / height);
+        height = maxH;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+
+      const optimizedUrl = canvas.toDataURL('image/jpeg', 0.84);
+      _pendingCoverUrl = optimizedUrl;
+
+      const previewImg = document.getElementById('pcover-preview-img');
+      if (previewImg) previewImg.src = optimizedUrl;
+
+      // Deselect presets
+      document.querySelectorAll('.pcover-preset-card').forEach(card => {
+        card.style.borderColor = 'transparent';
+        card.classList.remove('selected');
+      });
+
+      showToast('📸 Photo loaded! Click "Save & Apply" to set it.');
+    };
+    img.src = rawDataUrl;
+  };
+  reader.readAsDataURL(file);
+}
+
+function applyProfileCover() {
+  if (!_pendingCoverUrl) {
+    closeProfileCoverModal();
+    return;
+  }
+
+  const coverUrl = _pendingCoverUrl;
+  const coverImg = document.getElementById('pcover-img');
+  if (coverImg) coverImg.src = coverUrl;
+
+  if (authState.currentUser) {
+    authState.currentUser.coverUrl = coverUrl;
+
+    if (authState.currentUser.id !== 'guest') {
+      const users = getStoredUsers();
+      const idx = users.findIndex(u => u.id === authState.currentUser.id);
+      if (idx !== -1) {
+        users[idx].coverUrl = coverUrl;
+        saveStoredUsers(users);
+      }
+    }
+    try {
+      localStorage.setItem('dhun_active_profile', JSON.stringify(authState.currentUser));
+    } catch(e) {}
+    pushProfileToCloudDebounced();
+  }
+
+  closeProfileCoverModal();
+  showToast('✅ Profile cover updated successfully!');
+}
+
 function switchTab(btn, tabId) {
   document.querySelectorAll('.tab-btn').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected','false'); });
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -3108,6 +3258,7 @@ function pushProfileToCloud() {
     email: user.email.toLowerCase().trim(),
     name: user.name,
     avatarColor: user.avatarColor,
+    coverUrl: user.coverUrl || 'album2.jpg',
     bio: user.bio,
     provider: user.provider,
     playlists: pls,
@@ -3211,6 +3362,11 @@ function pullProfileFromCloud(onDone) {
         }
         if (data.avatarColor && !user.avatarColor) {
           user.avatarColor = data.avatarColor;
+        }
+        if (data.coverUrl) {
+          user.coverUrl = data.coverUrl;
+          const coverImg = document.getElementById('pcover-img');
+          if (coverImg) coverImg.src = data.coverUrl;
         }
         saveStoredUsers(authState.users);
         updateAuthUI();

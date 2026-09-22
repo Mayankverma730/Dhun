@@ -1081,7 +1081,7 @@
         <div class="profile-cover">
           <img src="album2.jpg" alt="Profile cover" class="pcover-img" id="pcover-img" />
           <div class="pcover-overlay"></div>
-          <button class="pcover-change" aria-label="Change cover" onclick="showToast('Cover photo updated 📷')">📷 Change Cover</button>
+          <button class="pcover-change" id="pcover-change-btn" aria-label="Change cover" onclick="openProfileCoverModal()">📷 Change Cover</button>
         </div>
 
         <div class="profile-body">
@@ -1675,6 +1675,84 @@
       <div style="display:flex;gap:12px;justify-content:center">
         <button type="button" class="btn-secondary" style="flex:1" id="confirm-modal-cancel-btn" onclick="closeConfirmModal(false)">Cancel</button>
         <button type="button" class="btn-primary" style="flex:1" id="confirm-modal-action-btn" onclick="closeConfirmModal(true)">Confirm</button>
+      </div>
+    </div>
+  <!-- ══ PROFILE COVER CUSTOMIZATION MODAL ════════════ -->
+  <div id="profile-cover-modal" class="auth-modal-backdrop" style="display:none" onclick="if(event.target===this)closeProfileCoverModal()">
+    <div class="auth-card glass-card" style="max-width:540px;width:92%;padding:28px 24px;border-radius:24px;position:relative;animation:gateSlideDown 0.3s cubic-bezier(0.16,1,0.3,1);">
+      <button onclick="closeProfileCoverModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;color:var(--text-3);font-size:22px;cursor:pointer;line-height:1;" aria-label="Close">✕</button>
+      
+      <div style="text-align:left;margin-bottom:18px;">
+        <h2 style="font-size:1.35rem;font-weight:800;color:var(--text-1);margin:0 0 6px;">🎨 Customize Profile Banner</h2>
+        <p style="font-size:12.5px;color:var(--text-3);margin:0;">Upload any photo from your device or choose a curated aesthetic theme.</p>
+      </div>
+
+      <!-- Live Preview -->
+      <div style="margin-bottom:18px;">
+        <p style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Live Preview</p>
+        <div style="width:100%;height:140px;border-radius:14px;overflow:hidden;position:relative;border:1px solid var(--glass-border);box-shadow:0 8px 24px rgba(0,0,0,0.35);">
+          <img id="pcover-preview-img" src="album2.jpg" alt="Preview cover" style="width:100%;height:100%;object-fit:cover;" />
+          <div style="position:absolute;inset:0;background:linear-gradient(to bottom, transparent 40%, rgba(8,12,20,0.85));"></div>
+          <div style="position:absolute;bottom:12px;left:14px;display:flex;align-items:center;gap:10px;">
+            <div id="pcover-preview-avatar" style="width:36px;height:36px;border-radius:50%;background:var(--grad-main);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#fff;border:2px solid #fff;">👤</div>
+            <div>
+              <div id="pcover-preview-name" style="font-size:13px;font-weight:700;color:#fff;line-height:1.2;">My Profile</div>
+              <div style="font-size:10.5px;color:rgba(255,255,255,0.7);line-height:1.2;">Banner Preview</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Option 1: Upload from PC / Phone -->
+      <div style="margin-bottom:18px;">
+        <input type="file" id="pcover-file-input" accept="image/*" style="display:none" onchange="handleCoverFileSelected(event)" />
+        <button type="button" onclick="document.getElementById('pcover-file-input').click()" style="width:100%;padding:12px;border-radius:12px;border:1.5px dashed var(--purple);background:rgba(124,58,237,0.12);color:var(--text-1);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;font-weight:600;font-size:13.5px;transition:all 0.2s;" onmouseover="this.style.background='rgba(124,58,237,0.22)'" onmouseout="this.style.background='rgba(124,58,237,0.12)'">
+          <span style="font-size:18px;">📁</span>
+          <span>Upload Custom Photo from Device</span>
+        </button>
+      </div>
+
+      <!-- Option 2: Curated Themes -->
+      <div style="margin-bottom:20px;">
+        <p style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Or Choose an Aesthetic Theme</p>
+        <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:10px;" id="pcover-presets-grid">
+          <!-- Preset 1 -->
+          <div onclick="selectCoverPreset('album2.jpg', this)" class="pcover-preset-card selected" style="cursor:pointer;border-radius:10px;overflow:hidden;border:2px solid var(--purple);position:relative;height:65px;transition:all 0.2s;">
+            <img src="album2.jpg" style="width:100%;height:100%;object-fit:cover;" />
+            <span style="position:absolute;bottom:4px;left:6px;font-size:10px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,0.8);">Cyber Blue</span>
+          </div>
+          <!-- Preset 2 -->
+          <div onclick="selectCoverPreset('cover_bg.jpg', this)" class="pcover-preset-card" style="cursor:pointer;border-radius:10px;overflow:hidden;border:2px solid transparent;position:relative;height:65px;transition:all 0.2s;">
+            <img src="cover_bg.jpg" style="width:100%;height:100%;object-fit:cover;" />
+            <span style="position:absolute;bottom:4px;left:6px;font-size:10px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,0.8);">Neon Glow</span>
+          </div>
+          <!-- Preset 3 -->
+          <div onclick="selectCoverPreset('album1.jpg', this)" class="pcover-preset-card" style="cursor:pointer;border-radius:10px;overflow:hidden;border:2px solid transparent;position:relative;height:65px;transition:all 0.2s;">
+            <img src="album1.jpg" style="width:100%;height:100%;object-fit:cover;" />
+            <span style="position:absolute;bottom:4px;left:6px;font-size:10px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,0.8);">Retro Pulse</span>
+          </div>
+          <!-- Preset 4 -->
+          <div onclick="selectCoverPreset('album3.jpg', this)" class="pcover-preset-card" style="cursor:pointer;border-radius:10px;overflow:hidden;border:2px solid transparent;position:relative;height:65px;transition:all 0.2s;">
+            <img src="album3.jpg" style="width:100%;height:100%;object-fit:cover;" />
+            <span style="position:absolute;bottom:4px;left:6px;font-size:10px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,0.8);">Lo-Fi Gold</span>
+          </div>
+          <!-- Preset 5 -->
+          <div onclick="selectCoverPreset('cover_light_bg.jpg', this)" class="pcover-preset-card" style="cursor:pointer;border-radius:10px;overflow:hidden;border:2px solid transparent;position:relative;height:65px;transition:all 0.2s;">
+            <img src="cover_light_bg.jpg" style="width:100%;height:100%;object-fit:cover;" />
+            <span style="position:absolute;bottom:4px;left:6px;font-size:10px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,0.8);">Bright Wave</span>
+          </div>
+          <!-- Preset 6 -->
+          <div onclick="selectCoverPreset('architecture_diagram.jpg', this)" class="pcover-preset-card" style="cursor:pointer;border-radius:10px;overflow:hidden;border:2px solid transparent;position:relative;height:65px;transition:all 0.2s;">
+            <img src="architecture_diagram.jpg" style="width:100%;height:100%;object-fit:cover;" />
+            <span style="position:absolute;bottom:4px;left:6px;font-size:10px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,0.8);">Dark Flow</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button type="button" class="btn-secondary" onclick="closeProfileCoverModal()" style="padding:9px 18px;">Cancel</button>
+        <button type="button" class="btn-primary" onclick="applyProfileCover()" style="padding:9px 22px;">Save & Apply ✨</button>
       </div>
     </div>
   </div>
