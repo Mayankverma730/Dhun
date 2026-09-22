@@ -3014,8 +3014,12 @@ function renderProfileStats() {
 let _pendingCoverUrl = null;
 
 function openProfileCoverModal() {
+  console.log('[Dhun] Opening profile cover modal');
   const modal = document.getElementById('profile-cover-modal');
-  if (!modal) return;
+  if (!modal) {
+    console.error('[Dhun] Profile cover modal not found in DOM');
+    return;
+  }
   const currentCover = (authState.currentUser && authState.currentUser.coverUrl) || 'album2.jpg';
   _pendingCoverUrl = currentCover;
 
@@ -3044,6 +3048,7 @@ function openProfileCoverModal() {
   });
 
   modal.style.display = 'flex';
+  modal.style.zIndex = '99999';
 }
 
 function closeProfileCoverModal() {
@@ -3151,6 +3156,22 @@ function applyProfileCover() {
 
   closeProfileCoverModal();
   showToast('✅ Profile cover updated successfully!');
+}
+
+function initProfileCoverListeners() {
+  const pcoverBtn = document.getElementById('pcover-change-btn');
+  if (pcoverBtn) {
+    pcoverBtn.onclick = openProfileCoverModal;
+  }
+  const pcoverActionBtn = document.getElementById('pcover-action-btn');
+  if (pcoverActionBtn) {
+    pcoverActionBtn.onclick = openProfileCoverModal;
+  }
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initProfileCoverListeners);
+} else {
+  initProfileCoverListeners();
 }
 
 function switchTab(btn, tabId) {

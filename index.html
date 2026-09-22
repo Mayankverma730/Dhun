@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap"
     rel="stylesheet" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=2.7" />
   <script>
     (function () {
       try {
@@ -1081,7 +1081,7 @@
         <div class="profile-cover">
           <img src="album2.jpg" alt="Profile cover" class="pcover-img" id="pcover-img" />
           <div class="pcover-overlay"></div>
-          <button class="pcover-change" id="pcover-change-btn" aria-label="Change cover" onclick="openProfileCoverModal()" style="z-index:30;cursor:pointer;pointer-events:auto;">📷 Change Cover</button>
+          <button class="pcover-change" id="pcover-change-btn" aria-label="Change cover" onclick="openProfileCoverModal()" style="z-index:99;cursor:pointer;pointer-events:auto;">📷 Change Cover</button>
         </div>
 
         <div class="profile-body">
@@ -1092,6 +1092,7 @@
             <p class="pbio" id="pbio-display">🎵 High-fidelity music listener & collector</p>
             <div class="profile-actions">
               <button class="btn-primary" onclick="toggleEditProfile()" id="edit-profile-btn">✏️ Edit Profile</button>
+              <button class="btn-secondary" onclick="openProfileCoverModal()" id="pcover-action-btn" title="Customize Profile Banner">🎨 Change Cover</button>
               <button class="btn-secondary" onclick="triggerProfileCloudSync(this)" id="sync-profile-btn" title="Sync Profile & Playlists Across Devices">☁️ Sync Devices</button>
               <button class="btn-secondary" onclick="showToast('Profile link copied 🔗')" aria-label="Share profile">🔗 Share</button>
             </div>
@@ -1099,6 +1100,9 @@
             <!-- Edit Form -->
             <div class="edit-form glass-card" id="edit-form" style="display:none">
               <h3>Edit Profile</h3>
+              <div style="margin-bottom:12px">
+                <button type="button" class="btn-secondary" onclick="openProfileCoverModal()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:9px;">🎨 Change Cover Banner</button>
+              </div>
               <input class="form-input" type="text" id="edit-name" value="My Profile" placeholder="Display Name"
                 aria-label="Display name" />
               <textarea class="form-input form-textarea" id="edit-bio"
@@ -1788,7 +1792,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.5/dist/mqtt.min.js"></script>
   <script src="ytmusic_api.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=2.7"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 
