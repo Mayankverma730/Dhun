@@ -5038,10 +5038,13 @@ async function handleSearch(q, immediate = false) {
   }
 }
 
+let ytMusicSearchReqId = 0;
+
 async function performYTMusicSearch(query) {
   const q = (query || '').trim();
   if (!q) return;
 
+  const thisReqId = ++ytMusicSearchReqId;
   const countEl = document.getElementById('yt-results-count');
   const grid    = document.getElementById('yt-music-grid');
 
@@ -5049,9 +5052,8 @@ async function performYTMusicSearch(query) {
     try {
       const tracks = await YTMusicAPI.search(q, 24);
 
-      // Prevent race conditions: ensure user hasn't changed query to something completely different
-      const currentInput = document.getElementById('search-input') || document.getElementById('search-input-top');
-      if (currentInput && currentInput.value.trim() && currentInput.value.trim().toLowerCase() !== q.toLowerCase()) {
+      // Prevent race conditions if user typed a newer search query
+      if (thisReqId !== ytMusicSearchReqId) {
         return;
       }
 
@@ -5059,6 +5061,7 @@ async function performYTMusicSearch(query) {
       renderYTMusicGrid(tracks, grid, countEl);
     } catch (e) {
       console.warn('YouTube Music search error:', e);
+      if (thisReqId !== ytMusicSearchReqId) return;
       if (countEl) countEl.textContent = '0 Tracks';
       if (grid) {
         grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:28px 16px;color:var(--text-muted)">Unable to load YouTube Music search results. Please check your network connection.</div>`;
@@ -8639,10 +8642,6 @@ async function loadYTFeed(category = 'for-you', btnEl = null) {
       if (grid) grid.innerHTML = '<p style="color:var(--text-2);padding:24px;grid-column:1/-1;text-align:center">Could not load media feed.</p>';
     }
   }
-}
-
-async function performYTMusicSearch(query) {
-  await performUnifiedSearch(query);
 }
 
 /* ── Grid Renderer with Non-Overlapping Layout ───────── */

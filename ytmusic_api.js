@@ -68,24 +68,32 @@ const YTMusicAPI = (() => {
       if (singleTrack) return [singleTrack];
     }
 
-    // 2. Primary: Vercel Serverless YouTube Music API (/api/search)
+    // 2. Primary: Serverless YouTube Music API (/api/search)
     // Instant (<200ms), 100% reliable, zero CORS restrictions, bypasses ISP blocks
-    try {
-      const apiEndpoint = `/api/search?q=${encodeURIComponent(q)}`;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 3500);
+    const endpointsToTry = ['/api/search'];
+    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:')) {
+      endpointsToTry.push('https://dhun-nu.vercel.app/api/search');
+    }
 
-      const res = await fetch(apiEndpoint, { signal: controller.signal });
-      clearTimeout(timeout);
+    for (const ep of endpointsToTry) {
+      try {
+        const apiEndpoint = `${ep}?q=${encodeURIComponent(q)}`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3500);
 
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          return data.slice(0, maxResults);
+        const res = await fetch(apiEndpoint, { signal: controller.signal });
+        clearTimeout(timeout);
+
+        const ct = res.headers.get('content-type') || '';
+        if (res.ok && ct.includes('application/json')) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            return data.slice(0, maxResults);
+          }
         }
+      } catch (e) {
+        // Continue to next endpoint or Invidious
       }
-    } catch (e) {
-      // Local or static environment where /api/search is not available, proceed to Invidious
     }
 
     // 3. Secondary: Query verified online YouTube Music / Invidious instances

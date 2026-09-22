@@ -1,0 +1,9 @@
+{
+  "name": "dhun",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dhun - Music Management System",
+  "scripts": {
+    "start": "node -e \"console.log('Dhun serverless ready')\""
+  }
+}

@@ -1374,8 +1374,8 @@ static void handle_request(SOCKET sock, char *req, int req_len)
         send_error(sock,404,"not found"); return;
     }
 
-    /* ── Anything else: serve as static file ── */
-    serve_static(sock, path);
+    /* ── Unhandled /api/ route: return 404 JSON, never fall through to static files ── */
+    send_error(sock, 404, "endpoint not found");
 }
 
 /* ── Seed sample songs ────────────────────────── */
