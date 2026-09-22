@@ -6,7 +6,17 @@
    All data operations go through the REST API.
 ══════════════════════════════════════════════════ */
 
-const API = 'http://127.0.0.1:3000/api';
+// API base URL - auto-detects based on protocol
+// On file:// protocol, API calls will fail (CORS), so we use localhost
+// In production, this should be configured via environment or build
+const API = (function() {
+  // If running on file://, use localhost for development
+  if (location.protocol === 'file:') return 'http://127.0.0.1:3000/api';
+  // If on localhost, use relative or explicit localhost
+  if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://127.0.0.1:3000/api';
+  // Production: use same origin (assuming backend served from same domain)
+  return location.origin + '/api';
+})();
 
 /* ── PC & Local Audio Persistence (IndexedDB) ─────────────────── */
 const pcSongAudioMap = new Map(); /* songId -> { url, file, durationSec } */
@@ -128,6 +138,13 @@ function initYouTubePlayer() {
     const effectiveOrigin = isFile ? 'http://localhost:3000' : location.origin;
     const effectiveReferrer = isFile ? 'http://localhost:3000/' : location.href;
 
+    // If running on file:// protocol, show warning and use direct embed instead
+    if (isFile) {
+      console.warn('[YT] Running on file:// protocol - YouTube IFrame API may not work. Using direct embed fallback.');
+      // Don't initialize YT.Player on file://, use direct embed instead
+      return;
+    }
+
     ytPlayer = new YT.Player('yt-hidden-player', {
       height: '100%',
       width: '100%',
@@ -239,11 +256,9 @@ function onYTPlayerError(e) {
   const errCode = e ? e.data : 'unknown';
   console.warn('[YT] Stream error code:', errCode);
 
+  // Handle file:// protocol - YouTube blocks this
   if (location.protocol === 'file:') {
-    showToast('⚠️ YouTube Error 153: YouTube blocks file://. Opening http://localhost:3000...', 4000);
-    setTimeout(() => {
-      window.location.href = 'http://localhost:3000';
-    }, 1200);
+    showToast('⚠️ YouTube Error 153: YouTube blocks file:// protocol. Please use http://localhost:3000', 5000);
     return;
   }
 
@@ -291,8 +306,21 @@ function embedDirectYTFrame(videoId) {
   const container = document.getElementById('yt-hidden-player');
   if (!container) return;
   console.log('[YT] Using direct embed iframe for video:', videoId);
-  const isFile = location.protocol === 'file:';
-  const originParam = isFile ? 'http://localhost:3000' : location.origin;
+  
+  // On file:// protocol, YouTube embeds are blocked - show error instead
+  if (location.protocol === 'file:') {
+    container.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-2);padding:20px;text-align:center">
+      <div>
+        <div style="font-size:24px;margin-bottom:8px">🚫</div>
+        <p>YouTube embeds blocked on <code>file://</code> protocol</p>
+        <p style="font-size:12px;margin-top:8px">Please run via <a href="http://localhost:3000" style="color:var(--purple)">http://localhost:3000</a></p>
+      </div>
+    </div>`;
+    fallbackToLocalDemoAudio();
+    return;
+  }
+  
+  const originParam = location.origin;
   container.innerHTML = `<iframe id="yt-direct-iframe" width="100%" height="100%" 
     src="https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&controls=0&disablekb=1&fs=0&modestbranding=1&rel=0&iv_load_policy=3&enablejsapi=1&vq=hd1080&origin=${encodeURIComponent(originParam)}" 
     title="YouTube Audio Stream" frameborder="0" 
@@ -657,6 +685,28 @@ function stopYTSimulatedBeatFFT() {
   if (ytVisualizerSimInterval) {
     clearInterval(ytVisualizerSimInterval);
     ytVisualizerSimInterval = null;
+  }
+}
+
+function cleanupAudioEngine() {
+  // Stop any playing audio
+  if (globalAudioPlayer && !globalAudioPlayer.paused) {
+    globalAudioPlayer.pause();
+  }
+  
+  // Stop YouTube player if active
+  if (ytPlayer) {
+    try {
+      if (ytPlayer.pauseVideo) ytPlayer.pauseVideo();
+    } catch(e) {}
+  }
+  
+  stopYTSimulatedBeatFFT();
+  
+  // Clear timers
+  if (state.timer) {
+    clearInterval(state.timer);
+    state.timer = null;
   }
 }
 
@@ -1214,6 +1264,12 @@ function toggleMobileSidebar(forceState) {
 }
 
 function navigate(page) {
+  // Cleanup visualizer when leaving player page
+  if (state.currentPage === 'player' && page !== 'player') {
+    if (typeof cleanupVisualizer === 'function') cleanupVisualizer();
+    if (typeof cleanupAudioEngine === 'function') cleanupAudioEngine();
+  }
+
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.querySelectorAll('.mob-nav-btn').forEach(b => b.classList.remove('active'));
@@ -1998,6 +2054,7 @@ function initAuth() {
     if (appShell) appShell.style.display = '';
     renderAvatarColorPicker();
     updateAuthUI();
+    purgePredefaultPlaylists();
 
     // Pull any remote cloud playlists and sync in background
     setTimeout(() => {
@@ -3340,8 +3397,9 @@ function pullProfileFromCloud(onDone) {
 
         // Merge playlists
         const localPls = getUserPlaylistsFromStorage() || (state.playlists || []);
-        const cloudPls = Array.isArray(data.playlists) ? data.playlists : [];
-        const mergedPls = [...localPls];
+        const rawCloudPls = Array.isArray(data.playlists) ? data.playlists : [];
+        const cloudPls = rawCloudPls.filter(cp => cp && !isPredefaultPlaylist(cp.name));
+        const mergedPls = [...localPls].filter(lp => lp && !isPredefaultPlaylist(lp.name));
         let hasNewPl = false;
 
         cloudPls.forEach(cp => {
@@ -4317,75 +4375,72 @@ async function refreshProfile() {
   await refreshLikedSongs();
 }
 
-/* ── Auto-Generate Multiple Playlists Engine ──────────────────── */
-async function autoGenerateMultiplePlaylists() {
+/* ── Predefault Playlists Filter & Purge Engine ──────────────────── */
+const PREDEFAULT_PLAYLIST_NAMES = [
+  'bollywood romance & classics',
+  'global pop & chartbusters',
+  'late night chill & lo-fi',
+  'high energy & edm',
+  'punjabi hits & vibes'
+];
+
+function isPredefaultPlaylist(name) {
+  if (!name) return false;
+  const clean = String(name).toLowerCase()
+    .replace(/\\u0026/g, '&')
+    .replace(/&amp;/g, '&')
+    .replace(/[\s\-_]+/g, ' ')
+    .trim();
+  return PREDEFAULT_PLAYLIST_NAMES.some(def => clean === def || clean.includes(def) || def.includes(clean));
+}
+
+function purgePredefaultPlaylists() {
   try {
-    let localPls = getUserPlaylistsFromStorage();
-    if (localPls && localPls.length >= 2) {
-      state.playlists = localPls;
-      renderSidebarPlaylists();
-      renderProfilePlaylists();
-      return;
+    // 1. Purge from all localStorage keys containing playlists
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('dhun_user_playlists_') || key === 'dhun_local_playlists' || key === 'dhun_playlists')) {
+        try {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const list = JSON.parse(raw);
+            if (Array.isArray(list)) {
+              const filtered = list.filter(p => p && !isPredefaultPlaylist(p.name));
+              localStorage.setItem(key, JSON.stringify(filtered));
+            }
+          }
+        } catch (e) {}
+      }
     }
 
-    const currentSongs = state.songs || (await apiGet('/songs', { silent: true })) || [];
-    if (!currentSongs || currentSongs.length === 0) return;
-
-    const definitions = [
-      {
-        name: 'Bollywood Romance & Classics',
-        filter: s => /bollywood/i.test(s.genre) || /arijit|pritam|mohit chauhan|crook|aashiqui|brahm|channa/i.test(`${s.title} ${s.artist}`)
-      },
-      {
-        name: 'Global Pop & Chartbusters',
-        filter: s => /pop|rock/i.test(s.genre) || /ed sheeran|weeknd|luis fonsi|queen|shape of you|blinding|despacito/i.test(`${s.title} ${s.artist}`)
-      },
-      {
-        name: 'Late Night Chill & Lo-Fi',
-        filter: s => /lo-fi|lofi/i.test(s.genre) || /lofi|chilledcow|beats/i.test(`${s.title} ${s.artist}`)
-      },
-      {
-        name: 'High Energy & EDM',
-        filter: s => /electronic|edm/i.test(s.genre) || /martin garrix|alan walker|avicii|marshmello|animals|faded/i.test(`${s.title} ${s.artist}`)
-      },
-      {
-        name: 'Punjabi Hits & Vibes',
-        filter: s => /punjabi/i.test(s.genre) || /ap dhillon|diljit|sidhu|karan aujla|brown munde|lover/i.test(`${s.title} ${s.artist}`)
-      }
-    ];
-
-    let userPlaylists = getUserPlaylistsFromStorage() || [];
-    for (let i = 0; i < definitions.length; i++) {
-      const def = definitions[i];
-      const alreadyExists = userPlaylists.some(p => p.name.toLowerCase() === def.name.toLowerCase());
-      if (alreadyExists) continue;
-
-      const matches = currentSongs.filter(def.filter);
-      if (matches.length === 0) continue;
-
-      const plId = Date.now() + i;
-      const matchedIds = matches.map(m => m.id);
-      userPlaylists.push({
-        id: plId,
-        name: def.name,
-        song_count: matchedIds.length,
-        songs: matchedIds
-      });
-      if (matches[0]) {
-        const leadThumb = imgFor(matches[0].id);
-        playlistThumbnailMap.set(plId, leadThumb);
-      }
-      // Silently sync to C server if running
-      apiPost('/playlists', { name: def.name }, { silent: true }).catch(() => {});
+    // 2. Filter current state.playlists
+    if (state.playlists && Array.isArray(state.playlists)) {
+      state.playlists = state.playlists.filter(p => p && !isPredefaultPlaylist(p.name));
     }
 
-    saveUserPlaylistsToStorage(userPlaylists);
-    state.playlists = userPlaylists;
+    // 3. Save to active user storage
+    const activePls = getUserPlaylistsFromStorage() || [];
+    const filteredActive = activePls.filter(p => p && !isPredefaultPlaylist(p.name));
+    try {
+      localStorage.setItem(getUserStorageKey('playlists'), JSON.stringify(filteredActive));
+    } catch(e) {}
+    state.playlists = filteredActive;
+
+    // 4. Update UI
     renderSidebarPlaylists();
     renderProfilePlaylists();
-  } catch (err) {
-    console.warn('Auto-generate playlists error:', err);
+    renderProfileStats();
+
+    // 5. Cloud push if user is logged in
+    pushProfileToCloudDebounced();
+  } catch (e) {
+    console.warn('purgePredefaultPlaylists error:', e);
   }
+}
+
+async function autoGenerateMultiplePlaylists() {
+  // Predefault auto-generation permanently disabled. Only user creates playlists.
+  purgePredefaultPlaylists();
 }
 
 function formatPlaylistName(name) {
@@ -4394,7 +4449,11 @@ function formatPlaylistName(name) {
 }
 
 async function refreshPlaylists() {
-  const localPls = getUserPlaylistsFromStorage();
+  purgePredefaultPlaylists();
+  let localPls = getUserPlaylistsFromStorage();
+  if (localPls) {
+    localPls = localPls.filter(p => p && !isPredefaultPlaylist(p.name));
+  }
   if (localPls && localPls.length > 0) {
     state.playlists = localPls.map(p => ({
       ...p,
@@ -4403,7 +4462,8 @@ async function refreshPlaylists() {
   } else {
     const pls = await apiGet('/playlists', { silent: true });
     if (pls && Array.isArray(pls) && pls.length > 0) {
-      state.playlists = pls.map(p => ({
+      const filteredPls = pls.filter(p => p && !isPredefaultPlaylist(p.name));
+      state.playlists = filteredPls.map(p => ({
         ...p,
         name: formatPlaylistName(p.name)
       }));
@@ -6356,6 +6416,19 @@ const vizState = {
   peakCaps: [],
   animFrameId: null
 };
+
+function cleanupVisualizer() {
+  if (vizState.animFrameId) {
+    cancelAnimationFrame(vizState.animFrameId);
+    vizState.animFrameId = null;
+  }
+  window.removeEventListener('resize', resizeVisualizerCanvas);
+  
+  // Clean up particle arrays to free memory
+  vizState.particles = [];
+  vizState.warpStars = [];
+  vizState.peakCaps = [];
+}
 
 function initFlowVisualizer() {
   vizState.canvas = document.getElementById('flow-visualizer-canvas');

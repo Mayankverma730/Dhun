@@ -139,3 +139,19 @@ void heap_display_top(Heap *h, int k)
 }
 
 int heap_size(const Heap *h) { return h ? h->size : 0; }
+
+int heap_is_full(const Heap *h) { return h && h->size >= HEAP_MAX_SIZE; }
+
+void heap_rebuild_from_library(Heap *h, const Library *lib)
+{
+    if (!h || !lib) return;
+    h->size = 0;
+    LibNode *node = lib->head;
+    while (node && h->size < HEAP_MAX_SIZE) {
+        h->data[h->size++] = node->song;
+        node = node->next;
+    }
+    /* Floyd's algorithm: heapify from last non-leaf */
+    for (int i = (h->size / 2) - 1; i >= 0; i--)
+        sift_down(h, i);
+}

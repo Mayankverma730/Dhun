@@ -14,6 +14,17 @@ DBGFLAGS= -g -DDEBUG
 TARGET  = music_mgr
 SERVER  = vibe_server
 
+# Detect OS
+ifeq ($(OS),Windows_NT)
+    EXE_EXT = .exe
+    RM      = del /Q
+    SLASH   = \\
+else
+    EXE_EXT =
+    RM      = rm -f
+    SLASH   = /
+endif
+
 COMMON_SRCS = song.c library.c stack.c queue.c bst.c heap.c hash.c sort.c playlist.c
 CLI_SRCS    = main.c   $(COMMON_SRCS)
 SRV_SRCS    = server.c $(COMMON_SRCS)
@@ -22,44 +33,40 @@ CLI_OBJS = $(CLI_SRCS:.c=.o)
 SRV_OBJS = $(SRV_SRCS:.c=.o)
 
 # Default — build both
-all: $(TARGET) $(SERVER)
+all: $(TARGET)$(EXE_EXT) $(SERVER)$(EXE_EXT)
 	@echo ""
 	@echo "  ✓ Build successful!"
-	@echo "    CLI:    ./$(TARGET).exe"
-	@echo "    Server: ./$(SERVER).exe  (then open index.html)"
+	@echo "    CLI:    ./$(TARGET)$(EXE_EXT)"
+	@echo "    Server: ./$(SERVER)$(EXE_EXT)  (then open index.html)"
 	@echo ""
 
 # CLI binary
-$(TARGET): $(CLI_OBJS)
+$(TARGET)$(EXE_EXT): $(CLI_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ -lm
-	@echo "  ✓ CLI built: $(TARGET).exe"
+	@echo "  ✓ CLI built: $(TARGET)$(EXE_EXT)"
 
 # HTTP API server
-$(SERVER): $(SRV_OBJS)
+$(SERVER)$(EXE_EXT): $(SRV_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ -lws2_32 -lm
-	@echo "  ✓ Server built: $(SERVER).exe"
+	@echo "  ✓ Server built: $(SERVER)$(EXE_EXT)"
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # Debug build (CLI only)
 debug: CFLAGS += $(DBGFLAGS)
-debug: $(TARGET)
+debug: $(TARGET)$(EXE_EXT)
 
 # Run CLI
-run: $(TARGET)
-	./$(TARGET).exe
+run: $(TARGET)$(EXE_EXT)
+	./$(TARGET)$(EXE_EXT)
 
 # Run API server
-serve: $(SERVER)
-	./$(SERVER).exe
-
-# Windows
-run-win: $(TARGET)
-	$(TARGET).exe
+serve: $(SERVER)$(EXE_EXT)
+	./$(SERVER)$(EXE_EXT)
 
 # Clean
 clean:
-	del /Q *.o $(TARGET).exe $(SERVER).exe 2>nul || rm -f *.o $(TARGET) $(SERVER)
+	$(RM) *.o $(TARGET)$(EXE_EXT) $(SERVER)$(EXE_EXT) 2>nul
 
-.PHONY: all debug run run-win serve clean
+.PHONY: all debug run serve clean

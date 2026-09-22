@@ -101,8 +101,27 @@
 
 /* Apply transition to all themed elements */
 body, .sidebar, .topbar, .player-bar, .glass-card,
-.nav-item, .main-content, .app-shell {
-  transition: var(--transition, background 0.35s, color 0.35s);
+.nav-item, .main-content, .app-shell,
+.card, .btn-primary, .btn-secondary, .nav-item,
+.section-title, .feat-card, .trend-card, .side-card,
+.mood-pill, .filter-chip, .cat-card, .st-row,
+.player-song-info, .heart-btn, .dhun-hub-panel,
+.lyrics-panel, .dhun-tab-btn, .dhun-meta-card,
+.dhun-stat-card, .dhun-similar-card, .similar-thumb,
+.topbar-icon-btn, .topbar-avatar, .notif-panel,
+.suggestions-box, .search-hero-bar, .search-hero-input,
+.shi-voice, .shi-clear, .topbar-search, .topbar-search input,
+.sidebar-user, .su-avatar, .playlist-item, .pl-dot,
+.hero-banner, .hero-content, .hero-stats,
+.flow-visualizer-wrap, .visualizer-presets, .viz-preset-btn,
+.visualizer-album-card, .visualizer-bottom-bar, .eq-bars span,
+.player-page-layout, .player-left, .player-right,
+.page, .page-header, .yt-cards-grid, .yt-card,
+.user-menu-popover, .ump-item, .auth-panel,
+.form-input, .auth-tab-btn, .google-auth-btn,
+.gate-auth-card, .gate-hero-col, .gate-vinyl-wrap,
+.gate-perk-item, .avatar-palette-picker, .palette-dot {
+  transition: var(--transition, background 0.35s, color 0.35s, border-color 0.35s, box-shadow 0.35s);
 }
 
 html, body { height: 100%; background: var(--bg); font-family: var(--font); color: var(--text-1); overflow: hidden; }
@@ -110,10 +129,10 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
 
 /* ── Ambient ──────────────────────────────────── */
 .ambient-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
-.orb { position: absolute; border-radius: 50%; filter: blur(100px); opacity: var(--orb-opacity, 0.18); animation: orbFloat 10s ease-in-out infinite alternate; }
-.orb-1 { width: 600px; height: 600px; background: radial-gradient(circle, #7c3aed, transparent); top: -200px; left: -100px; }
-.orb-2 { width: 500px; height: 500px; background: radial-gradient(circle, #2563eb, transparent); top: 30%; right: -150px; animation-duration: 13s; }
-.orb-3 { width: 400px; height: 400px; background: radial-gradient(circle, #ec4899, transparent); bottom: -100px; left: 35%; animation-duration: 8s; }
+.orb { position: absolute; border-radius: 50%; filter: blur(100px); opacity: var(--orb-opacity, 0.18); animation: orbFloat 10s ease-in-out infinite alternate; transition: background 0.5s ease; }
+.orb-1 { width: 600px; height: 600px; background: radial-gradient(circle, var(--purple), transparent); top: -200px; left: -100px; }
+.orb-2 { width: 500px; height: 500px; background: radial-gradient(circle, var(--blue), transparent); top: 30%; right: -150px; animation-duration: 13s; }
+.orb-3 { width: 400px; height: 400px; background: radial-gradient(circle, var(--pink), transparent); bottom: -100px; left: 35%; animation-duration: 8s; }
 @keyframes orbFloat { from { transform: translateY(0) scale(1); } to { transform: translateY(-50px) scale(1.08); } }
 
 /* ── App Shell (full screen grid) ─────────────── */

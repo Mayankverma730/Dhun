@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap"
     rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=2.8" />
+  <link rel="stylesheet" href="style.css?v=2.9" />
   <script>
     (function () {
       try {
@@ -20,11 +20,16 @@
         if (t && t !== 'default') document.documentElement.setAttribute('data-theme', t);
       } catch (e) {}
 
-      // If user opened directly via file://, redirect to http://localhost:3000 to eliminate YouTube Error 153
+      // If user opened directly via file://, show banner and offer redirect to http://localhost:3000
+      // to eliminate YouTube Error 153 (YouTube blocks media playback on file:// protocol)
       if (window.location.protocol === 'file:') {
+        var banner = document.getElementById('file-protocol-banner');
+        if (banner) banner.style.display = 'block';
+        
+        // Try to detect if server is running, then auto-redirect
         fetch('http://127.0.0.1:3000/api/songs', { mode: 'cors' })
           .then(function(res) {
-            if (res.ok) {
+            if (res.ok && confirm('YouTube blocks playback on file:// protocol. Redirect to http://localhost:3000?')) {
               window.location.replace('http://localhost:3000');
             }
           })
@@ -39,13 +44,8 @@
   <!-- Localhost Notice if opened via file:// -->
   <div id="file-protocol-banner" style="display:none;background:linear-gradient(90deg,#ff416c,#ff4b2b);color:#fff;padding:8px 16px;text-align:center;font-size:13px;font-weight:600;z-index:99999;position:sticky;top:0;box-shadow:0 4px 14px rgba(0,0,0,0.4);">
     <span>⚠️ You opened Dhun using <code>file://</code>. YouTube blocks media playback on <code>file://</code> with Error 153.</span>
-    <a href="http://localhost:3000" style="color:#fff;text-decoration:underline;margin-left:10px;background:rgba(0,0,0,0.3);padding:3px 10px;border-radius:6px;font-weight:700;">Open via http://localhost:3000 🚀</a>
+    <button onclick="window.location.href='http://localhost:3000'" style="color:#fff;text-decoration:underline;margin-left:10px;background:rgba(0,0,0,0.3);padding:3px 10px;border-radius:6px;font-weight:700;border:none;cursor:pointer;">Open via http://localhost:3000 🚀</button>
   </div>
-  <script>
-    if (window.location.protocol === 'file:') {
-      document.getElementById('file-protocol-banner').style.display = 'block';
-    }
-  </script>
 
   <!-- Ambient Orbs -->
   <div class="ambient-bg" aria-hidden="true">
@@ -1787,7 +1787,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.5/dist/mqtt.min.js"></script>
   <script src="ytmusic_api.js"></script>
-  <script src="app.js?v=2.8"></script>
+  <script src="app.js?v=2.9"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 

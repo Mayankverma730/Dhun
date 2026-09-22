@@ -456,6 +456,12 @@ static void route_add_song(SOCKET sock, const char *body)
     /* Debug: print first 200 chars of body */
     fprintf(stderr, "[DEBUG add_song] body=%.200s\n", body ? body : "(null)");
     fflush(stderr);
+    
+    if (!body || strlen(body) == 0) {
+        send_error(sock, 400, "empty request body");
+        return;
+    }
+
     char title[MAX_TITLE], artist[MAX_ARTIST], album[MAX_ALBUM], genre[MAX_GENRE];
     json_str(body, "title",  title,  sizeof(title));
     json_str(body, "artist", artist, sizeof(artist));
@@ -464,7 +470,16 @@ static void route_add_song(SOCKET sock, const char *body)
     float duration = json_float(body, "duration", 3.0f);
     float rating   = json_float(body, "rating",   3.0f);
 
+    /* Input validation */
     if (!title[0] || !artist[0]) { send_error(sock,400,"title and artist required"); return; }
+    if (duration <= 0 || duration > 600) { send_error(sock,400,"duration must be between 0 and 600 minutes"); return; }
+    if (rating < 0 || rating > 5) { send_error(sock,400,"rating must be between 0 and 5"); return; }
+
+    /* Sanitize inputs - remove control characters */
+    for (int i = 0; title[i]; i++) if ((unsigned char)title[i] < 32) title[i] = ' ';
+    for (int i = 0; artist[i]; i++) if ((unsigned char)artist[i] < 32) artist[i] = ' ';
+    for (int i = 0; album[i]; i++) if ((unsigned char)album[i] < 32) album[i] = ' ';
+    for (int i = 0; genre[i]; i++) if ((unsigned char)genre[i] < 32) genre[i] = ' ';
 
     /* Inbuilt duplicate check: Reject copy if title and artist already exist in library */
     if (g_lib) {
@@ -506,6 +521,10 @@ static void route_delete_song(SOCKET sock, int id)
     hash_delete(g_hash, id);
     lib_remove_song(g_lib, id);
 
+    /* Rebuild heaps to remove deleted song */
+    heap_rebuild_from_library(g_heap_plays, g_lib);
+    heap_rebuild_from_library(g_heap_rating, g_lib);
+
     send_ok(sock, "{\"success\":true}");
 }
 
@@ -517,13 +536,22 @@ static void route_play_song(SOCKET sock, int id)
 
     s->play_count++;
     hash_insert(g_hash, *s);   /* refresh hash */
+    bst_update_song(g_bst, id, s->play_count);  /* refresh BST */
 
     /* Push to play history stack */
     stack_push(g_history, *s);
 
-    /* Rebuild heap entry (simple: insert updated copy) */
-    heap_insert(g_heap_plays, *s);
-    heap_insert(g_heap_rating, *s);
+    /* Update heap entries - insert updated copy */
+    if (heap_is_full(g_heap_plays)) {
+        heap_rebuild_from_library(g_heap_plays, g_lib);
+    } else {
+        heap_insert(g_heap_plays, *s);
+    }
+    if (heap_is_full(g_heap_rating)) {
+        heap_rebuild_from_library(g_heap_rating, g_lib);
+    } else {
+        heap_insert(g_heap_rating, *s);
+    }
 
     char buf[512];
     song_to_json_liked(s, buf, sizeof(buf));
@@ -537,6 +565,9 @@ static void route_like_song(SOCKET sock, int id)
     if (!s) { send_error(sock, 404, "song not found"); return; }
 
     if (id >= 0 && id < MAX_SONGS) g_liked[id] ^= 1;
+
+    /* Sync like state to hash table */
+    hash_insert(g_hash, *s);
 
     char buf[512];
     song_to_json_liked(s, buf, sizeof(buf));
@@ -733,6 +764,11 @@ static void route_playlist_add_song(SOCKET sock, int pl_id, const char *body)
 {
     int song_id = json_int(body, "song_id", -1);
     if (song_id < 0) { send_error(sock,400,"song_id required"); return; }
+    
+    /* Validate song exists in library */
+    Song *s = lib_find_by_id(g_lib, song_id);
+    if (!s) { send_error(sock, 404, "song not found"); return; }
+    
     if (pm_add_song(g_pm, pl_id, song_id) == 0) { send_error(sock,400,"failed"); return; }
     send_ok(sock, "{\"success\":true}");
 }
