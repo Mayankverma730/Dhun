@@ -184,12 +184,17 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   flex-shrink: 0;
 }
 .logo-icon {
-  width: 36px; height: 36px;
-  background: var(--grad-main);
-  border-radius: 10px;
+  width: 38px; height: 38px;
+  border-radius: 12px;
+  object-fit: cover;
   display: flex; align-items: center; justify-content: center;
-  font-size: 18px; font-weight: 900; color: white;
-  box-shadow: 0 0 20px rgba(124,58,237,0.5);
+  box-shadow: 0 0 22px rgba(124,58,237,0.65);
+  border: 1px solid rgba(255,255,255,0.18);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.sidebar-logo:hover .logo-icon {
+  transform: scale(1.06) rotate(3deg);
+  box-shadow: 0 0 28px rgba(168,85,247,0.85);
 }
 .logo-text { font-size: 22px; font-weight: 900; background: var(--grad-main); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
 
@@ -4662,18 +4667,15 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
 }
 
 .auth-logo-badge {
-  width: 52px;
-  height: 52px;
-  border-radius: 16px;
-  background: var(--grad-main);
-  color: #fff;
-  font-size: 26px;
-  font-weight: 900;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  background: transparent;
+  padding: 0;
+  overflow: hidden;
   margin: 0 auto 12px;
-  box-shadow: 0 6px 20px var(--glow);
+  box-shadow: 0 6px 24px rgba(124, 58, 237, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
 .auth-modal-title {
@@ -4792,17 +4794,17 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
 }
 
 .gate-brand-icon {
-  width: 48px;
-  height: 48px;
+  width: 50px;
+  height: 50px;
   border-radius: 16px;
-  background: var(--grad-main);
-  color: #fff;
-  font-size: 24px;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.55);
+  object-fit: cover;
+  box-shadow: 0 4px 24px rgba(124, 58, 237, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  transition: transform 0.3s ease;
+}
+
+.gate-brand:hover .gate-brand-icon {
+  transform: scale(1.08) rotate(3deg);
 }
 
 .gate-brand-name {
@@ -4874,9 +4876,12 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
 }
 
 .gate-vinyl-logo {
-  color: #fff;
-  font-size: 22px;
-  font-weight: 800;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  box-shadow: 0 0 14px rgba(124, 58, 237, 0.7);
 }
 
 .gate-aura-ring {
