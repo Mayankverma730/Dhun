@@ -821,6 +821,9 @@ async function api(method, path, data, options = {}) {
   const isCloudHost = window.location.protocol === 'https:' ||
                       window.location.hostname.includes('vercel.app') ||
                       window.location.hostname.includes('github.io');
+  if (isCloudHost) {
+    return null;
+  }
   try {
     const opts = {
       method,
@@ -3281,12 +3284,12 @@ function renderRelated() {
 }
 
 /* Search page */
+let searchMode = 'ytmusic';
+
 async function refreshSearch() {
-  if (searchMode === 'ytmusic') {
-    const grid = document.getElementById('yt-music-grid');
-    if (grid && (!grid.children || grid.children.length === 0)) {
-      loadYTFeed(currentYTFeedCategory || 'for-you');
-    }
+  const grid = document.getElementById('yt-music-grid');
+  if (grid && (!grid.children || grid.children.length === 0)) {
+    loadYTFeed(currentYTFeedCategory || 'for-you');
   }
 }
 
