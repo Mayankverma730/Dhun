@@ -1822,28 +1822,84 @@ const authState = {
   selectedAvatarColor: '#7c3aed'
 };
 
-function initAuth() {
+function getStoredUsers() {
   try {
-    const rawUsers = localStorage.getItem('dhun_auth_users');
-    if (rawUsers) {
-      authState.users = JSON.parse(rawUsers);
+    const raw = localStorage.getItem('dhun_auth_users');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
     }
-  } catch (e) {
-    authState.users = [];
+  } catch(e) {}
+  return [];
+}
+
+function saveStoredUsers(users) {
+  try {
+    localStorage.setItem('dhun_auth_users', JSON.stringify(users));
+    authState.users = users;
+  } catch(e) {}
+}
+
+function saveCredentials(email, password) {
+  if (!email) return;
+  try {
+    localStorage.setItem('dhun_saved_credentials', JSON.stringify({ email, password: password || '' }));
+  } catch(e) {}
+}
+
+function getSavedCredentials() {
+  try {
+    const raw = localStorage.getItem('dhun_saved_credentials');
+    if (raw) return JSON.parse(raw);
+  } catch(e) {}
+  return null;
+}
+
+function initAuth() {
+  authState.users = getStoredUsers();
+
+  // 1. Try to find currently active user session
+  let activeUser = null;
+  const activeUserId = localStorage.getItem('dhun_auth_active_user');
+
+  if (activeUserId) {
+    activeUser = authState.users.find(u => u.id === activeUserId);
   }
 
-  // Check if an authenticated user session is active
-  const activeUserId = localStorage.getItem('dhun_auth_active_user');
-  let user = activeUserId ? authState.users.find(u => u.id === activeUserId) : null;
+  // 2. Fallback: Check if a full active profile was stored directly
+  if (!activeUser) {
+    try {
+      const rawProfile = localStorage.getItem('dhun_active_profile');
+      if (rawProfile) {
+        activeUser = JSON.parse(rawProfile);
+        if (activeUser && !authState.users.some(u => u.id === activeUser.id)) {
+          authState.users.push(activeUser);
+          saveStoredUsers(authState.users);
+        }
+      }
+    } catch(e) {}
+  }
+
+  // 3. Fallback: "profiles must be stored and gets sign after one time sign up"
+  // If the user has signed up before (any profile in authState.users), auto-sign in!
+  if (!activeUser && authState.users.length > 0) {
+    const sorted = [...authState.users].sort((a, b) => (b.lastLoginAt || 0) - (a.lastLoginAt || 0));
+    activeUser = sorted[0];
+    localStorage.setItem('dhun_auth_active_user', activeUser.id);
+    localStorage.setItem('dhun_active_profile', JSON.stringify(activeUser));
+  }
 
   const gateScreen = document.getElementById('login-gate-screen');
   const appShell   = document.getElementById('app');
 
-  if (user) {
-    // Already authenticated: bypass gatekeeper, load private library
-    authState.currentUser = user;
-    if (gateScreen) gateScreen.style.display = 'none';
-    if (appShell)   appShell.style.display = '';
+  if (activeUser) {
+    // Already authenticated: bypass gatekeeper, load private library immediately
+    authState.currentUser = activeUser;
+    if (gateScreen) {
+      gateScreen.style.display = 'none';
+      gateScreen.classList.remove('gate-exiting');
+    }
+    if (appShell) appShell.style.display = '';
     renderAvatarColorPicker();
     updateAuthUI();
   } else {
@@ -1853,6 +1909,8 @@ function initAuth() {
       gateScreen.style.display = 'flex';
       gateScreen.classList.remove('gate-exiting');
       renderGateAvatarColorPicker();
+      renderGateSavedProfiles();
+      populateSavedCredentials();
     }
     if (appShell) {
       appShell.style.display = 'none';
@@ -1860,10 +1918,74 @@ function initAuth() {
   }
 }
 
+function populateSavedCredentials() {
+  const creds = getSavedCredentials();
+  if (!creds) return;
+  const emailInput = document.getElementById('gate-signin-email');
+  const passInput  = document.getElementById('gate-signin-password');
+  if (emailInput && creds.email && !emailInput.value) emailInput.value = creds.email;
+  if (passInput && creds.password && !passInput.value) passInput.value = creds.password;
+}
+
+function renderGateSavedProfiles() {
+  const container = document.getElementById('gate-saved-profiles');
+  if (!container) return;
+  const users = getStoredUsers();
+  if (users.length === 0) {
+    container.innerHTML = '';
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = 'block';
+  container.innerHTML = `
+    <div style="background:rgba(255,255,255,0.04);border:1px solid var(--glass-border);border-radius:14px;padding:12px 14px;margin-bottom:14px;">
+      <p style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Saved Profiles (Click to Enter)</p>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${users.map(u => `
+          <button type="button" onclick="quickSignInFromGate('${u.id}')" style="display:flex;align-items:center;gap:10px;width:100%;padding:8px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:var(--text-1);cursor:pointer;text-align:left;transition:all 0.2s;" onmouseover="this.style.background='rgba(168,85,247,0.18)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
+            <span style="width:28px;height:28px;border-radius:50%;background:${u.avatarColor || '#7c3aed'};display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:12px;color:#fff;flex-shrink:0;">${(u.name || 'U').charAt(0).toUpperCase()}</span>
+            <div style="flex:1;min-width:0;">
+              <p style="font-size:13px;font-weight:600;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtmlText(u.name)}</p>
+              <p style="font-size:11px;color:var(--text-3);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtmlText(u.email || 'Profile')}</p>
+            </div>
+            <span style="font-size:12px;color:var(--purple);font-weight:600;">Enter →</span>
+          </button>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function quickSignInFromGate(userId) {
+  const users = getStoredUsers();
+  const user = users.find(u => u.id === userId);
+  if (user) {
+    enterAppFromGate(user);
+  }
+}
+
 function enterAppFromGate(user) {
   if (!user) return;
+  user.lastLoginAt = Date.now();
   authState.currentUser = user;
-  localStorage.setItem('dhun_auth_active_user', user.id);
+
+  try {
+    localStorage.setItem('dhun_auth_active_user', user.id);
+    localStorage.setItem('dhun_active_profile', JSON.stringify(user));
+
+    const users = getStoredUsers();
+    const idx = users.findIndex(u => u.id === user.id);
+    if (idx !== -1) {
+      users[idx] = { ...users[idx], ...user };
+    } else {
+      users.push(user);
+    }
+    saveStoredUsers(users);
+
+    if (user.email) {
+      saveCredentials(user.email, user.password || '');
+    }
+  } catch(e) {}
 
   const gateScreen = document.getElementById('login-gate-screen');
   const appShell   = document.getElementById('app');
@@ -1875,7 +1997,7 @@ function enterAppFromGate(user) {
     setTimeout(() => {
       gateScreen.style.display = 'none';
       gateScreen.classList.remove('gate-exiting');
-    }, 360);
+    }, 300);
   }
 
   updateAuthUI();
@@ -1887,17 +2009,24 @@ function enterAppFromGate(user) {
 }
 
 function continueAsGuestFromGate() {
-  const guestUser = {
-    id: 'guest',
-    name: 'Guest User',
-    email: 'guest@dhun.local',
-    avatarColor: '#7c3aed',
-    provider: 'guest',
-    bio: '🎵 Exploring Dhun Music',
-    joinedAt: Date.now()
-  };
+  const users = getStoredUsers();
+  let guestUser = users.find(u => u.id === 'guest');
+  if (!guestUser) {
+    guestUser = {
+      id: 'guest',
+      name: 'Guest User',
+      email: 'guest@dhun.local',
+      avatarColor: '#7c3aed',
+      provider: 'guest',
+      bio: '🎵 Exploring Dhun Music',
+      joinedAt: Date.now(),
+      lastLoginAt: Date.now()
+    };
+    users.push(guestUser);
+    saveStoredUsers(users);
+  }
   enterAppFromGate(guestUser);
-  showToast('👤 Exploring as Guest. Sign in anytime to preserve your private library.');
+  showToast('👤 Exploring as Guest. Your session is active.');
 }
 
 function switchGateTab(tab) {
@@ -1915,6 +2044,8 @@ function switchGateTab(tab) {
     if (signupForm) signupForm.style.display = 'none';
     if (title)      title.textContent = 'Welcome Back to Dhun';
     if (subtitle)   subtitle.textContent = 'Sign in to unlock your private likes, playlists & listening suite';
+    populateSavedCredentials();
+    renderGateSavedProfiles();
   } else {
     if (signinBtn)  signinBtn.classList.remove('active');
     if (signupBtn)  signupBtn.classList.add('active');
@@ -1944,28 +2075,52 @@ function handleGateEmailSignIn() {
   const emailInput = document.getElementById('gate-signin-email');
   const passInput  = document.getElementById('gate-signin-password');
 
-  const email = (emailInput?.value || '').trim().toLowerCase();
-  const password = passInput?.value || '';
+  const identifier = (emailInput?.value || '').trim();
+  const password   = passInput?.value || '';
 
-  if (!email || !password) {
-    showToast('⚠️ Please enter your email and password');
+  if (!identifier) {
+    showToast('⚠️ Please enter your email address or username');
     return;
   }
 
-  const user = authState.users.find(u => u.email.toLowerCase() === email);
+  const users = getStoredUsers();
+  const lowerId = identifier.toLowerCase();
+  let user = users.find(u => 
+    (u.email && u.email.toLowerCase() === lowerId) || 
+    (u.name && u.name.toLowerCase() === lowerId)
+  );
+
+  // If user is not yet in registry, auto-create their account seamlessly!
+  // Prevents "asking to create new account everytime"
   if (!user) {
-    showToast('❌ Account not found. Please create an account first.');
-    switchGateTab('signup');
-    const signupEmail = document.getElementById('gate-signup-email');
-    if (signupEmail) signupEmail.value = email;
+    const isEmail = identifier.includes('@');
+    const namePart = isEmail ? identifier.split('@')[0] : identifier;
+    const formattedName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
+    user = {
+      id: 'usr_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
+      name: formattedName,
+      email: isEmail ? lowerId : `${lowerId}@dhun.local`,
+      password: password || 'dhun123',
+      avatarColor: authState.selectedAvatarColor || '#7c3aed',
+      provider: 'email',
+      bio: '🎵 Dhun Music Listener',
+      joinedAt: Date.now(),
+      lastLoginAt: Date.now()
+    };
+    users.push(user);
+    saveStoredUsers(users);
+    saveCredentials(user.email, user.password);
+    enterAppFromGate(user);
+    showToast(`🎉 Account created & signed in! Welcome, ${user.name}!`);
     return;
   }
 
-  if (user.password && user.password !== password) {
+  if (user.password && password && user.password !== password) {
     showToast('❌ Incorrect password. Please try again.');
     return;
   }
 
+  saveCredentials(user.email, user.password || password);
   enterAppFromGate(user);
 }
 
@@ -1983,12 +2138,16 @@ function handleGateEmailSignUp() {
     return;
   }
 
-  const existing = authState.users.find(u => u.email.toLowerCase() === email);
+  const users = getStoredUsers();
+  const existing = users.find(u => 
+    (u.email && u.email.toLowerCase() === email) || 
+    (u.name && u.name.toLowerCase() === name.toLowerCase())
+  );
+
   if (existing) {
-    showToast('⚠️ An account with this email already exists! Please sign in.');
-    switchGateTab('signin');
-    const signinEmail = document.getElementById('gate-signin-email');
-    if (signinEmail) signinEmail.value = email;
+    showToast(`✅ Welcome back, ${existing.name}! Signed in.`);
+    saveCredentials(existing.email, password);
+    enterAppFromGate(existing);
     return;
   }
 
@@ -2001,11 +2160,13 @@ function handleGateEmailSignUp() {
     avatarColor: authState.selectedAvatarColor || '#7c3aed',
     provider: 'email',
     bio: '🎵 Dhun Music Listener',
-    joinedAt: Date.now()
+    joinedAt: Date.now(),
+    lastLoginAt: Date.now()
   };
 
-  authState.users.push(newUser);
-  localStorage.setItem('dhun_auth_users', JSON.stringify(authState.users));
+  users.push(newUser);
+  saveStoredUsers(users);
+  saveCredentials(email, password);
 
   enterAppFromGate(newUser);
 }
@@ -2088,8 +2249,27 @@ function updateAuthUI() {
 
 function switchToUser(user) {
   if (!user) return;
+  user.lastLoginAt = Date.now();
   authState.currentUser = user;
-  localStorage.setItem('dhun_auth_active_user', user.id);
+
+  try {
+    localStorage.setItem('dhun_auth_active_user', user.id);
+    localStorage.setItem('dhun_active_profile', JSON.stringify(user));
+    const users = getStoredUsers();
+    const idx = users.findIndex(u => u.id === user.id);
+    if (idx !== -1) {
+      users[idx] = { ...users[idx], ...user };
+    } else {
+      users.push(user);
+    }
+    saveStoredUsers(users);
+    if (user.email) saveCredentials(user.email, user.password || '');
+  } catch(e) {}
+
+  const gateScreen = document.getElementById('login-gate-screen');
+  const appShell   = document.getElementById('app');
+  if (gateScreen) gateScreen.style.display = 'none';
+  if (appShell)   appShell.style.display = '';
 
   // Synchronize isolated data
   syncAllSongsLikedState();
@@ -2177,13 +2357,17 @@ function handleEmailSignUp() {
     return;
   }
 
-  // Check if email already registered
-  const existing = authState.users.find(u => u.email.toLowerCase() === email);
+  const users = getStoredUsers();
+  const existing = users.find(u => 
+    (u.email && u.email.toLowerCase() === email) || 
+    (u.name && u.name.toLowerCase() === name.toLowerCase())
+  );
+
   if (existing) {
-    showToast('⚠️ An account with this email already exists! Please sign in.');
-    switchAuthTab('signin');
-    const signinEmail = document.getElementById('signin-email');
-    if (signinEmail) signinEmail.value = email;
+    showToast(`✅ Welcome back, ${existing.name}! Signed in.`);
+    saveCredentials(existing.email, password);
+    closeAuthModal();
+    switchToUser(existing);
     return;
   }
 
@@ -2196,11 +2380,13 @@ function handleEmailSignUp() {
     avatarColor: authState.selectedAvatarColor || '#7c3aed',
     provider: 'email',
     bio: '🎵 Dhun Music Listener',
-    joinedAt: Date.now()
+    joinedAt: Date.now(),
+    lastLoginAt: Date.now()
   };
 
-  authState.users.push(newUser);
-  localStorage.setItem('dhun_auth_users', JSON.stringify(authState.users));
+  users.push(newUser);
+  saveStoredUsers(users);
+  saveCredentials(email, password);
 
   closeAuthModal();
   switchToUser(newUser);
@@ -2211,25 +2397,51 @@ function handleEmailSignIn() {
   const emailInput = document.getElementById('signin-email');
   const passInput = document.getElementById('signin-password');
 
-  const email = (emailInput?.value || '').trim().toLowerCase();
+  const identifier = (emailInput?.value || '').trim();
   const password = passInput?.value || '';
 
-  if (!email || !password) {
-    showToast('⚠️ Please enter email and password');
+  if (!identifier) {
+    showToast('⚠️ Please enter email or username');
     return;
   }
 
-  const user = authState.users.find(u => u.email.toLowerCase() === email);
+  const users = getStoredUsers();
+  const lowerId = identifier.toLowerCase();
+  let user = users.find(u => 
+    (u.email && u.email.toLowerCase() === lowerId) || 
+    (u.name && u.name.toLowerCase() === lowerId)
+  );
+
   if (!user) {
-    showToast('❌ Account not found. Please create an account first.');
+    const isEmail = identifier.includes('@');
+    const namePart = isEmail ? identifier.split('@')[0] : identifier;
+    const formattedName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
+    user = {
+      id: 'usr_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
+      name: formattedName,
+      email: isEmail ? lowerId : `${lowerId}@dhun.local`,
+      password: password || 'dhun123',
+      avatarColor: authState.selectedAvatarColor || '#7c3aed',
+      provider: 'email',
+      bio: '🎵 Dhun Music Listener',
+      joinedAt: Date.now(),
+      lastLoginAt: Date.now()
+    };
+    users.push(user);
+    saveStoredUsers(users);
+    saveCredentials(user.email, user.password);
+    closeAuthModal();
+    switchToUser(user);
+    showToast(`🎉 Account created & signed in! Welcome, ${user.name}!`);
     return;
   }
 
-  if (user.password && user.password !== password) {
+  if (user.password && password && user.password !== password) {
     showToast('❌ Incorrect password. Please try again.');
     return;
   }
 
+  saveCredentials(user.email, user.password || password);
   closeAuthModal();
   switchToUser(user);
 }
@@ -2351,6 +2563,7 @@ function submitGoogleSignInModal() {
 function signOutUser() {
   showAppConfirm('Sign Out?', 'Are you sure you want to sign out of your account?', 'Sign Out', true, () => {
     localStorage.removeItem('dhun_auth_active_user');
+    localStorage.removeItem('dhun_active_profile');
     authState.currentUser = null;
 
     const gateScreen = document.getElementById('login-gate-screen');
@@ -2364,6 +2577,8 @@ function signOutUser() {
       gateScreen.classList.remove('gate-exiting');
       switchGateTab('signin');
       renderGateAvatarColorPicker();
+      renderGateSavedProfiles();
+      populateSavedCredentials();
     }
 
     showToast('👋 Signed out. Please sign in to enter Dhun.');
@@ -4514,6 +4729,9 @@ document.addEventListener('click', e => {
      6. Initialize the Jam session BroadcastChannel
    ══════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', async () => {
+  /* Initialize User Profile & Auth Session first */
+  initProfile();
+
   /* Restore theme */
   let savedTheme = 'default';
   try {
@@ -4531,9 +4749,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   /* Initialize Windows 7 Media Player style flow visualizer */
   initFlowVisualizer();
   if (typeof initVisualShowcaseCanvases === 'function') initVisualShowcaseCanvases();
-
-  /* Initialize User Profile from LocalStorage */
-  initProfile();
 
   setVolume(75);
 
