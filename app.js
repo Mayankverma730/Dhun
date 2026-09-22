@@ -4227,10 +4227,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   await autoSeedLibraryWithOnlineMedia();
   loadYTFeed('for-you');
 
-  /* Load songs from API */
-  const songs = await apiGet('/songs');
+  /* Load songs from API or local client storage */
+  let songs = await apiGet('/songs');
+  if (!songs || songs.length === 0) {
+    try {
+      const stored = localStorage.getItem('dhun_client_songs');
+      if (stored) songs = JSON.parse(stored);
+    } catch (e) {}
+  }
+  if (!songs || songs.length === 0) {
+    songs = state.songs;
+  }
+
   if (songs && songs.length > 0) {
     state.songs = songs;
+    _libAllSongs = state.songs;
     syncAllSongsLikedState();
     await inbuiltLibraryDeduplication();
     preloadKnownYouTubeThumbnails();
@@ -6903,10 +6914,17 @@ function openYTMusicExplorer() {
 async function autoSeedLibraryWithOnlineMedia() {
   if (typeof YTMusicAPI === 'undefined') return;
   try {
-    const currentSongs = (await apiGet('/songs')) || [];
+    let currentSongs = state.songs || [];
+    if (currentSongs.length === 0) {
+      try {
+        const stored = localStorage.getItem('dhun_client_songs');
+        if (stored) currentSongs = JSON.parse(stored) || [];
+      } catch (e) {}
+    }
+
     const seedCatalog = [
       ...YTMusicAPI.getTrending('trending'),
-      ...YTMusicAPI.getTrending('bollywood').slice(0, 3),
+      ...YTMusicAPI.getTrending('bollywood').slice(0, 4),
       ...YTMusicAPI.getTrending('punjabi').slice(0, 2)
     ];
 
@@ -6936,7 +6954,7 @@ async function autoSeedLibraryWithOnlineMedia() {
       }
 
       const durMin = track.duration || +(track.durationSec / 60).toFixed(2) || 4.0;
-      const res = await apiPost('/songs', {
+      let res = await apiPost('/songs', {
         title: track.title,
         artist: track.artist,
         album: track.album || 'Online Media',
@@ -6945,21 +6963,40 @@ async function autoSeedLibraryWithOnlineMedia() {
         rating: 4.8
       });
 
-      if (res && res.id !== undefined) {
-        const ytData = {
-          isYT: true,
-          videoId: track.videoId,
-          thumbnail: track.thumbnail || `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg`,
-          durationSec: track.durationSec || 210,
-          title: track.title,
-          artist: track.artist
-        };
-        pcSongAudioMap.set(res.id, ytData);
-        saveYTSongToStorage(res.id, ytData);
-        existingTitleSet.add(key);
-        count++;
-      }
+      const songId = (res && res.id !== undefined) ? res.id : (Date.now() + Math.floor(Math.random() * 1000000));
+      const songObj = {
+        id: songId,
+        title: track.title,
+        artist: track.artist,
+        album: track.album || 'Online Media',
+        genre: track.genre || 'Popular',
+        duration: durMin,
+        rating: 4.8,
+        play_count: Math.floor(Math.random() * 12) + 1,
+        liked: 0
+      };
+
+      currentSongs.push(songObj);
+
+      const ytData = {
+        isYT: true,
+        videoId: track.videoId,
+        thumbnail: track.thumbnail || `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg`,
+        durationSec: track.durationSec || 210,
+        title: track.title,
+        artist: track.artist
+      };
+      pcSongAudioMap.set(songId, ytData);
+      saveYTSongToStorage(songId, ytData);
+      existingTitleSet.add(key);
+      count++;
     }
+
+    state.songs = currentSongs;
+    _libAllSongs = state.songs;
+    try {
+      localStorage.setItem('dhun_client_songs', JSON.stringify(state.songs));
+    } catch (e) {}
 
     if (count > 0) {
       console.log(`[Dhun] Auto-populated library with ${count} online songs.`);
@@ -7032,6 +7069,9 @@ async function autoAddTrackToLibrary(track) {
   }
 
   _libAllSongs = state.songs;
+  try {
+    localStorage.setItem('dhun_client_songs', JSON.stringify(state.songs));
+  } catch (e) {}
 
   const thumb = track.videoId ? `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg` : (track.thumbnail || ALBUM_IMGS[0]);
   song.thumbnail = thumb;

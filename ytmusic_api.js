@@ -212,21 +212,21 @@ const YTMusicAPI = (() => {
       { videoId: 'fJ9rUzIMcZQ', title: 'Bohemian Rhapsody', artist: 'Queen', album: 'A Night at the Opera', genre: 'Rock', duration: 5.98, durationSec: 359 },
       { videoId: 'JGwWNGJdvx8', title: 'Shape of You', artist: 'Ed Sheeran', album: '÷ (Divide)', genre: 'Pop', duration: 3.88, durationSec: 233 },
       { videoId: '4NRXx6U8ABQ', title: 'Blinding Lights', artist: 'The Weeknd', album: 'After Hours', genre: 'Pop', duration: 3.33, durationSec: 200 },
-      { videoId: 'jfKfPfyJRdk', title: 'Lofi Hip Hop Radio — Beats to Relax/Study to', artist: 'Lofi Girl', album: 'Lofi Chill', genre: 'Lo-Fi', duration: 3.5, durationSec: 210 },
+      { videoId: '5qap5aO4i9A', title: 'Lofi Chill Study Beats', artist: 'ChilledCow', album: 'Midnight Lo-Fi', genre: 'Lo-Fi', duration: 4.0, durationSec: 240 },
       { videoId: '60ItHLz5WEA', title: 'Faded', artist: 'Alan Walker', album: 'Different World', genre: 'Electronic', duration: 3.53, durationSec: 212 }
     ],
     bollywood: [
       { videoId: 'fsiPzT50ZiM', title: 'Tum Hi Ho', artist: 'Arijit Singh', album: 'Aashiqui 2', genre: 'Bollywood', duration: 4.37, durationSec: 262 },
       { videoId: 'brnIlxX_XKs', title: 'Kesariya', artist: 'Arijit Singh, Pritam', album: 'Brahmāstra', genre: 'Bollywood', duration: 4.47, durationSec: 268 },
-      { videoId: 'Ax0G_P2dSBw', title: 'Channa Mereya', artist: 'Arijit Singh, Pritam', album: 'Ae Dil Hai Mushkil', genre: 'Bollywood', duration: 4.82, durationSec: 289 },
-      { videoId: 'VUhygK39V98', title: 'Raataan Lambiyan', artist: 'Jubin Nautiyal, Asees Kaur', album: 'Shershaah', genre: 'Bollywood', duration: 3.83, durationSec: 230 },
-      { videoId: 'yIIGQB6VUPY', title: 'Apna Bana Le', artist: 'Arijit Singh, Sachin-Jigar', album: 'Bhediya', genre: 'Bollywood', duration: 4.35, durationSec: 261 },
-      { videoId: 'tK3zHw7D6Q8', title: 'Vaari Jaavan', artist: 'T-Series', album: 'No Entry', genre: 'Bollywood', duration: 4.8, durationSec: 288 },
-      { videoId: 'e8BwtpQJ43E', title: 'Tujhko Jo Paaya', artist: 'Mohit Chauhan / Pritam', album: 'Crook', genre: 'Bollywood', duration: 5.72, durationSec: 343 },
-      { videoId: '4H91pMh1wR0', title: 'Tujhko', artist: 'Arijit Singh, Sunidhi Chauhan', album: 'Cocktail 2', genre: 'Bollywood', duration: 5.71, durationSec: 343 },
-      { videoId: 'xEbD8G_CszY', title: 'Pasoori', artist: 'Ali Sethi x Shae Gill', album: 'Coke Studio', genre: 'Pop', duration: 3.73, durationSec: 224 },
-      { videoId: 'Vd4aK9W8yZ0', title: 'Satranga', artist: 'Arijit Singh', album: 'Animal', genre: 'Bollywood', duration: 4.52, durationSec: 271 },
-      { videoId: 'V1Pl8CzNzCw', title: 'Chaleya', artist: 'Arijit Singh, Shilpa Rao', album: 'Jawan', genre: 'Bollywood', duration: 3.33, durationSec: 200 }
+      { videoId: 'bzSTpdcs-EI', title: 'Channa Mereya', artist: 'Arijit Singh, Pritam', album: 'Ae Dil Hai Mushkil', genre: 'Bollywood', duration: 4.82, durationSec: 289 },
+      { videoId: 'V7LwfY5U5WI', title: 'Raataan Lambiyan', artist: 'Jubin Nautiyal, Asees Kaur', album: 'Shershaah', genre: 'Bollywood', duration: 3.83, durationSec: 230 },
+      { videoId: 'ElZfdU54Cp8', title: 'Apna Bana Le', artist: 'Arijit Singh, Sachin-Jigar', album: 'Bhediya', genre: 'Bollywood', duration: 4.35, durationSec: 261 },
+      { videoId: 'sK7riqg2mr4', title: 'Hawayein', artist: 'Arijit Singh, Pritam', album: 'Jab Harry Met Sejal', genre: 'Bollywood', duration: 4.8, durationSec: 288 },
+      { videoId: 'rtOvBOTyX00', title: 'Dil Diyan Gallan', artist: 'Atif Aslam', album: 'Tiger Zinda Hai', genre: 'Bollywood', duration: 4.34, durationSec: 260 },
+      { videoId: 'JFcgOboQZ08', title: 'Ilahi', artist: 'Arijit Singh', album: 'Yeh Jawaani Hai Deewani', genre: 'Bollywood', duration: 3.55, durationSec: 213 },
+      { videoId: '5Eqb_-j3FDA', title: 'Pasoori', artist: 'Ali Sethi x Shae Gill', album: 'Coke Studio', genre: 'Pop', duration: 3.73, durationSec: 224 },
+      { videoId: 'ThCH0U6aJpU', title: 'Satranga', artist: 'Arijit Singh', album: 'Animal', genre: 'Bollywood', duration: 4.52, durationSec: 271 },
+      { videoId: 'g6fnFALEseI', title: 'Chaleya', artist: 'Arijit Singh, Shilpa Rao', album: 'Jawan', genre: 'Bollywood', duration: 3.33, durationSec: 200 }
     ],
     punjabi: [
       { videoId: 'dCmp56tSSmA', title: 'Lover', artist: 'Diljit Dosanjh', album: 'MoonChild Era', genre: 'Punjabi', duration: 3.12, durationSec: 187 },
@@ -235,7 +235,7 @@ const YTMusicAPI = (() => {
       { videoId: 'vX2cDW8LUWk', title: 'Excuses', artist: 'AP Dhillon, Gurinder Gill', album: 'Hidden Gems', genre: 'Punjabi', duration: 2.93, durationSec: 176 }
     ],
     lofi: [
-      { videoId: 'jfKfPfyJRdk', title: 'Lofi Study Session', artist: 'Lofi Girl', album: 'Peaceful Beats', genre: 'Lo-Fi', duration: 3.5, durationSec: 210 },
+      { videoId: 'DWcJFNfaw9c', title: 'Lofi Study Session', artist: 'Lofi Girl', album: 'Peaceful Beats', genre: 'Lo-Fi', duration: 3.5, durationSec: 210 },
       { videoId: '5qap5aO4i9A', title: 'ChilledCow Lo-Fi Beats', artist: 'ChilledCow', album: 'Midnight Lo-Fi', genre: 'Lo-Fi', duration: 4.0, durationSec: 240 },
       { videoId: 'TURbeWK2wwg', title: 'Cozy Winter Coffee Shop Ambience', artist: 'Lofi Records', album: 'Cozy Vibes', genre: 'Lo-Fi', duration: 3.8, durationSec: 228 }
     ],
