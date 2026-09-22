@@ -573,6 +573,7 @@ function setSongVideoMode(mode) {
     videoPanel.classList.add('pvp-mode-song');
     vizWrap.style.display = '';
     if (playerLeft) playerLeft.classList.remove('video-mode');
+    cancelPVPControlsAutoHide();
 
     /* If switching from video back to local PC audio, sync timestamp */
     if (!isCurrentSongYT() && globalAudioPlayer) {
@@ -585,6 +586,165 @@ function setSongVideoMode(mode) {
       } catch(e){}
     }
   }
+}
+
+let _pvpControlsHideTimer = null;
+const PVP_AUTOHIDE_DELAY_MS = 3500; // Disappear after 3.5 seconds
+let _lastMouseX = -1;
+let _lastMouseY = -1;
+
+function isPVPPlaying() {
+  if (state.isPlaying) return true;
+  if (typeof ytPlayer !== 'undefined' && ytPlayer && ytPlayer.getPlayerState) {
+    try {
+      const s = ytPlayer.getPlayerState();
+      if (s === 1 || s === 3) return true; // PLAYING or BUFFERING
+    } catch(e){}
+  }
+  if (typeof globalAudioPlayer !== 'undefined' && globalAudioPlayer && !globalAudioPlayer.paused) {
+    return true;
+  }
+  return false;
+}
+
+function onUserPVPActivity(e) {
+  if (e && (e.type === 'mousemove' || e.type === 'pointermove')) {
+    if (typeof e.clientX === 'number' && typeof e.clientY === 'number') {
+      if (_lastMouseX === e.clientX && _lastMouseY === e.clientY) {
+        // Synthetic mouse event triggered by cursor style change, ignore!
+        return;
+      }
+      _lastMouseX = e.clientX;
+      _lastMouseY = e.clientY;
+    }
+  }
+  resetPVPControlsTimer();
+}
+
+function resetPVPControlsTimer() {
+  const overlay = document.getElementById('pvp-dock-overlay');
+  const dock = document.getElementById('yt-player-dock');
+  if (!overlay && !dock) return;
+
+  if (overlay) {
+    overlay.classList.remove('autohide');
+    overlay.classList.add('controls-active');
+  }
+  if (dock) {
+    dock.classList.remove('autohide');
+    dock.classList.add('controls-active');
+  }
+
+  if (_pvpControlsHideTimer) {
+    clearTimeout(_pvpControlsHideTimer);
+    _pvpControlsHideTimer = null;
+  }
+
+  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const isPlaying = isPVPPlaying();
+
+  // In fullscreen mode, or when playing video, auto-hide after 3.5s of inactivity
+  if (isPlaying || isFs) {
+    _pvpControlsHideTimer = setTimeout(() => {
+      const stillFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+      const stillPlaying = isPVPPlaying();
+      if (stillPlaying || stillFs) {
+        if (overlay) {
+          overlay.classList.remove('controls-active');
+          overlay.classList.add('autohide');
+        }
+        if (dock) {
+          dock.classList.remove('controls-active');
+          dock.classList.add('autohide');
+        }
+      }
+    }, PVP_AUTOHIDE_DELAY_MS);
+  }
+}
+
+function cancelPVPControlsAutoHide() {
+  if (_pvpControlsHideTimer) {
+    clearTimeout(_pvpControlsHideTimer);
+    _pvpControlsHideTimer = null;
+  }
+  const overlay = document.getElementById('pvp-dock-overlay');
+  const dock = document.getElementById('yt-player-dock');
+  if (overlay) {
+    overlay.classList.remove('autohide');
+    overlay.classList.remove('controls-active');
+  }
+  if (dock) {
+    dock.classList.remove('autohide');
+    dock.classList.remove('controls-active');
+  }
+}
+
+function updatePVPFullscreenBtnIcon() {
+  const btn = document.getElementById('pvp-dock-fs');
+  if (!btn) return;
+  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  btn.title = isFs ? 'Exit Fullscreen' : 'Fullscreen';
+  btn.setAttribute('aria-label', isFs ? 'Exit Fullscreen' : 'Fullscreen');
+  if (isFs) {
+    btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3v3a2 2 0 01-2 2H3m18 0h-3a2 2 0 01-2-2V3m0 18v-3a2 2 0 012-2h3M3 16h3a2 2 0 012 2v3"/></svg>`;
+  } else {
+    btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>`;
+  }
+}
+
+function initPVPOverlayListeners() {
+  const dock = document.getElementById('yt-player-dock');
+  const overlay = document.getElementById('pvp-dock-overlay');
+  if (!overlay || typeof overlay.addEventListener !== 'function') return;
+
+  ['mousemove', 'pointermove', 'click', 'touchstart'].forEach(evt => {
+    overlay.addEventListener(evt, onUserPVPActivity, { passive: true });
+    if (dock && dock !== overlay && typeof dock.addEventListener === 'function') {
+      dock.addEventListener(evt, onUserPVPActivity, { passive: true });
+    }
+  });
+
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('mousemove', (e) => {
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        onUserPVPActivity(e);
+      }
+    }, { passive: true });
+
+    document.addEventListener('fullscreenchange', () => {
+      _lastMouseX = -1;
+      _lastMouseY = -1;
+      resetPVPControlsTimer();
+      updatePVPFullscreenBtnIcon();
+    });
+    document.addEventListener('webkitfullscreenchange', () => {
+      _lastMouseX = -1;
+      _lastMouseY = -1;
+      resetPVPControlsTimer();
+      updatePVPFullscreenBtnIcon();
+    });
+  }
+
+  overlay.addEventListener('mouseleave', () => {
+    const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    if (!isFs && isPVPPlaying()) {
+      if (_pvpControlsHideTimer) clearTimeout(_pvpControlsHideTimer);
+      _pvpControlsHideTimer = setTimeout(() => {
+        if (isPVPPlaying() && !(document.fullscreenElement || document.webkitFullscreenElement)) {
+          overlay.classList.remove('controls-active');
+          overlay.classList.add('autohide');
+          if (dock) {
+            dock.classList.remove('controls-active');
+            dock.classList.add('autohide');
+          }
+        }
+      }, 1000);
+    }
+  });
+}
+
+if (typeof document !== 'undefined' && document.readyState !== 'loading') {
+  initPVPOverlayListeners();
 }
 
 function syncVideoDockPosition() {
@@ -602,6 +762,7 @@ function togglePVPFullscreen(event) {
     if (document.exitFullscreen) document.exitFullscreen();
     else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
   }
+  resetPVPControlsTimer();
 }
 
 function updatePVPOverlayUI(isPlaying) {
@@ -620,6 +781,13 @@ function updatePVPOverlayUI(isPlaying) {
   const ph = document.getElementById('pvp-placeholder');
   if (ph && isPlaying) {
     ph.classList.add('hidden');
+  }
+
+  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  if (isPlaying || isFs) {
+    resetPVPControlsTimer();
+  } else {
+    cancelPVPControlsAutoHide();
   }
 }
 
@@ -1886,13 +2054,13 @@ const authState = {
 };
 
 function makeUserIdFromEmail(email) {
-  if (!email || email === 'guest@dhun.local') return 'guest';
+  if (!email || email === 'guest@dhun.local' || email === 'guest') return 'guest';
   const clean = String(email).toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
   return `usr_${clean}`;
 }
 
 function mergeUserStorageData(oldUid, newUid) {
-  if (!oldUid || !newUid || oldUid === newUid) return;
+  if (!oldUid || !newUid || oldUid === newUid || oldUid === 'guest' || newUid === 'guest') return;
   try {
     // 1. Merge Playlists without losing any tracks
     const oldPlsRaw = localStorage.getItem(`dhun_usr_${oldUid}_playlists`);
@@ -1933,18 +2101,20 @@ function deduplicateUsers(users) {
   users.forEach(u => {
     if (!u) return;
     const emailKey = (u.email || '').toLowerCase().trim();
-    if (!emailKey || u.id === 'guest' || emailKey === 'guest@dhun.local') {
-      map.set('guest', { ...u, id: 'guest', name: 'Guest User' });
+    if (u.id === 'guest' || emailKey === 'guest@dhun.local' || emailKey === 'guest') {
+      map.set('guest', { ...u, id: 'guest', name: 'Guest User', email: 'guest@dhun.local', provider: 'guest' });
       return;
     }
 
-    const canonicalId = makeUserIdFromEmail(emailKey);
-    const existing = map.get(emailKey);
+    const safeKey = emailKey || (u.name ? String(u.name).toLowerCase().trim() : u.id);
+    if (!safeKey) return;
+    const canonicalId = makeUserIdFromEmail(safeKey);
+    const existing = map.get(safeKey);
 
     if (!existing) {
-      map.set(emailKey, { ...u, id: canonicalId, email: emailKey });
+      map.set(safeKey, { ...u, id: canonicalId, email: safeKey });
     } else {
-      // Merge into the single individual profile for this Gmail
+      // Merge into the single individual profile for this user
       const preferredName = (u.name && u.name.length >= existing.name.length) ? u.name : existing.name;
       const preferredAvatar = u.avatarColor || existing.avatarColor || '#7c3aed';
       const preferredCover = u.coverUrl || existing.coverUrl || 'album2.jpg';
@@ -1954,11 +2124,11 @@ function deduplicateUsers(users) {
       mergeUserStorageData(existing.id, canonicalId);
       mergeUserStorageData(u.id, canonicalId);
 
-      map.set(emailKey, {
+      map.set(safeKey, {
         ...existing,
         ...u,
         id: canonicalId,
-        email: emailKey,
+        email: safeKey,
         name: preferredName,
         avatarColor: preferredAvatar,
         coverUrl: preferredCover,
@@ -2110,16 +2280,21 @@ function renderGateSavedProfiles() {
     <div style="background:rgba(255,255,255,0.04);border:1px solid var(--glass-border);border-radius:14px;padding:12px 14px;margin-bottom:14px;">
       <p style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Saved Profiles (Select to Sign In)</p>
       <div style="display:flex;flex-direction:column;gap:8px;">
-        ${users.map(u => `
-          <button type="button" onclick="selectSavedProfileForSignIn('${u.id}')" style="display:flex;align-items:center;gap:10px;width:100%;padding:8px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:var(--text-1);cursor:pointer;text-align:left;transition:all 0.2s;" onmouseover="this.style.background='rgba(168,85,247,0.18)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
-            <span style="width:28px;height:28px;border-radius:50%;background:${u.avatarColor || '#7c3aed'};display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:12px;color:#fff;flex-shrink:0;">${(u.name || 'U').charAt(0).toUpperCase()}</span>
+        ${users.map(u => {
+          const isG = u.provider === 'google';
+          return `
+          <button type="button" onclick="selectSavedProfileForSignIn('${u.id}')" style="display:flex;align-items:center;gap:10px;width:100%;padding:8px 12px;background:rgba(255,255,255,0.05);border:1px solid ${isG ? 'rgba(66,133,244,0.3)' : 'rgba(255,255,255,0.1)'};border-radius:10px;color:var(--text-1);cursor:pointer;text-align:left;transition:all 0.2s;" onmouseover="this.style.background='${isG ? 'rgba(66,133,244,0.15)' : 'rgba(168,85,247,0.18)'}'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
+            <span style="width:28px;height:28px;border-radius:50%;background:${u.avatarColor || (isG ? '#4285F4' : '#7c3aed')};display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:12px;color:#fff;flex-shrink:0;">${(u.name || 'U').charAt(0).toUpperCase()}</span>
             <div style="flex:1;min-width:0;">
-              <p style="font-size:13px;font-weight:600;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtmlText(u.name)}</p>
+              <p style="font-size:13px;font-weight:600;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px;">
+                <span>${escapeHtmlText(u.name)}</span>
+                ${isG ? '<span style="font-size:10px;background:#4285F4;color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;">Google</span>' : ''}
+              </p>
               <p style="font-size:11px;color:var(--text-3);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtmlText(u.email || 'Profile')}</p>
             </div>
-            <span style="font-size:12px;color:var(--purple);font-weight:600;">Select 🔑</span>
-          </button>
-        `).join('')}
+            <span style="font-size:12px;color:${isG ? '#4285F4' : 'var(--purple)'};font-weight:600;">${isG ? '1-Tap ⚡' : 'Select 🔑'}</span>
+          </button>`;
+        }).join('')}
       </div>
     </div>
   `;
@@ -2129,6 +2304,11 @@ function selectSavedProfileForSignIn(userId) {
   const users = getStoredUsers();
   const user = users.find(u => u.id === userId);
   if (!user) return;
+  if (user.provider === 'google') {
+    enterAppFromGate(user);
+    showToast(`✅ Welcome back, ${user.name}! Signed in with Google.`);
+    return;
+  }
   switchGateTab('signin');
   const emailInput = document.getElementById('gate-signin-email');
   const passInput  = document.getElementById('gate-signin-password');
@@ -2699,74 +2879,103 @@ function openGoogleAuthModal(isFromGate = false) {
   const modal = document.getElementById('google-auth-modal');
   if (!modal) return;
 
+  // If opening from inside the auth modal, temporarily hide auth modal to avoid double backdrop
+  if (!isFromGate) {
+    const mainAuthModal = document.getElementById('auth-modal');
+    if (mainAuthModal) mainAuthModal.style.display = 'none';
+  }
+
   const emailInput = document.getElementById('google-input-email');
   const nameInput = document.getElementById('google-input-name');
   const quickBox = document.getElementById('google-quick-account');
-  const quickName = document.getElementById('google-quick-name');
-  const quickEmail = document.getElementById('google-quick-email');
-  const quickAvatar = document.getElementById('google-quick-avatar');
 
-  // Find last Google account or active user
-  const lastGoogleUser = (authState.users || []).find(u => u.provider === 'google') ||
-    ((authState.currentUser && authState.currentUser.email !== 'guest@dhun.local') ? authState.currentUser : null);
+  // Find all stored Google accounts
+  const googleUsers = (getStoredUsers() || []).filter(u => u && u.provider === 'google');
 
-  if (lastGoogleUser && quickBox) {
+  if (googleUsers.length > 0 && quickBox) {
     quickBox.style.display = 'block';
-    if (quickName) quickName.textContent = lastGoogleUser.name || 'Google User';
-    if (quickEmail) quickEmail.textContent = lastGoogleUser.email;
-    if (quickAvatar) {
-      quickAvatar.textContent = (lastGoogleUser.name || 'G').charAt(0).toUpperCase();
-      quickAvatar.style.background = lastGoogleUser.avatarColor || '#4285F4';
-    }
+    quickBox.innerHTML = `
+      <p style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">1-Tap Google Account</p>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${googleUsers.map(gu => `
+          <div class="google-account-item" onclick="handleGoogleSelectSavedAccount('${gu.id}')" role="button" tabindex="0">
+            <div class="google-acc-avatar" style="background:${gu.avatarColor || '#4285F4'}">${(gu.name || 'G').charAt(0).toUpperCase()}</div>
+            <div class="google-acc-info">
+              <div class="google-acc-name">${escapeHtmlText(gu.name)}</div>
+              <div class="google-acc-email">${escapeHtmlText(gu.email)}</div>
+            </div>
+            <span class="google-acc-arrow">→</span>
+          </div>
+        `).join('')}
+      </div>
+      <div class="auth-divider" style="margin:14px 0 10px;"><span>OR USE ANOTHER GOOGLE ACCOUNT</span></div>
+    `;
   } else if (quickBox) {
     quickBox.style.display = 'none';
   }
 
   if (emailInput) {
-    emailInput.value = lastGoogleUser ? lastGoogleUser.email : '';
+    emailInput.value = '';
   }
   if (nameInput) {
-    nameInput.value = lastGoogleUser ? lastGoogleUser.name : '';
+    nameInput.value = '';
   }
 
   modal.style.display = 'flex';
   setTimeout(() => {
-    if (emailInput && !emailInput.value) emailInput.focus();
-    else if (nameInput && !nameInput.value) nameInput.focus();
-  }, 80);
+    if (emailInput) emailInput.focus();
+  }, 100);
 }
 
 function closeGoogleAuthModal() {
   const modal = document.getElementById('google-auth-modal');
   if (modal) modal.style.display = 'none';
+  // If cancelled and was invoked from in-app auth modal, re-show it
+  if (!_googleAuthIsFromGate) {
+    const mainAuthModal = document.getElementById('auth-modal');
+    if (mainAuthModal) mainAuthModal.style.display = 'flex';
+  }
+}
+
+function handleGoogleSelectSavedAccount(userId) {
+  const users = getStoredUsers();
+  const user = users.find(u => u.id === userId);
+  if (user) {
+    const modal = document.getElementById('google-auth-modal');
+    if (modal) modal.style.display = 'none';
+    closeAuthModal();
+    if (_googleAuthIsFromGate) {
+      enterAppFromGate(user);
+    } else {
+      switchToUser(user);
+    }
+    showToast(`✅ Welcome back, ${user.name}! Signed in with Google.`);
+  }
 }
 
 function handleGoogleQuickAccountClick() {
-  const lastGoogleUser = (authState.users || []).find(u => u.provider === 'google') ||
-    ((authState.currentUser && authState.currentUser.email !== 'guest@dhun.local') ? authState.currentUser : null);
-
-  if (lastGoogleUser) {
-    closeGoogleAuthModal();
-    if (_googleAuthIsFromGate) {
-      enterAppFromGate(lastGoogleUser);
-    } else {
-      closeAuthModal();
-      switchToUser(lastGoogleUser);
-    }
-    showToast(`✅ Signed in as ${lastGoogleUser.name}!`);
+  const googleUsers = (getStoredUsers() || []).filter(u => u && u.provider === 'google');
+  if (googleUsers.length > 0) {
+    handleGoogleSelectSavedAccount(googleUsers[0].id);
   }
 }
 
 function submitGoogleSignInModal() {
   const emailInput = document.getElementById('google-input-email');
   const nameInput = document.getElementById('google-input-name');
-  const emailVal = (emailInput ? emailInput.value : '').trim().toLowerCase();
+  let emailVal = (emailInput ? emailInput.value : '').trim().toLowerCase();
   let nameVal = (nameInput ? nameInput.value : '').trim();
 
   if (!emailVal) {
     showToast('⚠️ Please enter your Google email');
+    if (emailInput) emailInput.focus();
     return;
   }
+
+  if (!emailVal.includes('@')) {
+    emailVal = `${emailVal}@gmail.com`;
+  }
+
   if (!nameVal) {
     nameVal = emailVal.split('@')[0];
     nameVal = nameVal.charAt(0).toUpperCase() + nameVal.slice(1);
@@ -2802,11 +3011,13 @@ function submitGoogleSignInModal() {
   saveStoredUsers(users);
   saveCredentials(existing.email, '');
 
-  closeGoogleAuthModal();
+  const modal = document.getElementById('google-auth-modal');
+  if (modal) modal.style.display = 'none';
+  closeAuthModal();
+
   if (_googleAuthIsFromGate) {
     enterAppFromGate(existing);
   } else {
-    closeAuthModal();
     switchToUser(existing);
   }
   showToast(`✅ Google Sign-In verified! Welcome, ${existing.name}!`);
@@ -2818,6 +3029,35 @@ function signOutUser() {
     localStorage.removeItem('dhun_auth_active_user');
     localStorage.removeItem('dhun_active_profile');
     authState.currentUser = null;
+
+    // 1. Reset in-memory playlists and songs state cleanly to prevent cross-session bleed
+    state.playlists = [];
+    if (Array.isArray(state.songs)) {
+      state.songs.forEach(s => { s.liked = false; });
+    }
+    if (Array.isArray(_libAllSongs)) {
+      _libAllSongs.forEach(s => { s.liked = false; });
+    }
+    if (state.currentSong) {
+      state.currentSong.liked = false;
+    }
+
+    // 2. Reset player heart buttons
+    const ph = document.getElementById('player-heart');
+    if (ph) { ph.textContent = '♡'; ph.classList.remove('liked'); }
+    const pbLike = document.getElementById('pb-like');
+    if (pbLike) { pbLike.textContent = '♡'; pbLike.classList.remove('liked'); }
+
+    // 3. Pause playback if currently playing
+    try {
+      if (typeof pauseSong === 'function') pauseSong();
+    } catch(e) {}
+
+    // 4. Clear sidebar and profile playlists UI
+    const sbPls = document.getElementById('sidebar-playlists');
+    if (sbPls) sbPls.innerHTML = '';
+    const profPls = document.getElementById('tab-content-playlists');
+    if (profPls) profPls.innerHTML = '';
 
     const gateScreen = document.getElementById('login-gate-screen');
     const appShell   = document.getElementById('app');
@@ -2901,6 +3141,7 @@ window.addEventListener('click', e => {
 
 /* ── Like / Heart (Strictly Isolated Per User) ─────────────────── */
 function getUserLikedSet() {
+  if (!authState.currentUser) return new Set();
   try {
     const raw = localStorage.getItem(getUserStorageKey('likes'));
     if (raw) return new Set(JSON.parse(raw));
@@ -2927,6 +3168,11 @@ function syncAllSongsLikedState() {
       s.liked = likedSet.has(Number(s.id)) || likedSet.has(String(s.id));
     });
   }
+  if (Array.isArray(_libAllSongs)) {
+    _libAllSongs.forEach(s => {
+      s.liked = likedSet.has(Number(s.id)) || likedSet.has(String(s.id));
+    });
+  }
   if (state.currentSong) {
     state.currentSong.liked = likedSet.has(Number(state.currentSong.id)) || likedSet.has(String(state.currentSong.id));
     const ph = document.getElementById('player-heart');
@@ -2934,7 +3180,21 @@ function syncAllSongsLikedState() {
       ph.textContent = state.currentSong.liked ? '❤️' : '♡';
       ph.classList.toggle('liked', !!state.currentSong.liked);
     }
+    const pbLike = document.getElementById('pb-like');
+    if (pbLike) {
+      pbLike.textContent = state.currentSong.liked ? '❤️' : '♡';
+      pbLike.classList.toggle('liked', !!state.currentSong.liked);
+    }
   }
+  // Immediately update any rendered heart buttons in the document
+  document.querySelectorAll('[data-song-id]').forEach(el => {
+    const sid = el.dataset.songId;
+    if (sid && (el.classList.contains('liked-heart') || el.classList.contains('icon-act') || el.classList.contains('heart-btn'))) {
+      const isL = likedSet.has(Number(sid)) || likedSet.has(String(sid));
+      el.textContent = isL ? '❤️' : '♡';
+      el.classList.toggle('liked', isL);
+    }
+  });
 }
 
 async function toggleLike(btn, event) {
@@ -3061,7 +3321,7 @@ function renderProfileStats() {
   const songsCount = (state.songs || []).length;
   const plCount    = userPls.length;
   const likedSet   = getUserLikedSet();
-  const likesCount = (state.songs || []).filter(s => likedSet.has(Number(s.id)) || likedSet.has(String(s.id)) || s.liked).length;
+  const likesCount = (state.songs || []).filter(s => likedSet.has(Number(s.id)) || likedSet.has(String(s.id))).length;
   const playsTotal = (state.songs || []).reduce((acc, s) => acc + (s.play_count || 0), 0);
 
   _set('prof-songs-count', songsCount);
@@ -3255,6 +3515,7 @@ function switchTab(btn, tabId) {
 
 /* ── User-Isolated Playlists Helpers ──────────── */
 function getUserPlaylistsFromStorage() {
+  if (!authState.currentUser) return null;
   try {
     const raw = localStorage.getItem(getUserStorageKey('playlists'));
     if (raw) return JSON.parse(raw);
@@ -4124,7 +4385,7 @@ async function deleteSong(songId, event) {
           }
         });
         if (changed) {
-          localStorage.setItem('dhun_user_playlists', JSON.stringify(pls));
+          saveUserPlaylistsToStorage(pls);
           state.playlists = pls;
         }
       }
@@ -4549,19 +4810,9 @@ async function refreshPlaylists() {
       name: formatPlaylistName(p.name)
     }));
   } else {
-    const pls = await apiGet('/playlists', { silent: true });
-    if (pls && Array.isArray(pls) && pls.length > 0) {
-      const filteredPls = pls.filter(p => p && !isPredefaultPlaylist(p.name));
-      state.playlists = filteredPls.map(p => ({
-        ...p,
-        name: formatPlaylistName(p.name)
-      }));
-      saveUserPlaylistsToStorage(state.playlists);
-    } else if (localPls) {
-      state.playlists = localPls;
-    } else {
-      state.playlists = [];
-    }
+    // Strictly isolate playlists per account: do not inherit unauthenticated C server playlists
+    state.playlists = [];
+    saveUserPlaylistsToStorage(state.playlists);
   }
   renderSidebarPlaylists();
   renderProfilePlaylists();
@@ -5545,6 +5796,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   /* Initialize Windows 7 Media Player style flow visualizer */
   initFlowVisualizer();
   if (typeof initVisualShowcaseCanvases === 'function') initVisualShowcaseCanvases();
+  initPVPOverlayListeners();
 
   setVolume(75);
 
@@ -8498,7 +8750,7 @@ function getUserTasteProfile() {
 
   allKnown.forEach(s => {
     if (!s) return;
-    const isLiked = likedSet.has(Number(s.id)) || likedSet.has(String(s.id)) || s.liked;
+    const isLiked = likedSet.has(Number(s.id)) || likedSet.has(String(s.id));
     const inPlaylist = songsInPlaylists.has(String(s.id));
     const plays = s.play_count || 0;
 
