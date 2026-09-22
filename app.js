@@ -573,7 +573,7 @@ function syncVideoDockPosition() {
   dock.style.opacity = '1';
   dock.style.pointerEvents = 'auto';
   dock.style.zIndex = '30';
-  dock.style.borderRadius = '19px 19px 0 0';
+  dock.style.borderRadius = '0';
   dock.style.overflow = 'hidden';
 }
 
