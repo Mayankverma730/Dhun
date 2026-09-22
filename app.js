@@ -1241,7 +1241,12 @@ function navigate(page) {
 
   /* Refresh data on navigation */
   if (page === 'home')    refreshHome();
-  if (page === 'search')  refreshSearch();
+  if (page === 'search')  {
+    if (!state.activePlaylistId) {
+      closePlaylistView();
+    }
+    refreshSearch();
+  }
   if (page === 'player')  {
     refreshQueue();
     if (typeof resizeVisualizerCanvas === 'function') setTimeout(resizeVisualizerCanvas, 60);
@@ -1282,9 +1287,37 @@ async function openPlayer(songId) {
    Prefer this over openPlayer() when the song ID is already known — avoids
    the index-vs-ID ambiguity resolution logic. */
 async function openPlayerById(id) {
-  let song = (state.songs || []).find(s => s.id === id || s.id === Number(id));
+  if (id === undefined || id === null) return;
+  const sId = String(id);
+  const nId = Number(id);
+
+  let song = (state.songs || []).find(s => String(s.id) === sId || s.id === nId);
+  if (!song) {
+    const allKnown = [...(state.songs || []), ...(_libAllSongs || []), ...(state.history || [])];
+    song = allKnown.find(s => s && (String(s.id) === sId || s.id === nId));
+  }
+  if (!song) {
+    const pcItem = pcSongAudioMap.get(id) || pcSongAudioMap.get(nId) || pcSongAudioMap.get(sId);
+    if (pcItem) {
+      song = {
+        id,
+        title: pcItem.title || 'Track',
+        artist: pcItem.artist || 'Artist',
+        album: pcItem.album || 'Online Media',
+        genre: pcItem.genre || 'Music',
+        duration: pcItem.durationSec ? +(pcItem.durationSec / 60).toFixed(2) : 3.5,
+        rating: 4.8
+      };
+      if (!state.songs.some(s => String(s.id) === sId)) {
+        state.songs.push(song);
+      }
+    }
+  }
   if (!song) {
     song = await apiGet(`/songs/${id}`);
+    if (song && !state.songs.some(s => String(s.id) === String(song.id))) {
+      state.songs.push(song);
+    }
   }
   if (!song) return;
 
@@ -3324,6 +3357,7 @@ function renderRelated() {
 let searchMode = 'ytmusic';
 
 async function refreshSearch() {
+  if (state.activePlaylistId) return;
   const grid = document.getElementById('yt-music-grid');
   if (grid && (!grid.children || grid.children.length === 0)) {
     loadYTFeed(currentYTFeedCategory || 'for-you');
@@ -3592,41 +3626,93 @@ async function openPlaylist(id) {
           id: sid,
           title: pcItem.title || 'Track',
           artist: pcItem.artist || 'Artist',
-          duration: pcItem.duration || 180,
-          genre: 'Music'
+          album: pcItem.album || 'Playlist Track',
+          duration: pcItem.durationSec ? +(pcItem.durationSec / 60).toFixed(2) : 3.5,
+          genre: pcItem.genre || 'Music'
         };
       }
       return {
         id: sid,
         title: `Track #${sid}`,
         artist: 'Dhun Artist',
+        album: 'Playlist Track',
         duration: 3.5,
         genre: 'Music'
       };
     }).filter(Boolean);
   }
 
-  /* Show songs in search results view as quick view */
+  // Ensure these songs are registered in state.songs so player works seamlessly
+  songs.forEach(s => {
+    if (!state.songs.some(existing => String(existing.id) === String(s.id))) {
+      state.songs.push(s);
+    }
+  });
+
   navigate('search');
-  const defView = document.getElementById('search-default-view');
+
+  // Hide Discover feed, search bar, and taste banner completely
+  const discoverFeed = document.getElementById('discover-feed-container');
+  if (discoverFeed) discoverFeed.style.display = 'none';
+
+  const searchDef = document.getElementById('search-default-view');
+  if (searchDef) searchDef.style.display = 'none';
+
   const resView = document.getElementById('search-results-view');
-  const resQ    = document.getElementById('results-query');
+  if (resView) resView.style.display = 'block';
+
+  const plName = pl ? formatPlaylistName(pl.name) : `Playlist ${id}`;
+  const totalDuration = songs.reduce((acc, s) => acc + (s.duration || 3.5), 0);
+
+  const titleEl = document.getElementById('search-page-title');
+  const subEl   = document.getElementById('search-page-sub');
+  if (titleEl) titleEl.textContent = plName;
+  if (subEl)   subEl.textContent = `Personal Playlist · ${songs.length} track${songs.length === 1 ? '' : 's'}`;
+
+  const resQ = document.getElementById('results-query');
+  if (resQ) resQ.textContent = plName;
+
   const resList = document.getElementById('search-results-list');
-  const delBtn  = document.getElementById('delete-playlist-view-btn');
-  if (defView) defView.style.display = 'none';
-  if (resView) resView.style.display = '';
-  if (resQ)    resQ.textContent = pl ? pl.name : `Playlist ${id}`;
-  if (delBtn)  delBtn.style.display = 'inline-flex';
   if (resList) {
-    resList.innerHTML = songs.length
+    const headerHtml = `
+      <div class="playlist-view-header glass-card" style="display:flex;align-items:center;gap:22px;padding:22px 24px;border-radius:18px;margin-bottom:24px;background:linear-gradient(135deg,rgba(124,58,237,0.18),rgba(37,99,235,0.12));border:1px solid rgba(124,58,237,0.3)">
+        <div style="width:115px;height:115px;border-radius:14px;background:${gradientFor(id)};display:flex;align-items:center;justify-content:center;overflow:hidden;box-shadow:0 8px 25px rgba(0,0,0,0.45);flex-shrink:0">
+          <img src="${getPlaylistThumbnail(pl || {id})}" alt="${escapeHtmlAttr(plName)}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'"/>
+        </div>
+        <div style="flex:1;min-width:0">
+          <span style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--purple-bright);background:rgba(124,58,237,0.16);padding:3px 8px;border-radius:4px">🎵 Custom Playlist</span>
+          <h2 style="font-size:26px;font-weight:800;margin:6px 0 3px;color:var(--text-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlText(plName)}</h2>
+          <p style="font-size:13px;color:var(--text-2);margin:0 0 14px">${songs.length} track${songs.length === 1 ? '' : 's'} · ${fmtDur(totalDuration)} total length</p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <button class="btn-primary" onclick="playEntirePlaylist('${escapeHtmlAttr(String(id))}')" style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;font-size:13px;cursor:pointer">
+              <span>▶ Play All</span>
+            </button>
+            <button class="btn-secondary" onclick="shuffleEntirePlaylist('${escapeHtmlAttr(String(id))}')" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;font-size:13px;cursor:pointer">
+              <span>🔀 Shuffle</span>
+            </button>
+            <button class="btn-secondary" onclick="closePlaylistView()" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;font-size:13px;cursor:pointer">
+              <span>← Back to Discover</span>
+            </button>
+            <button class="btn-secondary" onclick="deleteCurrentOpenPlaylist()" style="color:#f43f5e;border-color:rgba(244,63,94,0.3);padding:8px 14px;font-size:13px;cursor:pointer" title="Delete this playlist">
+              <span>🗑️ Delete</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const songsHtml = songs.length
       ? songs.map((s, i) => `
-          <div class="st-row" onclick="openPlayerById('${escapeHtmlAttr(String(s.id))}')">
+          <div class="st-row" onclick="openPlayerById('${escapeHtmlAttr(String(s.id))}')" style="cursor:pointer">
             <span class="st-num">${i+1}</span>
             <div class="st-title-col">
               <div class="st-thumb" style="background:${gradientFor(s.id)}">
-                <img src="${imgFor(s.id)}" alt="${escapeHtmlAttr(s.title)}" data-song-id="${s.id}"/>
+                <img src="${imgFor(s.id)}" alt="${escapeHtmlAttr(s.title)}" data-song-id="${s.id}" onerror="this.onerror=null;this.src='album1.jpg'"/>
               </div>
-              <div><p class="st-song-name">${escapeHtmlText(s.title)}</p><p class="st-artist">${escapeHtmlText(s.artist)}</p></div>
+              <div>
+                <p class="st-song-name">${escapeHtmlText(s.title)}</p>
+                <p class="st-artist">${escapeHtmlText(s.artist)}</p>
+              </div>
             </div>
             <span class="st-cell">${escapeHtmlText(s.album || '')}</span>
             <span class="st-cell">${escapeHtmlText(s.genre || '')}</span>
@@ -3637,8 +3723,108 @@ async function openPlaylist(id) {
               <button class="icon-act" onclick="removeSongFromPlaylist('${escapeHtmlAttr(String(id))}', '${escapeHtmlAttr(String(s.id))}', event)" title="Remove from playlist">✕</button>
             </div>
           </div>`).join('')
-      : '<p style="padding:24px;color:var(--text-2);text-align:center">Playlist is empty 🎵</p>';
+      : `
+        <div style="text-align:center;padding:48px 20px;color:var(--text-muted)">
+          <p style="font-size:36px;margin-bottom:8px">🎵</p>
+          <p style="font-weight:700;font-size:16px;color:var(--text-1);margin-bottom:4px">This playlist is currently empty</p>
+          <p style="font-size:13px;margin-bottom:18px">Explore Discover or Library to add tracks with 1-click</p>
+          <button class="btn-primary" onclick="closePlaylistView()" style="display:inline-flex;align-items:center;gap:6px;padding:9px 20px">
+            ✨ Explore Discover Tracks
+          </button>
+        </div>
+      `;
+
+    resList.innerHTML = headerHtml + songsHtml;
   }
+}
+
+async function playEntirePlaylist(id) {
+  let pls = getUserPlaylistsFromStorage() || state.playlists || [];
+  const pl = pls.find(p => String(p.id) === String(id) || p.id == id);
+  if (!pl || !Array.isArray(pl.songs) || pl.songs.length === 0) {
+    showToast('⚠️ Playlist is empty');
+    return;
+  }
+  const resolved = [];
+  const allKnown = [...(state.songs || []), ...(_libAllSongs || []), ...(state.history || [])];
+  for (const sid of pl.songs) {
+    let s = allKnown.find(item => item && (String(item.id) === String(sid) || item.id == sid));
+    if (!s) {
+      const pcItem = pcSongAudioMap.get(sid) || pcSongAudioMap.get(Number(sid)) || pcSongAudioMap.get(String(sid));
+      if (pcItem) {
+        s = {
+          id: sid,
+          title: pcItem.title || 'Track',
+          artist: pcItem.artist || 'Artist',
+          album: pcItem.album || 'Online Media',
+          genre: pcItem.genre || 'Music',
+          duration: pcItem.durationSec ? +(pcItem.durationSec / 60).toFixed(2) : 3.5,
+          rating: 4.8
+        };
+        state.songs.push(s);
+      }
+    }
+    if (s) resolved.push(s);
+  }
+  if (resolved.length === 0) {
+    showToast('⚠️ Could not load tracks for this playlist');
+    return;
+  }
+  state.queue = [...resolved];
+  renderQueue();
+  openPlayerById(resolved[0].id);
+  showToast(`▶ Playing "${pl.name}" (${resolved.length} tracks)`);
+}
+
+async function shuffleEntirePlaylist(id) {
+  let pls = getUserPlaylistsFromStorage() || state.playlists || [];
+  const pl = pls.find(p => String(p.id) === String(id) || p.id == id);
+  if (!pl || !Array.isArray(pl.songs) || pl.songs.length === 0) {
+    showToast('⚠️ Playlist is empty');
+    return;
+  }
+  const resolved = [];
+  const allKnown = [...(state.songs || []), ...(_libAllSongs || []), ...(state.history || [])];
+  for (const sid of pl.songs) {
+    let s = allKnown.find(item => item && (String(item.id) === String(sid) || item.id == sid));
+    if (!s) {
+      const pcItem = pcSongAudioMap.get(sid) || pcSongAudioMap.get(Number(sid)) || pcSongAudioMap.get(String(sid));
+      if (pcItem) {
+        s = {
+          id: sid,
+          title: pcItem.title || 'Track',
+          artist: pcItem.artist || 'Artist',
+          album: pcItem.album || 'Online Media',
+          genre: pcItem.genre || 'Music',
+          duration: pcItem.durationSec ? +(pcItem.durationSec / 60).toFixed(2) : 3.5,
+          rating: 4.8
+        };
+        state.songs.push(s);
+      }
+    }
+    if (s) resolved.push(s);
+  }
+  if (resolved.length === 0) return;
+  for (let i = resolved.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [resolved[i], resolved[j]] = [resolved[j], resolved[i]];
+  }
+  state.queue = [...resolved];
+  renderQueue();
+  openPlayerById(resolved[0].id);
+  showToast(`🔀 Shuffled "${pl.name}"`);
+}
+
+function closePlaylistView() {
+  state.activePlaylistId = null;
+  const df = document.getElementById('discover-feed-container');
+  if (df) df.style.display = '';
+  const title = document.getElementById('search-page-title');
+  const sub = document.getElementById('search-page-sub');
+  if (title) title.textContent = 'Discover Music';
+  if (sub) sub.textContent = 'Explore millions of songs — automatically synced to your Dhun Library';
+  const resView = document.getElementById('search-results-view');
+  if (resView) resView.style.display = 'none';
 }
 
 async function refreshLikedSongs() {
