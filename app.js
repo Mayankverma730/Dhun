@@ -3732,7 +3732,7 @@ async function sortLibraryPage(field) {
 }
 
 /* ── Search State ─────────────── */
-let currentYTFeedCategory = 'trending';
+let currentYTFeedCategory = 'for-you';
 let ytSearchDebounceTimer = null;
 let currentYTResults = [];
 
@@ -7065,7 +7065,6 @@ async function autoAddTrackToLibrary(track) {
    ══════════════════════════════════════════════════════════════════════ */
 
 let currentDiscoverVibePreference = 'auto';
-let currentYTFeedCategory = 'for-you';
 
 function getUserTasteProfile() {
   const likedSet = getUserLikedSet();
