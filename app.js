@@ -2021,6 +2021,7 @@ function initAuth() {
     if (appShell) {
       appShell.style.display = 'none';
     }
+  }
 }
 
 function populateSavedCredentials() {
