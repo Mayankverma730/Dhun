@@ -2341,6 +2341,7 @@ function updateAuthUI() {
 
   const coverImg = document.getElementById('pcover-img');
   if (coverImg) {
+    if (u.coverUrl === 'architecture_diagram.jpg') u.coverUrl = 'album2.jpg';
     coverImg.src = u.coverUrl || 'album2.jpg';
   }
 
@@ -3020,7 +3021,11 @@ function openProfileCoverModal() {
     console.error('[Dhun] Profile cover modal not found in DOM');
     return;
   }
-  const currentCover = (authState.currentUser && authState.currentUser.coverUrl) || 'album2.jpg';
+  let currentCover = (authState.currentUser && authState.currentUser.coverUrl) || 'album2.jpg';
+  if (currentCover === 'architecture_diagram.jpg') {
+    currentCover = 'album2.jpg';
+    if (authState.currentUser) authState.currentUser.coverUrl = 'album2.jpg';
+  }
   _pendingCoverUrl = currentCover;
 
   const previewImg = document.getElementById('pcover-preview-img');
