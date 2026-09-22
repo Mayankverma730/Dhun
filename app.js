@@ -2380,6 +2380,9 @@ async function toggleLike(btn, event) {
   if (state.currentPage === 'profile') {
     refreshLikedSongs();
   }
+  if (typeof currentYTFeedCategory !== 'undefined' && currentYTFeedCategory === 'for-you' && state.currentPage === 'search') {
+    loadYTFeed('for-you');
+  }
 }
 
 /* ── Mood Selector ─────────────────────────────── */
@@ -3282,7 +3285,7 @@ async function refreshSearch() {
   if (searchMode === 'ytmusic') {
     const grid = document.getElementById('yt-music-grid');
     if (grid && (!grid.children || grid.children.length === 0)) {
-      loadYTFeed(currentYTFeedCategory || 'trending');
+      loadYTFeed(currentYTFeedCategory || 'for-you');
     }
   }
 }
@@ -3752,7 +3755,7 @@ async function handleSearch(q) {
     if (resView) resView.style.display = 'none';
     const grid = document.getElementById('yt-music-grid');
     if (grid && (!grid.children || grid.children.length === 0)) {
-      loadYTFeed(currentYTFeedCategory || 'trending');
+      loadYTFeed(currentYTFeedCategory || 'for-you');
     }
     return;
   }
@@ -4219,7 +4222,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   /* Automatically populate Dhun library with rich online media */
   await autoSeedLibraryWithOnlineMedia();
-  loadYTFeed('trending');
+  loadYTFeed('for-you');
 
   /* Load songs from API */
   const songs = await apiGet('/songs');
@@ -6883,7 +6886,7 @@ function toggleLyricsExpand() {
 function switchSearchMode(mode) {
   const grid = document.getElementById('yt-music-grid');
   if (grid && (!grid.children || grid.children.length === 0)) {
-    loadYTFeed(currentYTFeedCategory || 'trending');
+    loadYTFeed(currentYTFeedCategory || 'for-you');
   }
 }
 
@@ -7053,8 +7056,197 @@ async function autoAddTrackToLibrary(track) {
   return song;
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   PERSONALIZED DISCOVER & TASTE ADAPTATION ENGINE
+   Automatically learns and adapts to the active listener's choices:
+   - Liked tracks, playlists & play frequencies
+   - Preferred genres & favorite artists
+   - Interactive vibe selector ('auto', 'romantic', 'chill', 'energy', 'party')
+   ══════════════════════════════════════════════════════════════════════ */
+
+let currentDiscoverVibePreference = 'auto';
+let currentYTFeedCategory = 'for-you';
+
+function getUserTasteProfile() {
+  const likedSet = getUserLikedSet();
+  const userPlaylists = getUserPlaylistsFromStorage() || state.playlists || [];
+  const songsInPlaylists = new Set();
+  userPlaylists.forEach(pl => {
+    if (Array.isArray(pl.songs)) pl.songs.forEach(sid => songsInPlaylists.add(String(sid)));
+  });
+
+  const allKnown = [...(state.songs || []), ...(_libAllSongs || []), ...(state.history || [])];
+
+  const genreCounts = {};
+  const artistCounts = {};
+  let totalUserInteractions = 0;
+
+  allKnown.forEach(s => {
+    if (!s) return;
+    const isLiked = likedSet.has(Number(s.id)) || likedSet.has(String(s.id)) || s.liked;
+    const inPlaylist = songsInPlaylists.has(String(s.id));
+    const plays = s.play_count || 0;
+
+    let weight = 0;
+    if (isLiked) weight += 4;
+    if (inPlaylist) weight += 3;
+    if (plays > 0) weight += Math.min(5, plays);
+
+    if (weight > 0) {
+      totalUserInteractions += weight;
+      const g = (s.genre || 'Pop').trim();
+      genreCounts[g] = (genreCounts[g] || 0) + weight;
+
+      const art = (s.artist || '').split(/[,/ft.&]/)[0].trim();
+      if (art && art.length > 2) {
+        artistCounts[art] = (artistCounts[art] || 0) + weight;
+      }
+    }
+  });
+
+  const sortedGenres = Object.keys(genreCounts).sort((a, b) => genreCounts[b] - genreCounts[a]);
+  const sortedArtists = Object.keys(artistCounts).sort((a, b) => artistCounts[b] - artistCounts[a]);
+
+  const userName = (authState.currentUser && authState.currentUser.name && authState.currentUser.name !== 'Guest User')
+    ? authState.currentUser.name.split(' ')[0]
+    : 'You';
+
+  return {
+    hasTasteData: totalUserInteractions > 0,
+    userName,
+    topGenres: sortedGenres.length > 0 ? sortedGenres : ['Bollywood', 'Pop', 'Lo-Fi'],
+    topArtists: sortedArtists.slice(0, 4),
+    totalInteractions: totalUserInteractions
+  };
+}
+
+function getPersonalizedDiscoverTracks(vibe = 'auto') {
+  if (typeof YTMusicAPI === 'undefined') return [];
+
+  const profile = getUserTasteProfile();
+  const allTracks = [
+    ...YTMusicAPI.getTrending('trending'),
+    ...YTMusicAPI.getTrending('bollywood'),
+    ...YTMusicAPI.getTrending('punjabi'),
+    ...YTMusicAPI.getTrending('lofi'),
+    ...YTMusicAPI.getTrending('electronic'),
+    ...(typeof YTMusicAPI.getTrending === 'function' ? YTMusicAPI.getTrending('pop') : [])
+  ];
+
+  // Deduplicate by videoId
+  const seenIds = new Set();
+  const uniqueTracks = [];
+  for (const t of allTracks) {
+    if (!t.videoId || seenIds.has(t.videoId)) continue;
+    seenIds.add(t.videoId);
+    uniqueTracks.push({ ...t });
+  }
+
+  // Score candidate tracks according to user preference & taste
+  const scored = uniqueTracks.map(t => {
+    let score = 10;
+    let matchBadge = '';
+    let matchReason = '';
+
+    const tGenre = (t.genre || '').toLowerCase();
+    const tArtist = (t.artist || '').toLowerCase();
+    const tTitle = (t.title || '').toLowerCase();
+
+    // 1. Explicit Vibe Override
+    if (vibe === 'romantic') {
+      if (tGenre.includes('bollywood') || /arijit|pritam|romance|love|shreya/i.test(tTitle + ' ' + tArtist)) {
+        score += 85;
+        matchBadge = '💖 Romance Vibe';
+        matchReason = 'Melodic Love & Romance';
+      }
+    } else if (vibe === 'chill') {
+      if (tGenre.includes('lo-fi') || /lofi|chill|relax|sleep|study|coffee/i.test(tTitle + ' ' + tArtist)) {
+        score += 85;
+        matchBadge = '🌙 Chill Beats';
+        matchReason = 'Relaxing Lo-Fi Stream';
+      }
+    } else if (vibe === 'energy') {
+      if (tGenre.includes('punjabi') || /diljit|dhillon|sidhu|energy|rock|banger/i.test(tTitle + ' ' + tArtist)) {
+        score += 85;
+        matchBadge = '⚡ High Energy';
+        matchReason = 'Uptempo & Bangers';
+      }
+    } else if (vibe === 'party') {
+      if (tGenre.includes('electronic') || /garrix|walker|avicii|dance|edm|party/i.test(tTitle + ' ' + tArtist)) {
+        score += 85;
+        matchBadge = '🎉 Party Track';
+        matchReason = 'Club & EDM Energy';
+      }
+    }
+
+    // 2. Automated personalized matching if 'auto' or complementary
+    if (vibe === 'auto' || !matchBadge) {
+      if (profile.hasTasteData) {
+        // Artist Affinity
+        for (const favArt of profile.topArtists) {
+          if (favArt && tArtist.includes(favArt.toLowerCase())) {
+            score += 75;
+            matchBadge = `❤️ ${favArt}`;
+            matchReason = `Favorite Artist`;
+            break;
+          }
+        }
+
+        // Top Genre Match
+        if (!matchBadge && profile.topGenres.length > 0) {
+          const topG = profile.topGenres[0].toLowerCase();
+          if (tGenre.includes(topG) || topG.includes(tGenre)) {
+            score += 60;
+            matchBadge = `🎯 98% Vibe Match`;
+            matchReason = `Top Genre: ${profile.topGenres[0]}`;
+          } else if (profile.topGenres[1] && (tGenre.includes(profile.topGenres[1].toLowerCase()) || profile.topGenres[1].toLowerCase().includes(tGenre))) {
+            score += 45;
+            matchBadge = `✨ 92% Match`;
+            matchReason = `Enjoyed: ${profile.topGenres[1]}`;
+          }
+        }
+      }
+
+      // Default curated badge if still unmatched
+      if (!matchBadge) {
+        if (t.genre === 'Bollywood') {
+          score += 30;
+          matchBadge = '🎶 Global Hit';
+          matchReason = 'Bollywood Trending';
+        } else if (t.genre === 'Pop' || t.genre === 'Rock') {
+          score += 25;
+          matchBadge = '🔥 Chartbuster';
+          matchReason = 'Global Popular';
+        } else {
+          score += 20;
+          matchBadge = '⚡ Handpicked';
+          matchReason = t.genre || 'Dhun Media';
+        }
+      }
+    }
+
+    return { ...t, score, matchBadge, matchReason };
+  });
+
+  // Sort descending by match score
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, 16);
+}
+
+function setDiscoverVibePreference(vibe, btnEl) {
+  currentDiscoverVibePreference = vibe;
+  document.querySelectorAll('#dtb-vibe-chips .dtb-chip').forEach(c => c.classList.remove('active'));
+  if (btnEl) {
+    btnEl.classList.add('active');
+  } else {
+    const el = document.getElementById(`dtb-vibe-${vibe}`);
+    if (el) el.classList.add('active');
+  }
+  loadYTFeed('for-you');
+}
+
 /* ── Feed & Category Loader ─────────────────────────────────────── */
-async function loadYTFeed(category = 'trending', btnEl = null) {
+async function loadYTFeed(category = 'for-you', btnEl = null) {
   currentYTFeedCategory = category;
 
   document.querySelectorAll('#yt-trending-chips .filter-chip').forEach(c => c.classList.remove('active'));
@@ -7065,14 +7257,47 @@ async function loadYTFeed(category = 'trending', btnEl = null) {
     if (chip) chip.classList.add('active');
   }
 
+  const tasteBanner = document.getElementById('discover-taste-banner');
+  const titleEl = document.getElementById('yt-results-title');
+  const countEl = document.getElementById('yt-results-count');
+  const profile = getUserTasteProfile();
+
+  if (category === 'for-you') {
+    if (tasteBanner) tasteBanner.style.display = 'flex';
+    const dtbTitle = document.getElementById('dtb-title');
+    const dtbSub   = document.getElementById('dtb-sub');
+    if (dtbTitle) {
+      dtbTitle.innerHTML = `✨ Made For ${escapeHtmlText(profile.userName)}`;
+    }
+    if (dtbSub) {
+      if (currentDiscoverVibePreference !== 'auto') {
+        const vibeNames = { romantic: '💖 Romance & Melodies', chill: '🌙 Chill & Lo-Fi Beats', energy: '⚡ High Energy Bangers', party: '🎉 Party & Dance EDM' };
+        dtbSub.textContent = `Auto-curated stream filtered by ${vibeNames[currentDiscoverVibePreference] || 'your selected vibe'}`;
+      } else if (profile.hasTasteData) {
+        dtbSub.textContent = `Auto-adapted to your taste in ${profile.topGenres.slice(0, 2).join(' & ')} · Updates in real time as you play & like`;
+      } else {
+        dtbSub.textContent = `Fresh curated discovery stream · Like or save tracks to tailor your personal vibe`;
+      }
+    }
+    if (titleEl) titleEl.textContent = `✨ Recommended For ${profile.userName}`;
+    if (countEl) countEl.textContent = 'Auto-Adapted';
+
+    const tracks = getPersonalizedDiscoverTracks(currentDiscoverVibePreference);
+    renderYTMusicGrid(tracks);
+    return;
+  }
+
+  // Other specific categories
+  if (tasteBanner) tasteBanner.style.display = 'none';
+
   const titles = {
-    trending: '🔥 Trending Media',
+    trending: '🔥 Top Trending Media',
     bollywood: '🎶 Bollywood Hits & Chartbusters',
     punjabi: '⚡ Punjabi Bangers & Pop',
     lofi: '☕ Lo-Fi Chill & Study Beats',
-    electronic: '🎛️ EDM, Synthwave & Electronic'
+    electronic: '🎛️ EDM, Synthwave & Electronic',
+    pop: '🎤 Global Pop & Rock Classics'
   };
-  const titleEl = document.getElementById('yt-results-title');
   if (titleEl) titleEl.textContent = titles[category] || '🔥 Trending Media';
 
   const grid = document.getElementById('yt-music-grid');
@@ -7100,11 +7325,13 @@ async function performYTMusicSearch(query) {
   await performUnifiedSearch(query);
 }
 
-/* ── Grid Renderer with Seamless Auto-Library Integration ───────── */
+/* ── Grid Renderer with Non-Overlapping Layout ───────── */
 function renderYTMusicGrid(tracks) {
   currentYTResults = Array.isArray(tracks) ? tracks : [];
   const countEl = document.getElementById('yt-results-count');
-  if (countEl) countEl.textContent = `${currentYTResults.length} Tracks`;
+  if (countEl && currentYTFeedCategory !== 'for-you') {
+    countEl.textContent = `${currentYTResults.length} Tracks`;
+  }
 
   const grid = document.getElementById('yt-music-grid');
   if (!grid) return;
@@ -7136,6 +7363,8 @@ function renderYTMusicGrid(tracks) {
 
     const dur = t.durationFormatted || fmtDur(t.durationMin || (t.durationSec / 60));
     const thumb = t.thumbnail || `https://i.ytimg.com/vi/${t.videoId}/hqdefault.jpg`;
+    const badgeText = t.matchBadge || (isAlreadyInLib ? '✓ In Library' : '⚡ Auto-Add');
+    const isVibeMatch = !!t.matchBadge;
 
     return `
       <div class="yt-song-card" id="yt-card-${idx}">
@@ -7145,20 +7374,26 @@ function renderYTMusicGrid(tracks) {
             <span class="yt-card-play-btn">▶</span>
           </div>
           <span class="yt-card-dur">${dur}</span>
-          <span class="yt-card-source-badge">${isAlreadyInLib ? '✓ In Library' : '⚡ Auto-Add'}</span>
+          <span class="yt-card-source-badge ${isVibeMatch ? 'vibe-match' : ''}">
+            ${escapeHtmlText(badgeText)}
+          </span>
         </div>
         <div class="yt-card-info">
           <h4 class="yt-card-title" title="${escapeHtmlAttr(t.title)}" onclick="playYTMusicIndex(${idx})">${escapeHtmlText(t.title)}</h4>
           <p class="yt-card-artist" title="${escapeHtmlAttr(t.artist)}">${escapeHtmlText(t.artist)}</p>
+          <div class="yt-card-meta">
+            <span class="yt-genre-pill">${escapeHtmlText(t.genre || 'Media')}</span>
+            ${t.matchReason ? `<span class="yt-match-tag">${escapeHtmlText(t.matchReason)}</span>` : ''}
+          </div>
         </div>
         <div class="yt-card-actions">
           <button class="yt-btn-play" onclick="playYTMusicIndex(${idx})" title="Play & Auto-Add to Library">
             <span>▶ Play</span>
           </button>
-          <button class="yt-btn-queue" onclick="enqueueYTMusicIndex(${idx})" title="Queue & Auto-Add to Library">
+          <button class="yt-btn-action" onclick="enqueueYTMusicIndex(${idx})" title="Queue Track">
             <span>＋ Queue</span>
           </button>
-          <button class="yt-btn-queue" onclick="addYTMusicIndexToPlaylist(${idx}, event)" title="Add to Playlist" style="padding:6px 9px">
+          <button class="yt-btn-action" onclick="addYTMusicIndexToPlaylist(${idx}, event)" title="Add to Playlist">
             <span>⋯ Playlist</span>
           </button>
         </div>

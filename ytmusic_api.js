@@ -244,6 +244,13 @@ const YTMusicAPI = (() => {
       { videoId: 'gCYcHz2k5x0', title: 'Animals', artist: 'Martin Garrix', album: 'Gold Skies', genre: 'Electronic', duration: 2.93, durationSec: 176 },
       { videoId: 'IcrbM1l_BoI', title: 'Wake Me Up', artist: 'Avicii', album: 'True', genre: 'Electronic', duration: 4.12, durationSec: 247 },
       { videoId: 'ALZHF5UqnU4', title: 'Alone', artist: 'Marshmello', album: 'Joytime', genre: 'Electronic', duration: 3.32, durationSec: 199 }
+    ],
+    pop: [
+      { videoId: 'kJQP7kiw5Fk', title: 'Despacito', artist: 'Luis Fonsi ft. Daddy Yankee', album: 'Vida', genre: 'Pop', duration: 4.42, durationSec: 265 },
+      { videoId: 'JGwWNGJdvx8', title: 'Shape of You', artist: 'Ed Sheeran', album: '÷ (Divide)', genre: 'Pop', duration: 3.88, durationSec: 233 },
+      { videoId: '4NRXx6U8ABQ', title: 'Blinding Lights', artist: 'The Weeknd', album: 'After Hours', genre: 'Pop', duration: 3.33, durationSec: 200 },
+      { videoId: 'fJ9rUzIMcZQ', title: 'Bohemian Rhapsody', artist: 'Queen', album: 'A Night at the Opera', genre: 'Rock', duration: 5.98, durationSec: 359 },
+      { videoId: '2Vv-BfVoq4g', title: 'Perfect', artist: 'Ed Sheeran', album: '÷ (Divide)', genre: 'Pop', duration: 4.38, durationSec: 263 }
     ]
   };
 

@@ -567,22 +567,42 @@
           <div class="suggestions-box glass-card" id="suggestions-box-2" style="display:none"></div>
         </div>
 
-        <!-- Trending & Popular Feeds (Auto-Added to Library) -->
+        <!-- Trending & Personalized Feeds -->
         <div id="yt-mode-header">
           <div class="yt-trending-chips" id="yt-trending-chips">
-            <button class="filter-chip active" id="yt-chip-trending" onclick="loadYTFeed('trending', this)">🔥 Top Trending</button>
+            <button class="filter-chip active" id="yt-chip-for-you" onclick="loadYTFeed('for-you', this)">✨ Made For You</button>
+            <button class="filter-chip" id="yt-chip-trending" onclick="loadYTFeed('trending', this)">🔥 Top Trending</button>
             <button class="filter-chip" id="yt-chip-bollywood" onclick="loadYTFeed('bollywood', this)">🎶 Bollywood Hits</button>
             <button class="filter-chip" id="yt-chip-punjabi" onclick="loadYTFeed('punjabi', this)">⚡ Punjabi Bangers</button>
             <button class="filter-chip" id="yt-chip-lofi" onclick="loadYTFeed('lofi', this)">☕ Lo-Fi Chill & Study</button>
             <button class="filter-chip" id="yt-chip-electronic" onclick="loadYTFeed('electronic', this)">🎛️ EDM & Electronic</button>
+            <button class="filter-chip" id="yt-chip-pop" onclick="loadYTFeed('pop', this)">🎤 Global Pop & Rock</button>
+          </div>
+        </div>
+
+        <!-- Personalized Taste & Vibe Preference Indicator -->
+        <div class="discover-taste-banner glass-card" id="discover-taste-banner">
+          <div class="dtb-left">
+            <span class="dtb-sparkle">✨</span>
+            <div>
+              <h3 class="dtb-title" id="dtb-title">Personalized For You</h3>
+              <p class="dtb-sub" id="dtb-sub">Discover tiles auto-adapt based on your likes, playlists & listening vibe</p>
+            </div>
+          </div>
+          <div class="dtb-vibe-chips" id="dtb-vibe-chips">
+            <button class="dtb-chip active" id="dtb-vibe-auto" onclick="setDiscoverVibePreference('auto', this)">🎯 Auto-Adapted</button>
+            <button class="dtb-chip" id="dtb-vibe-romantic" onclick="setDiscoverVibePreference('romantic', this)">💖 Romance</button>
+            <button class="dtb-chip" id="dtb-vibe-chill" onclick="setDiscoverVibePreference('chill', this)">🌙 Chill & Lo-Fi</button>
+            <button class="dtb-chip" id="dtb-vibe-energy" onclick="setDiscoverVibePreference('energy', this)">⚡ High Energy</button>
+            <button class="dtb-chip" id="dtb-vibe-party" onclick="setDiscoverVibePreference('party', this)">🎉 Party / Dance</button>
           </div>
         </div>
 
         <!-- YouTube Music Results / Feed Grid -->
         <div id="yt-music-view">
           <div class="section-header" style="margin-top:10px">
-            <h2 class="section-title" id="yt-results-title">🔥 Trending & Popular Media</h2>
-            <span class="yt-results-badge" id="yt-results-count">8 Tracks</span>
+            <h2 class="section-title" id="yt-results-title">✨ Recommended For You</h2>
+            <span class="yt-results-badge" id="yt-results-count">Curated Mix</span>
           </div>
           <div class="yt-cards-grid" id="yt-music-grid">
             <!-- Populated dynamically via renderYTMusicGrid() -->
