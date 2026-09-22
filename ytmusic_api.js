@@ -55,72 +55,26 @@ const YTMusicAPI = (() => {
   }
 
   /**
-   * Ultra-fast & 100% reliable iTunes Search API (<80ms response, CORS-enabled, covers all music)
-   */
-  async function searchITunes(query, limit = 25) {
-    if (!query || !query.trim()) return [];
-    try {
-      const url = `https://itunes.apple.com/search?term=${encodeURIComponent(query.trim())}&entity=song&limit=${limit}`;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 2500);
-      const res = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeout);
-      if (!res.ok) return [];
-      const data = await res.json();
-      if (!data || !Array.isArray(data.results)) return [];
-
-      return data.results.map(item => {
-        const title = cleanSongTitle(item.trackName || 'Unknown Title');
-        const artist = cleanArtistName(item.artistName || 'Artist');
-        const album = item.collectionName || 'Single';
-        const durSec = Math.max(30, Math.round((item.trackTimeMillis || 210000) / 1000));
-        const durMin = Number((durSec / 60).toFixed(2));
-        const rawArt = item.artworkUrl100 || item.artworkUrl60 || '';
-        const thumb = rawArt ? rawArt.replace(/100x100bb/g, '600x600bb').replace(/60x60bb/g, '600x600bb') : `https://i.ytimg.com/vi/fsiPzT50ZiM/hqdefault.jpg`;
-        const matchedVid = getVideoIdForTrack(title, artist);
-
-        return {
-          id: matchedVid ? `yt_${matchedVid}` : `itunes_${item.trackId}`,
-          videoId: matchedVid || null,
-          title,
-          artist,
-          album,
-          genre: item.primaryGenreName || detectGenre(title, artist),
-          duration: durMin,
-          durationSec: durSec,
-          thumbnail: thumb,
-          previewUrl: item.previewUrl || '',
-          source: 'ytmusic',
-          viewCount: '🎧 Official Track',
-          published: item.releaseDate ? item.releaseDate.substring(0, 4) : ''
-        };
-      });
-    } catch(e) {
-      return [];
-    }
-  }
-
-  /**
-   * Search for songs on YouTube Music / YouTube with automatic failover and iTunes redundancy
+   * Search for songs exclusively on YouTube Music with automatic failover
    */
   async function search(query, maxResults = 25) {
     if (!query || !query.trim()) return [];
     const q = query.trim();
 
-    // Check if user pasted a direct YouTube or YouTube Music link
+    // 1. Check if user pasted a direct YouTube or YouTube Music link
     const directId = extractVideoId(q);
     if (directId) {
       const singleTrack = await getTrackDetails(directId);
       if (singleTrack) return [singleTrack];
     }
 
-    // Fast Invidious search attempt
+    // 2. Query verified online YouTube Music / Invidious instances
     for (let attempt = 0; attempt < INVIDIOUS_INSTANCES.length; attempt++) {
       const base = getBaseUrl();
       try {
         const endpoint = `${base}/api/v1/search?q=${encodeURIComponent(q)}&type=video`;
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 2200);
+        const timeout = setTimeout(() => controller.abort(), 3500);
 
         const res = await fetch(endpoint, { signal: controller.signal });
         clearTimeout(timeout);
@@ -140,13 +94,7 @@ const YTMusicAPI = (() => {
       }
     }
 
-    // Secondary instant provider: iTunes Catalog (CORS-free, instant 50ms response)
-    const itunesTracks = await searchITunes(q, maxResults);
-    if (itunesTracks && itunesTracks.length > 0) {
-      return itunesTracks;
-    }
-
-    // Ultimate fallback: Search via curated catalog
+    // 3. Fallback exclusively to curated YouTube Music library
     return getCuratedFallback(q);
   }
 
@@ -283,7 +231,11 @@ const YTMusicAPI = (() => {
       { videoId: 'dCmp56tSSmA', title: 'Lover', artist: 'Diljit Dosanjh', album: 'MoonChild Era', genre: 'Punjabi', duration: 3.12, durationSec: 187 },
       { videoId: 'cl0a3i2wFcc', title: 'Brown Munde', artist: 'AP Dhillon, Gurinder Gill, Shinda Kahlon', album: 'Brown Munde Single', genre: 'Punjabi', duration: 4.28, durationSec: 257 },
       { videoId: 'e-ORhEE9VVg', title: '295', artist: 'Sidhu Moose Wala', album: 'Moosetape', genre: 'Punjabi', duration: 4.5, durationSec: 270 },
-      { videoId: 'vX2cDW8LUWk', title: 'Excuses', artist: 'AP Dhillon, Gurinder Gill', album: 'Hidden Gems', genre: 'Punjabi', duration: 2.93, durationSec: 176 }
+      { videoId: 'vX2cDW8LUWk', title: 'Excuses', artist: 'AP Dhillon, Gurinder Gill', album: 'Hidden Gems', genre: 'Punjabi', duration: 2.93, durationSec: 176 },
+      { videoId: '47dwt3_yC3s', title: 'Winning Speech', artist: 'Karan Aujla, Mxrci', album: 'Four You', genre: 'Punjabi', duration: 3.42, durationSec: 205 },
+      { videoId: 'm4rU4Xk2h5s', title: 'Softly', artist: 'Karan Aujla, Ikky', album: 'Making Memories', genre: 'Punjabi', duration: 2.58, durationSec: 155 },
+      { videoId: '8nK_4VfFpYc', title: 'Cheques', artist: 'Shubh', album: 'Still Rollin', genre: 'Punjabi', duration: 3.05, durationSec: 183 },
+      { videoId: 'cl34XmaN4U8', title: 'GOAT', artist: 'Diljit Dosanjh', album: 'G.O.A.T.', genre: 'Punjabi', duration: 3.43, durationSec: 206 }
     ],
     lofi: [
       { videoId: 'DWcJFNfaw9c', title: 'Lofi Study Session', artist: 'Lofi Girl', album: 'Peaceful Beats', genre: 'Lo-Fi', duration: 3.5, durationSec: 210 },
@@ -301,7 +253,11 @@ const YTMusicAPI = (() => {
       { videoId: 'JGwWNGJdvx8', title: 'Shape of You', artist: 'Ed Sheeran', album: '÷ (Divide)', genre: 'Pop', duration: 3.88, durationSec: 233 },
       { videoId: '4NRXx6U8ABQ', title: 'Blinding Lights', artist: 'The Weeknd', album: 'After Hours', genre: 'Pop', duration: 3.33, durationSec: 200 },
       { videoId: 'fJ9rUzIMcZQ', title: 'Bohemian Rhapsody', artist: 'Queen', album: 'A Night at the Opera', genre: 'Rock', duration: 5.98, durationSec: 359 },
-      { videoId: '2Vv-BfVoq4g', title: 'Perfect', artist: 'Ed Sheeran', album: '÷ (Divide)', genre: 'Pop', duration: 4.38, durationSec: 263 }
+      { videoId: '2Vv-BfVoq4g', title: 'Perfect', artist: 'Ed Sheeran', album: '÷ (Divide)', genre: 'Pop', duration: 4.38, durationSec: 263 },
+      { videoId: '7wtfhZwyrcc', title: 'Believer', artist: 'Imagine Dragons', album: 'Evolve', genre: 'Rock', duration: 3.4, durationSec: 204 },
+      { videoId: '34Na4j8AVgA', title: 'Starboy', artist: 'The Weeknd ft. Daft Punk', album: 'Starboy', genre: 'Pop', duration: 3.84, durationSec: 230 },
+      { videoId: 'H5v3kku4y6Q', title: 'As It Was', artist: 'Harry Styles', album: "Harry's House", genre: 'Pop', duration: 2.78, durationSec: 167 },
+      { videoId: 'FM7Z-Xq8Drc', title: 'Something Just Like This', artist: 'Coldplay, The Chainsmokers', album: 'Memories...Do Not Open', genre: 'Pop', duration: 4.12, durationSec: 247 }
     ]
   };
 
@@ -317,13 +273,14 @@ const YTMusicAPI = (() => {
   }
 
   function getCuratedFallback(query) {
-    const q = query.toLowerCase();
+    const q = (query || '').toLowerCase().trim();
     const all = [
       ...TRENDING_FEEDS.trending,
       ...TRENDING_FEEDS.bollywood,
       ...TRENDING_FEEDS.punjabi,
       ...TRENDING_FEEDS.lofi,
-      ...TRENDING_FEEDS.electronic
+      ...TRENDING_FEEDS.electronic,
+      ...TRENDING_FEEDS.pop
     ];
 
     const matches = all.filter(t =>

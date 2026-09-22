@@ -4958,7 +4958,7 @@ let currentYTFeedCategory = 'for-you';
 let ytSearchDebounceTimer = null;
 let currentYTResults = [];
 
-/* Unified search: seamlessly searches both local library and online catalog */
+/* YouTube Music Exclusive Search */
 async function handleSearch(q) {
   const query = typeof q === 'string' ? q : '';
   const clearBtn  = document.getElementById('clear-btn');
@@ -4974,121 +4974,90 @@ async function handleSearch(q) {
 
   showSugg();
 
-  const defView   = document.getElementById('discover-feed-container');
-  const resView   = document.getElementById('search-results-view');
-  const resList   = document.getElementById('search-results-list');
-  const resQ      = document.getElementById('results-query');
-  const onlineSec = document.getElementById('search-online-section');
+  const defView     = document.getElementById('discover-feed-container');
+  const resView     = document.getElementById('search-results-view');
+  const onlineSec   = document.getElementById('search-online-section');
+  const chipsHeader = document.getElementById('yt-mode-header');
+  const tasteBanner = document.getElementById('discover-taste-banner');
+  const searchDef   = document.getElementById('search-default-view');
+  const ytMusicView = document.getElementById('yt-music-view');
+  const titleEl     = document.getElementById('yt-results-title');
+  const countEl     = document.getElementById('yt-results-count');
+  const grid        = document.getElementById('yt-music-grid');
 
   if (!query.trim()) {
-    if (defView)   defView.style.display = '';
-    if (resView)   resView.style.display = 'none';
-    if (onlineSec) onlineSec.style.display = 'none';
-    const grid = document.getElementById('yt-music-grid');
-    if (grid && (!grid.children || grid.children.length === 0)) {
-      loadYTFeed(currentYTFeedCategory || 'for-you');
-    }
+    if (defView)     defView.style.display   = '';
+    if (resView)     resView.style.display   = 'none';
+    if (onlineSec)   onlineSec.style.display = 'none';
+    if (chipsHeader) chipsHeader.style.display = '';
+    if (tasteBanner && currentYTFeedCategory === 'for-you') tasteBanner.style.display = 'flex';
+    if (searchDef)   searchDef.style.display = '';
+    if (ytMusicView) ytMusicView.style.display = '';
+    loadYTFeed(currentYTFeedCategory || 'for-you');
     return;
   }
 
-  // Active search state
+  // Active YouTube Music search state
   state.activePlaylistId = null;
   const delBtn = document.getElementById('delete-playlist-view-btn');
   if (delBtn) delBtn.style.display = 'none';
-  if (defView) defView.style.display = 'none';
-  if (resView) resView.style.display = 'block';
-  if (resList) resList.style.display = '';
-  if (resQ)    resQ.textContent = query;
 
-  // Instant zero-latency local library filter
-  const term = query.toLowerCase().trim();
-  const instantMatches = (state.songs || []).filter(s =>
-    (s.title || '').toLowerCase().includes(term) ||
-    (s.artist || '').toLowerCase().includes(term) ||
-    (s.album || '').toLowerCase().includes(term) ||
-    (s.genre || '').toLowerCase().includes(term)
-  );
+  if (defView)     defView.style.display   = '';
+  if (resView)     resView.style.display   = 'none'; // Only search YouTube Music (no local library table)
+  if (onlineSec)   onlineSec.style.display = 'none';
+  if (chipsHeader) chipsHeader.style.display = 'none'; // Keep search results prominent right below search bar
+  if (tasteBanner) tasteBanner.style.display = 'none';
+  if (searchDef)   searchDef.style.display = 'none';
+  if (ytMusicView) ytMusicView.style.display = '';
 
-  if (resList) {
-    if (instantMatches.length > 0) {
-      resList.innerHTML = `
-        <div style="margin-bottom:12px;font-size:12px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:0.8px;display:flex;align-items:center;gap:6px">
-          <span>📂 Library Matches</span>
-          <span style="background:rgba(124,58,237,0.18);color:var(--purple-bright);padding:2px 8px;border-radius:10px;font-size:11px">${instantMatches.length}</span>
-        </div>` + instantMatches.map((s, i) => `
-        <div class="st-row" onclick="openPlayerById('${escapeHtmlAttr(String(s.id))}')">
-          <span class="st-num">${i + 1}</span>
-          <div class="st-title-col">
-            <div class="st-thumb" style="background:${gradientFor(s.id)}">
-              <img src="${imgFor(s.id)}" alt="${escapeHtmlAttr(s.title)}" data-song-id="${s.id}"/>
-            </div>
-            <div>
-              <p class="st-song-name">${escapeHtmlText(s.title)} ${isYTSong(s.id) ? '<span class="yt-badge">🔴 Media</span>' : ''}</p>
-              <p class="st-artist">${escapeHtmlText(s.artist)}</p>
-            </div>
-          </div>
-          <span class="st-cell">${escapeHtmlText(s.album || '')}</span>
-          <span class="st-cell">${escapeHtmlText(s.genre || '')}</span>
-          <span class="st-dur">${fmtDur(s.duration)}</span>
-          <div class="st-acts">
-            <button class="icon-act like-btn" data-song-id="${s.id}" onclick="toggleLike(this,event)">${s.liked ? '❤️' : '♡'}</button>
-            <button class="icon-act" onclick="enqueueSong('${escapeHtmlAttr(String(s.id))}',event)" title="Add to queue">＋</button>
-            <button class="icon-act" onclick="addToPlaylistPrompt('${escapeHtmlAttr(String(s.id))}',event)" title="Add to playlist">⋯</button>
-          </div>
-        </div>`).join('');
-    } else {
-      resList.innerHTML = `<p style="padding:8px 0 14px;color:var(--text-muted);font-size:13px">No local library matches for "${escapeHtmlText(query)}". Searching online catalog…</p>`;
-    }
+  if (titleEl) titleEl.textContent = `YouTube Music Results for "${query.trim()}"`;
+  if (countEl) countEl.textContent = 'Searching YouTube Music…';
+
+  if (grid) {
+    grid.innerHTML = `
+      <div class="yt-skeleton-card"><div class="yt-skel-thumb"></div><div class="yt-skel-line"></div><div class="yt-skel-line short"></div></div>
+      <div class="yt-skeleton-card"><div class="yt-skel-thumb"></div><div class="yt-skel-line"></div><div class="yt-skel-line short"></div></div>
+      <div class="yt-skeleton-card"><div class="yt-skel-thumb"></div><div class="yt-skel-line"></div><div class="yt-skel-line short"></div></div>
+      <div class="yt-skeleton-card"><div class="yt-skel-thumb"></div><div class="yt-skel-line"></div><div class="yt-skel-line short"></div></div>
+    `;
   }
 
   clearTimeout(ytSearchDebounceTimer);
   ytSearchDebounceTimer = setTimeout(async () => {
-    await performUnifiedSearch(query.trim());
+    await performYTMusicSearch(query.trim());
   }, 220);
 }
 
-async function performUnifiedSearch(q) {
-  const query = (q || '').trim();
-  if (!query) return;
+async function performYTMusicSearch(query) {
+  const q = (query || '').trim();
+  if (!q) return;
 
-  const resList     = document.getElementById('search-results-list');
-  const onlineSec   = document.getElementById('search-online-section');
-  const onlineHead  = document.getElementById('search-online-heading');
-  const onlineCount = document.getElementById('search-online-count');
-  const onlineGrid  = document.getElementById('search-online-grid') || document.getElementById('yt-music-grid');
+  const countEl = document.getElementById('yt-results-count');
+  const grid    = document.getElementById('yt-music-grid');
 
-  if (onlineSec) onlineSec.style.display = 'block';
-  if (onlineHead) onlineHead.textContent = `🌐 Online Catalog Results for "${query}"`;
-  if (onlineCount) onlineCount.textContent = 'Searching…';
-
-  // 1. Re-evaluate local matches
-  const term = query.toLowerCase();
-  const localMatches = (state.songs || []).filter(s =>
-    (s.title || '').toLowerCase().includes(term) ||
-    (s.artist || '').toLowerCase().includes(term) ||
-    (s.album || '').toLowerCase().includes(term) ||
-    (s.genre || '').toLowerCase().includes(term)
-  );
-
-  // 2. Fetch from online catalog (Invidious + iTunes failover)
   if (typeof YTMusicAPI !== 'undefined') {
     try {
-      const onlineTracks = await YTMusicAPI.search(query, 24);
-      if (onlineGrid) {
-        renderYTMusicGrid(onlineTracks, onlineGrid, onlineCount);
+      const tracks = await YTMusicAPI.search(q, 24);
+
+      // Prevent race conditions: ensure user hasn't changed query
+      const currentInput = document.getElementById('search-input') || document.getElementById('search-input-top');
+      if (currentInput && currentInput.value.trim() && currentInput.value.trim() !== q) {
+        return;
       }
-      if (localMatches.length === 0 && onlineTracks && onlineTracks.length > 0 && resList) {
-        resList.style.display = 'none'; // Hide empty local notice to keep online results prominent
-      }
+
+      if (countEl) countEl.textContent = `${tracks.length} YouTube Music Tracks`;
+      renderYTMusicGrid(tracks, grid, countEl);
     } catch (e) {
-      console.warn('Unified online search error:', e);
-      if (onlineCount) onlineCount.textContent = '0 Tracks';
-      if (onlineGrid) {
-        onlineGrid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:24px 16px;color:var(--text-muted)">Unable to search online catalog. Please check your network connection.</div>`;
+      console.warn('YouTube Music search error:', e);
+      if (countEl) countEl.textContent = '0 Tracks';
+      if (grid) {
+        grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:28px 16px;color:var(--text-muted)">Unable to load YouTube Music search results. Please check your network connection.</div>`;
       }
     }
   }
 }
+
+const performUnifiedSearch = performYTMusicSearch;
 
 async function showSugg() {
   const activeInput = (document.activeElement && (document.activeElement.id === 'search-input' || document.activeElement.id === 'search-input-top'))
@@ -5101,7 +5070,6 @@ async function showSugg() {
     return;
   }
 
-  const localMatches = (state.songs || []).filter(s => (s.title || '').toLowerCase().startsWith(q.toLowerCase())).slice(0, 3);
   let onlineSugg = [];
   if (typeof YTMusicAPI !== 'undefined') {
     try {
@@ -5109,16 +5077,10 @@ async function showSugg() {
     } catch(e) {}
   }
 
-  const items = [
-    ...localMatches.map(s => ({
-      html: `🎵 ${escapeHtmlText(s.title)} – ${escapeHtmlText(s.artist)}`,
-      val: s.title
-    })),
-    ...onlineSugg.slice(0, 5).map(s => ({
-      html: `🔍 ${escapeHtmlText(s)}`,
-      val: s
-    }))
-  ];
+  const items = (onlineSugg || []).slice(0, 6).map(s => ({
+    html: `🔍 <span style="font-weight:600">${escapeHtmlText(s)}</span>`,
+    val: s
+  }));
 
   boxes.forEach(id => {
     const box = document.getElementById(id);
