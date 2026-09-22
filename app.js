@@ -1931,26 +1931,44 @@ function saveStoredUsers(users) {
   } catch(e) {}
 }
 
-function saveCredentials(email, password) {
+function saveCredentials(email) {
   if (!email) return;
   try {
-    localStorage.setItem('dhun_saved_credentials', JSON.stringify({ email: String(email).toLowerCase().trim(), password: password || '' }));
+    localStorage.setItem('dhun_saved_credentials', JSON.stringify({ email: String(email).toLowerCase().trim() }));
   } catch(e) {}
 }
 
 function getSavedCredentials() {
   try {
     const raw = localStorage.getItem('dhun_saved_credentials');
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed) {
+        delete parsed.password; // Strict security: never return or save passwords
+        return parsed;
+      }
+    }
   } catch(e) {}
   return null;
 }
 
 function initAuth() {
+  // Purge any previously stored passwords from localStorage
+  try {
+    const rawCreds = localStorage.getItem('dhun_saved_credentials');
+    if (rawCreds) {
+      const parsed = JSON.parse(rawCreds);
+      if (parsed && parsed.password) {
+        delete parsed.password;
+        localStorage.setItem('dhun_saved_credentials', JSON.stringify(parsed));
+      }
+    }
+  } catch(e) {}
+
   authState.users = getStoredUsers();
   saveStoredUsers(authState.users); // Run deduplication pass immediately
 
-  // 1. Try to find currently active user session
+  // 1. Check for actively authenticated session
   let activeUser = null;
   const activeUserId = localStorage.getItem('dhun_auth_active_user');
 
@@ -1958,32 +1976,7 @@ function initAuth() {
     activeUser = authState.users.find(u => u.id === activeUserId || (u.email && makeUserIdFromEmail(u.email) === activeUserId));
   }
 
-  // 2. Fallback: Check if a full active profile was stored directly
-  if (!activeUser) {
-    try {
-      const rawProfile = localStorage.getItem('dhun_active_profile');
-      if (rawProfile) {
-        const parsed = JSON.parse(rawProfile);
-        if (parsed && parsed.email) {
-          const canonicalId = makeUserIdFromEmail(parsed.email);
-          activeUser = authState.users.find(u => u.id === canonicalId || u.email.toLowerCase() === parsed.email.toLowerCase());
-          if (!activeUser) {
-            activeUser = { ...parsed, id: canonicalId };
-            authState.users.push(activeUser);
-            saveStoredUsers(authState.users);
-          }
-        }
-      }
-    } catch(e) {}
-  }
-
-  // 3. Fallback: "profiles must be stored and gets sign after one time sign up"
-  // If user signed up before, auto-sign in!
-  if (!activeUser && authState.users.length > 0) {
-    const sorted = [...authState.users].sort((a, b) => (b.lastLoginAt || 0) - (a.lastLoginAt || 0));
-    activeUser = sorted[0];
-  }
-
+  // 2. Check full active profile if session flag exists
   if (activeUser) {
     activeUser.id = makeUserIdFromEmail(activeUser.email);
     localStorage.setItem('dhun_auth_active_user', activeUser.id);
@@ -2026,17 +2019,21 @@ function initAuth() {
 
 function populateSavedCredentials() {
   const creds = getSavedCredentials();
-  if (!creds) return;
   const emailInput = document.getElementById('gate-signin-email');
   const passInput  = document.getElementById('gate-signin-password');
-  if (emailInput && creds.email && !emailInput.value) emailInput.value = creds.email;
-  if (passInput && creds.password && !passInput.value) passInput.value = creds.password;
+  if (emailInput && creds && creds.email && !emailInput.value) {
+    emailInput.value = creds.email;
+  }
+  // User must input password each time - never prefill password
+  if (passInput) {
+    passInput.value = '';
+  }
 }
 
 function renderGateSavedProfiles() {
   const container = document.getElementById('gate-saved-profiles');
   if (!container) return;
-  const users = getStoredUsers();
+  const users = getStoredUsers().filter(u => u && u.id !== 'guest');
   if (users.length === 0) {
     container.innerHTML = '';
     container.style.display = 'none';
@@ -2045,16 +2042,16 @@ function renderGateSavedProfiles() {
   container.style.display = 'block';
   container.innerHTML = `
     <div style="background:rgba(255,255,255,0.04);border:1px solid var(--glass-border);border-radius:14px;padding:12px 14px;margin-bottom:14px;">
-      <p style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Saved Profiles (Click to Enter)</p>
+      <p style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Saved Profiles (Select to Sign In)</p>
       <div style="display:flex;flex-direction:column;gap:8px;">
         ${users.map(u => `
-          <button type="button" onclick="quickSignInFromGate('${u.id}')" style="display:flex;align-items:center;gap:10px;width:100%;padding:8px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:var(--text-1);cursor:pointer;text-align:left;transition:all 0.2s;" onmouseover="this.style.background='rgba(168,85,247,0.18)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
+          <button type="button" onclick="selectSavedProfileForSignIn('${u.id}')" style="display:flex;align-items:center;gap:10px;width:100%;padding:8px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:var(--text-1);cursor:pointer;text-align:left;transition:all 0.2s;" onmouseover="this.style.background='rgba(168,85,247,0.18)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
             <span style="width:28px;height:28px;border-radius:50%;background:${u.avatarColor || '#7c3aed'};display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:12px;color:#fff;flex-shrink:0;">${(u.name || 'U').charAt(0).toUpperCase()}</span>
             <div style="flex:1;min-width:0;">
               <p style="font-size:13px;font-weight:600;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtmlText(u.name)}</p>
               <p style="font-size:11px;color:var(--text-3);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtmlText(u.email || 'Profile')}</p>
             </div>
-            <span style="font-size:12px;color:var(--purple);font-weight:600;">Enter →</span>
+            <span style="font-size:12px;color:var(--purple);font-weight:600;">Select 🔑</span>
           </button>
         `).join('')}
       </div>
@@ -2062,12 +2059,21 @@ function renderGateSavedProfiles() {
   `;
 }
 
-function quickSignInFromGate(userId) {
+function selectSavedProfileForSignIn(userId) {
   const users = getStoredUsers();
   const user = users.find(u => u.id === userId);
-  if (user) {
-    enterAppFromGate(user);
+  if (!user) return;
+  switchGateTab('signin');
+  const emailInput = document.getElementById('gate-signin-email');
+  const passInput  = document.getElementById('gate-signin-password');
+  if (emailInput) {
+    emailInput.value = user.email || user.name;
   }
+  if (passInput) {
+    passInput.value = '';
+    passInput.focus();
+  }
+  showToast(`🔑 Profile selected: ${user.name}. Please enter your password.`);
 }
 
 function enterAppFromGate(user) {
@@ -2182,10 +2188,17 @@ function handleGateEmailSignIn() {
   const passInput  = document.getElementById('gate-signin-password');
 
   const identifier = (emailInput?.value || '').trim();
-  const password   = passInput?.value || '';
+  const password   = (passInput?.value || '').trim();
 
   if (!identifier) {
     showToast('⚠️ Please enter your email address or username');
+    if (emailInput) emailInput.focus();
+    return;
+  }
+
+  if (!password) {
+    showToast('⚠️ Please enter your password');
+    if (passInput) passInput.focus();
     return;
   }
 
@@ -2197,16 +2210,16 @@ function handleGateEmailSignIn() {
   );
 
   // If user is not yet in registry, auto-create their account seamlessly!
-  // Prevents "asking to create new account everytime"
   if (!user) {
     const isEmail = identifier.includes('@');
     const namePart = isEmail ? identifier.split('@')[0] : identifier;
     const formattedName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
+    const emailVal = isEmail ? lowerId : `${lowerId}@dhun.local`;
     user = {
-      id: 'usr_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
+      id: makeUserIdFromEmail(emailVal),
       name: formattedName,
-      email: isEmail ? lowerId : `${lowerId}@dhun.local`,
-      password: password || 'dhun123',
+      email: emailVal,
+      password: password,
       avatarColor: authState.selectedAvatarColor || '#7c3aed',
       provider: 'email',
       bio: '🎵 Dhun Music Listener',
@@ -2215,18 +2228,30 @@ function handleGateEmailSignIn() {
     };
     users.push(user);
     saveStoredUsers(users);
-    saveCredentials(user.email, user.password);
+    saveCredentials(user.email);
+    if (passInput) passInput.value = '';
     enterAppFromGate(user);
     showToast(`🎉 Account created & signed in! Welcome, ${user.name}!`);
     return;
   }
 
-  if (user.password && password && user.password !== password) {
+  if (user.password && user.password !== password) {
     showToast('❌ Incorrect password. Please try again.');
+    if (passInput) {
+      passInput.value = '';
+      passInput.focus();
+    }
     return;
   }
 
-  saveCredentials(user.email, user.password || password);
+  // If user previously had no password set, assign it now
+  if (!user.password && password) {
+    user.password = password;
+    saveStoredUsers(users);
+  }
+
+  saveCredentials(user.email);
+  if (passInput) passInput.value = '';
   enterAppFromGate(user);
 }
 
@@ -2237,7 +2262,7 @@ function handleGateEmailSignUp() {
 
   const name = (nameInput?.value || '').trim();
   const email = (emailInput?.value || '').trim().toLowerCase();
-  const password = passInput?.value || '';
+  const password = (passInput?.value || '').trim();
 
   if (!name || !email || !password) {
     showToast('⚠️ Please fill out all fields');
@@ -2251,15 +2276,24 @@ function handleGateEmailSignUp() {
   );
 
   if (existing) {
+    if (existing.password && existing.password !== password) {
+      showToast('❌ Existing account password does not match.');
+      if (passInput) {
+        passInput.value = '';
+        passInput.focus();
+      }
+      return;
+    }
     showToast(`✅ Welcome back, ${existing.name}! Signed in.`);
-    saveCredentials(existing.email, password);
+    saveCredentials(existing.email);
+    if (passInput) passInput.value = '';
     enterAppFromGate(existing);
     return;
   }
 
-  const userId = 'usr_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
+  const canonicalId = makeUserIdFromEmail(email);
   const newUser = {
-    id: userId,
+    id: canonicalId,
     name: name,
     email: email,
     password: password,
@@ -2272,7 +2306,8 @@ function handleGateEmailSignUp() {
 
   users.push(newUser);
   saveStoredUsers(users);
-  saveCredentials(email, password);
+  saveCredentials(email);
+  if (passInput) passInput.value = '';
 
   enterAppFromGate(newUser);
 }
@@ -2456,7 +2491,7 @@ function handleEmailSignUp() {
 
   const name = (nameInput?.value || '').trim();
   const email = (emailInput?.value || '').trim().toLowerCase();
-  const password = passInput?.value || '';
+  const password = (passInput?.value || '').trim();
 
   if (!name || !email || !password) {
     showToast('⚠️ Please fill out all fields');
@@ -2470,16 +2505,25 @@ function handleEmailSignUp() {
   );
 
   if (existing) {
+    if (existing.password && existing.password !== password) {
+      showToast('❌ Existing account password does not match.');
+      if (passInput) {
+        passInput.value = '';
+        passInput.focus();
+      }
+      return;
+    }
     showToast(`✅ Welcome back, ${existing.name}! Signed in.`);
-    saveCredentials(existing.email, password);
+    saveCredentials(existing.email);
+    if (passInput) passInput.value = '';
     closeAuthModal();
     switchToUser(existing);
     return;
   }
 
-  const userId = 'usr_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
+  const canonicalId = makeUserIdFromEmail(email);
   const newUser = {
-    id: userId,
+    id: canonicalId,
     name: name,
     email: email,
     password: password,
@@ -2492,7 +2536,8 @@ function handleEmailSignUp() {
 
   users.push(newUser);
   saveStoredUsers(users);
-  saveCredentials(email, password);
+  saveCredentials(email);
+  if (passInput) passInput.value = '';
 
   closeAuthModal();
   switchToUser(newUser);
@@ -2504,10 +2549,17 @@ function handleEmailSignIn() {
   const passInput = document.getElementById('signin-password');
 
   const identifier = (emailInput?.value || '').trim();
-  const password = passInput?.value || '';
+  const password = (passInput?.value || '').trim();
 
   if (!identifier) {
     showToast('⚠️ Please enter email or username');
+    if (emailInput) emailInput.focus();
+    return;
+  }
+
+  if (!password) {
+    showToast('⚠️ Please enter your password');
+    if (passInput) passInput.focus();
     return;
   }
 
@@ -2522,11 +2574,12 @@ function handleEmailSignIn() {
     const isEmail = identifier.includes('@');
     const namePart = isEmail ? identifier.split('@')[0] : identifier;
     const formattedName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
+    const emailVal = isEmail ? lowerId : `${lowerId}@dhun.local`;
     user = {
-      id: 'usr_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
+      id: makeUserIdFromEmail(emailVal),
       name: formattedName,
-      email: isEmail ? lowerId : `${lowerId}@dhun.local`,
-      password: password || 'dhun123',
+      email: emailVal,
+      password: password,
       avatarColor: authState.selectedAvatarColor || '#7c3aed',
       provider: 'email',
       bio: '🎵 Dhun Music Listener',
@@ -2535,19 +2588,30 @@ function handleEmailSignIn() {
     };
     users.push(user);
     saveStoredUsers(users);
-    saveCredentials(user.email, user.password);
+    saveCredentials(user.email);
+    if (passInput) passInput.value = '';
     closeAuthModal();
     switchToUser(user);
     showToast(`🎉 Account created & signed in! Welcome, ${user.name}!`);
     return;
   }
 
-  if (user.password && password && user.password !== password) {
+  if (user.password && user.password !== password) {
     showToast('❌ Incorrect password. Please try again.');
+    if (passInput) {
+      passInput.value = '';
+      passInput.focus();
+    }
     return;
   }
 
-  saveCredentials(user.email, user.password || password);
+  if (!user.password && password) {
+    user.password = password;
+    saveStoredUsers(users);
+  }
+
+  saveCredentials(user.email);
+  if (passInput) passInput.value = '';
   closeAuthModal();
   switchToUser(user);
 }
