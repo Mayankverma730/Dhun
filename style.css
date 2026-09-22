@@ -5256,5 +5256,8 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   transform: translateY(-1px);
 }
 
-
-
+/* ── Hide Discover chips and personalized taste banner ── */
+#yt-mode-header,
+#discover-taste-banner {
+  display: none !important;
+}
