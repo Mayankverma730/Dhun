@@ -4013,17 +4013,99 @@ function closeConfirmModal(confirmed = false) {
 
 /* Called from the player's Remove button AND each library song row's Remove button. */
 async function deleteSong(songId, event) {
-  if (event) event.stopPropagation();
-  showAppConfirm('Remove Song?', 'Remove this song from your personal library?', 'Remove', true, async () => {
-    const res = await apiDelete(`/songs/${songId}`, { silent: true });
-    showToast('Song removed 🗑️');
-    state.songs = (await apiGet('/songs', { silent: true })) || (state.songs || []).filter(s => s.id !== songId);
-    _libAllSongs = state.songs;
-    if (state.currentPage === 'library') {
-      refreshLibrary();
-    } else {
-      refreshHome();
+  if (event) {
+    try { event.stopPropagation(); event.preventDefault(); } catch(e){}
+  }
+  if (songId === undefined || songId === null) return;
+
+  const targetId = String(songId);
+  const songToDelete = (state.songs || []).find(s => String(s.id) === targetId || String(s.videoId || '') === targetId);
+  const songTitle = songToDelete ? songToDelete.title : 'this song';
+
+  showAppConfirm('Remove Song?', `Remove "${songTitle}" from your personal library?`, 'Remove', true, async () => {
+    // 1. Try to delete from C REST API backend if integer ID
+    const numId = Number(songId);
+    if (!isNaN(numId) && Number.isInteger(numId) && numId > 0 && numId < 100000000) {
+      await apiDelete(`/songs/${numId}`, { silent: true }).catch(() => {});
     }
+
+    // 2. Filter out of state.songs and _libAllSongs by ID or videoId
+    state.songs = (state.songs || []).filter(s => String(s.id) !== targetId && String(s.videoId || '') !== targetId);
+    _libAllSongs = state.songs;
+
+    // 3. Persist updated library to localStorage
+    try {
+      localStorage.setItem('dhun_client_songs', JSON.stringify(state.songs));
+    } catch (e) {}
+
+    // 4. Remember deleted title so auto-seed does not re-add it
+    if (songToDelete && songToDelete.title) {
+      try {
+        const rawDel = localStorage.getItem('dhun_deleted_song_titles') || '[]';
+        const deletedSet = new Set(JSON.parse(rawDel));
+        deletedSet.add(songToDelete.title.toLowerCase().trim());
+        localStorage.setItem('dhun_deleted_song_titles', JSON.stringify([...deletedSet]));
+      } catch (e) {}
+    }
+
+    // 5. Clean audio maps & YT cache
+    pcSongAudioMap.delete(songId);
+    pcSongAudioMap.delete(targetId);
+    if (!isNaN(numId)) pcSongAudioMap.delete(numId);
+    ytCoverArtCache.delete(songId);
+    ytCoverArtCache.delete(targetId);
+
+    try {
+      const raw = localStorage.getItem('dhun_yt_songs');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        delete parsed[songId];
+        delete parsed[targetId];
+        if (!isNaN(numId)) delete parsed[numId];
+        localStorage.setItem('dhun_yt_songs', JSON.stringify(parsed));
+      }
+    } catch(e){}
+
+    // 6. Remove from user playlists
+    try {
+      const pls = getUserPlaylistsFromStorage();
+      if (Array.isArray(pls)) {
+        let changed = false;
+        pls.forEach(pl => {
+          if (Array.isArray(pl.songs)) {
+            const before = pl.songs.length;
+            pl.songs = pl.songs.filter(sid => String(sid) !== targetId);
+            if (pl.songs.length !== before) changed = true;
+          }
+        });
+        if (changed) {
+          localStorage.setItem('dhun_user_playlists', JSON.stringify(pls));
+          state.playlists = pls;
+        }
+      }
+    } catch(e){}
+
+    // 7. If currently playing song is this deleted song, advance or stop
+    if (state.currentSong && (String(state.currentSong.id) === targetId || state.currentSong.id == songId)) {
+      if (state.songs.length > 0) {
+        nextSong();
+      } else {
+        state.currentSong = null;
+        state.isPlaying = false;
+        if (globalAudioPlayer) { globalAudioPlayer.pause(); globalAudioPlayer.src = ''; }
+        if (ytPlayer && ytPlayer.stopVideo) ytPlayer.stopVideo();
+        updatePlayUI();
+      }
+    }
+
+    // 8. Immediately re-render Library and Home views
+    renderLibrary(_libAllSongs);
+    if (typeof renderHero === 'function') renderHero();
+    if (typeof renderRecommended === 'function') renderRecommended();
+    if (typeof renderTrending === 'function') renderTrending();
+    if (typeof renderProfileStats === 'function') renderProfileStats();
+
+    showToast(`Removed "${songTitle}" from library 🗑️`);
   });
 }
 
@@ -8164,13 +8246,16 @@ async function autoSeedLibraryWithOnlineMedia() {
       ...YTMusicAPI.getTrending('punjabi').slice(0, 2)
     ];
 
-    const existingTitleSet = new Set(
-      currentSongs.map(s => (s.title || '').toLowerCase().trim())
-    );
+    let deletedSongTitles = new Set();
+    try {
+      const rawDel = localStorage.getItem('dhun_deleted_song_titles') || '[]';
+      deletedSongTitles = new Set(JSON.parse(rawDel));
+    } catch(e){}
 
     let count = 0;
     for (const track of seedCatalog) {
       const key = (track.title || '').toLowerCase().trim();
+      if (deletedSongTitles.has(key)) continue;
       if (existingTitleSet.has(key)) {
         // Ensure audio mapping exists
         const found = currentSongs.find(s => (s.title || '').toLowerCase().trim() === key);
