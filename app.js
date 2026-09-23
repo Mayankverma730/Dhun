@@ -6819,24 +6819,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         e.preventDefault();
         prevSong();
         break;
-      case 'ArrowUp': {
-        e.preventDefault();
-        const slider = document.getElementById('vol-slider');
-        const cur = Number(slider?.value || 75);
-        const nextVol = Math.min(150, cur + 5);
-        if (slider) slider.value = nextVol;
-        setVolume(nextVol);
-        break;
-      }
-      case 'ArrowDown': {
-        e.preventDefault();
-        const slider = document.getElementById('vol-slider');
-        const cur = Number(slider?.value || 75);
-        const nextVol = Math.max(0, cur - 5);
-        if (slider) slider.value = nextVol;
-        setVolume(nextVol);
-        break;
-      }
       case 'KeyM':
         toggleMute();
         break;
