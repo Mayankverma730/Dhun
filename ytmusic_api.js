@@ -410,12 +410,120 @@ const YTMusicAPI = (() => {
     return null;
   }
 
+  function normalizeCategoryKey(cat) {
+    if (!cat) return 'trending';
+    const c = cat.toLowerCase().trim();
+    if (/bollywood|hindi|filmi|aashiqui|desi/.test(c)) return 'bollywood';
+    if (/punjabi|bhangra/.test(c)) return 'punjabi';
+    if (/lo-?fi|chill|study|relax|ambient/.test(c)) return 'lofi';
+    if (/electronic|edm|dance|house|techno|dj/.test(c)) return 'electronic';
+    if (/pop|english|global/.test(c)) return 'pop';
+    if (/rock|metal|alternative/.test(c)) return 'pop';
+    return TRENDING_FEEDS[c] ? c : 'trending';
+  }
+
+  function getCategoryRecommendations(category = 'trending', limit = 8) {
+    const key = normalizeCategoryKey(category);
+    let list = TRENDING_FEEDS[key] || TRENDING_FEEDS.trending;
+    return list.slice(0, limit).map(item => ({
+      ...item,
+      id: `yt_${item.videoId}`,
+      thumbnail: `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`,
+      source: 'ytmusic',
+      viewCount: `🔥 Top in ${item.genre || key}`
+    }));
+  }
+
+  function getSimilarSongsForTrack(track, limit = 8) {
+    if (!track) return getCategoryRecommendations('trending', limit);
+    const title = cleanSongTitle(track.title || '').toLowerCase().trim();
+    const artist = cleanArtistName(track.artist || '').toLowerCase().trim();
+    const explicitGenre = track.genre ? track.genre.toLowerCase().trim() : '';
+    const genre = detectGenre(track.title || '', track.artist || '') || explicitGenre || 'Pop';
+    const catKey = normalizeCategoryKey(genre);
+
+    // Candidates pool: Category feed first, then all feeds
+    const pool = [
+      ...(TRENDING_FEEDS[catKey] || []),
+      ...TRENDING_FEEDS.trending,
+      ...TRENDING_FEEDS.bollywood,
+      ...TRENDING_FEEDS.punjabi,
+      ...TRENDING_FEEDS.pop,
+      ...TRENDING_FEEDS.electronic,
+      ...TRENDING_FEEDS.lofi
+    ];
+
+    const targetVid = track.videoId || (typeof track.id === 'string' && track.id.startsWith('yt_') ? track.id.replace('yt_', '') : null);
+
+    const seenIds = new Set();
+    const scored = [];
+
+    for (const item of pool) {
+      if (!item || !item.videoId) continue;
+      if (targetVid && item.videoId === targetVid) continue;
+      if (seenIds.has(item.videoId)) continue;
+      seenIds.add(item.videoId);
+
+      const iTitle = cleanSongTitle(item.title).toLowerCase().trim();
+      const iArtist = cleanArtistName(item.artist).toLowerCase().trim();
+
+      // Skip identical song title
+      if (title && (iTitle === title || iTitle.includes(title) || title.includes(iTitle))) {
+        continue;
+      }
+
+      let score = 0;
+      let reason = `🏷️ Same Category: ${item.genre || genre}`;
+
+      // 1. Same detected category/genre (+50 pts)
+      if (catKey === normalizeCategoryKey(item.genre) || (item.genre && genre.toLowerCase().includes(item.genre.toLowerCase()))) {
+        score += 50;
+      }
+
+      // 2. Artist match or collaboration (+45 pts)
+      if (artist && iArtist) {
+        if (iArtist === artist || iArtist.includes(artist) || artist.includes(iArtist)) {
+          score += 45;
+          reason = `🎤 More by ${item.artist.split(/[,/]/)[0]}`;
+        }
+      }
+
+      // 3. Word match in title (+15 pts)
+      const words = title.split(/\s+/).filter(w => w.length > 3);
+      for (const w of words) {
+        if (iTitle.includes(w)) {
+          score += 15;
+          break;
+        }
+      }
+
+      // 4. Default baseline score
+      score += 10;
+
+      scored.push({
+        ...item,
+        id: `yt_${item.videoId}`,
+        thumbnail: `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`,
+        source: 'ytmusic',
+        score,
+        reason
+      });
+    }
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, limit);
+  }
+
   return {
     search,
     searchTracks: search,
     getSuggestions,
     getTrending,
     getTrendingFeed: getTrending,
+    getCategoryRecommendations,
+    getSimilarSongsForTrack,
+    detectGenre,
+    normalizeCategoryKey,
     getTrackDetails,
     getSongFromUrl,
     getVideoIdForTrack,

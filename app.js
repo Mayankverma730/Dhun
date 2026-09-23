@@ -407,6 +407,9 @@ function embedDirectYTFrame(videoId) {
 function getCurrentYTVideoId() {
   if (!state.currentSong) return null;
   if (state.currentSong.videoId) return state.currentSong.videoId;
+  if (typeof state.currentSong.id === 'string' && state.currentSong.id.startsWith('yt_')) {
+    return state.currentSong.id.replace('yt_', '');
+  }
 
   const local = pcSongAudioMap.get(state.currentSong.id);
   if (local && local.videoId) return local.videoId;
@@ -1665,6 +1668,20 @@ async function openPlayerById(id) {
       }
     }
   }
+  if (!song && sId.startsWith('yt_')) {
+    const vid = sId.replace('yt_', '');
+    if (typeof YTMusicAPI !== 'undefined' && YTMusicAPI.getTrackDetails) {
+      try {
+        const details = await YTMusicAPI.getTrackDetails(vid);
+        if (details) {
+          song = details;
+          if (!state.songs.some(s => String(s.id) === sId)) {
+            state.songs.push(song);
+          }
+        }
+      } catch (e) {}
+    }
+  }
   if (!song) {
     song = await apiGet(`/songs/${id}`);
     if (song && !state.songs.some(s => String(s.id) === String(song.id))) {
@@ -2576,6 +2593,7 @@ function enterAppFromGate(user) {
     }, 300);
   }
 
+  loadUserProfileLibrary(user);
   updateAuthUI();
   refreshPlaylists();
   syncAllSongsLikedState();
@@ -2839,6 +2857,176 @@ function getUserStorageKey(suffix) {
   return `dhun_usr_${uid}_${suffix}`;
 }
 
+function saveUserProfileLibrary() {
+  const uid = (authState.currentUser && authState.currentUser.id) ? authState.currentUser.id : 'guest';
+  const key = `dhun_usr_${uid}_library`;
+  try {
+    localStorage.setItem(key, JSON.stringify(state.songs || []));
+    localStorage.setItem('dhun_client_songs', JSON.stringify(state.songs || []));
+  } catch(e) {}
+}
+
+function loadUserProfileLibrary(user, autoGenerateIfEmpty = true) {
+  if (!user) user = authState.currentUser || { id: 'guest', name: 'Guest' };
+  const uid = user.id || 'guest';
+  const key = `dhun_usr_${uid}_library`;
+
+  let songs = null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      songs = JSON.parse(raw);
+    }
+  } catch (e) {}
+
+  if (Array.isArray(songs) && songs.length > 0) {
+    // Populate pcSongAudioMap for all YT tracks
+    songs.forEach(s => {
+      if (s && s.videoId && !pcSongAudioMap.has(s.id)) {
+        const ytData = {
+          isYT: true,
+          videoId: s.videoId,
+          thumbnail: s.thumbnail || `https://i.ytimg.com/vi/${s.videoId}/hqdefault.jpg`,
+          durationSec: s.durationSec || 210,
+          title: s.title,
+          artist: s.artist,
+          album: s.album || 'Online Media',
+          genre: s.genre || 'Music'
+        };
+        pcSongAudioMap.set(s.id, ytData);
+        saveYTSongToStorage(s.id, ytData);
+      }
+    });
+
+    state.songs = songs;
+    _libAllSongs = songs;
+    if (!state.currentSong && songs.length > 0) {
+      state.currentSong = songs[0];
+      loadSongUI(songs[0]);
+    }
+    syncAllSongsLikedState();
+    if (state.currentPage === 'library') renderLibrary(state.songs);
+    else if (state.currentPage === 'home') {
+      renderRecommended();
+      renderTrending();
+    }
+    renderProfileStats();
+    return songs;
+  }
+
+  if (autoGenerateIfEmpty) {
+    return autoGenerateUserProfileLibrary(user, false);
+  }
+  return [];
+}
+
+async function autoGenerateUserProfileLibrary(user, force = false) {
+  if (!user) user = authState.currentUser || { id: 'guest', name: 'Guest' };
+  const uid = user.id || 'guest';
+  const key = `dhun_usr_${uid}_library`;
+
+  if (!force) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return loadUserProfileLibrary(user, false);
+        }
+      }
+    } catch(e) {}
+  }
+
+  showToast(`⚡ Curating personalized YT Music library for ${user.name}...`);
+
+  if (typeof YTMusicAPI === 'undefined') {
+    return state.songs || [];
+  }
+
+  // Diverse, high-energy, category-balanced recommendations
+  const categories = ['trending', 'bollywood', 'punjabi', 'pop', 'lofi', 'electronic'];
+  const pool = [];
+
+  for (const cat of categories) {
+    const catSongs = YTMusicAPI.getCategoryRecommendations(cat, 3);
+    pool.push(...catSongs);
+  }
+
+  const generatedSongs = [];
+  const seenIds = new Set();
+  const seenTitles = new Set();
+
+  for (const track of pool) {
+    if (!track || !track.videoId) continue;
+    const sTitle = (track.title || '').toLowerCase().trim();
+    if (seenIds.has(track.videoId) || seenTitles.has(sTitle)) continue;
+    seenIds.add(track.videoId);
+    seenTitles.add(sTitle);
+
+    const songId = `yt_${track.videoId}`;
+    const durMin = track.duration || +(track.durationSec / 60).toFixed(2) || 3.5;
+    const durSec = track.durationSec || Math.round(durMin * 60);
+
+    const songObj = {
+      id: songId,
+      videoId: track.videoId,
+      title: track.title,
+      artist: track.artist,
+      album: track.album || 'YouTube Music Discovery',
+      genre: track.genre || 'Popular',
+      duration: durMin,
+      durationSec: durSec,
+      thumbnail: track.thumbnail || `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg`,
+      rating: 4.9,
+      play_count: Math.floor(Math.random() * 20) + 5,
+      liked: 0,
+      source: 'ytmusic',
+      profileAutoGenerated: true
+    };
+
+    generatedSongs.push(songObj);
+
+    const ytData = {
+      isYT: true,
+      videoId: track.videoId,
+      thumbnail: songObj.thumbnail,
+      durationSec: durSec,
+      title: track.title,
+      artist: track.artist,
+      album: songObj.album,
+      genre: songObj.genre
+    };
+    pcSongAudioMap.set(songId, ytData);
+    saveYTSongToStorage(songId, ytData);
+  }
+
+  // Save to profile storage
+  try {
+    localStorage.setItem(key, JSON.stringify(generatedSongs));
+    localStorage.setItem('dhun_client_songs', JSON.stringify(generatedSongs));
+  } catch (e) {}
+
+  state.songs = generatedSongs;
+  _libAllSongs = generatedSongs;
+
+  if (generatedSongs.length > 0) {
+    state.currentSong = generatedSongs[0];
+    loadSongUI(generatedSongs[0]);
+  }
+
+  syncAllSongsLikedState();
+  if (state.currentPage === 'library') renderLibrary(state.songs);
+  renderHero();
+  renderRecommended();
+  renderTrending();
+  renderRecentlyPlayed();
+  renderRelated();
+  renderProfileStats();
+
+  showToast(`✨ Generated ${generatedSongs.length} personalized songs for ${user.name}!`);
+  return generatedSongs;
+}
+
 function updateAuthUI() {
   const u = authState.currentUser || { name: 'Guest User', email: 'guest@dhun.local', provider: 'guest', avatarColor: '#7c3aed' };
   const isGuest = (u.provider === 'guest' || u.id === 'guest');
@@ -2948,6 +3136,7 @@ function switchToUser(user) {
   if (appShell)   appShell.style.display = '';
 
   // Synchronize isolated data
+  loadUserProfileLibrary(user);
   syncAllSongsLikedState();
   refreshPlaylists();
   updateAuthUI();
@@ -5186,6 +5375,7 @@ async function handlePCAudioFiles(fileList) {
       state.songs = serverSongs;
     }
     _libAllSongs = state.songs;
+    saveUserProfileLibrary();
 
     if (state.currentPage === 'library') {
       refreshLibrary();
@@ -5283,6 +5473,7 @@ async function deleteSong(songId, event) {
     // 3. Persist updated library to localStorage
     try {
       localStorage.setItem('dhun_client_songs', JSON.stringify(state.songs));
+      saveUserProfileLibrary();
     } catch (e) {}
 
     // 4. Remember deleted title so auto-seed does not re-add it
@@ -5449,39 +5640,45 @@ function renderHero() {
 function renderRecommended() {
   const container = document.getElementById('recommended-list');
   if (!container) return;
-  if (state.songs.length === 0) {
+
+  const recResults = typeof getAutoRecommendations === 'function' ? getAutoRecommendations(state.currentSong || (state.songs && state.songs[0]), 8) : [];
+  let songs = (recResults && recResults.length > 0)
+    ? recResults.map(r => r.song)
+    : (state.songs || []).slice(0, 8);
+
+  if (songs.length === 0 && typeof YTMusicAPI !== 'undefined' && YTMusicAPI.getTrending) {
+    songs = YTMusicAPI.getTrending('trending').slice(0, 8);
+  }
+
+  if (songs.length === 0) {
     container.innerHTML = `
       <div style="padding:40px 20px;text-align:center;color:var(--text-muted)">
         <p style="font-size:24px;margin-bottom:8px">🎵</p>
         <p style="font-weight:600;color:var(--text-1);margin-bottom:6px">No songs in library yet</p>
-        <p style="font-size:13px;margin-bottom:16px">Drag & drop MP3 / audio files anywhere or click Add from PC</p>
-        <button class="btn-primary" onclick="triggerAddSongFromPC()" style="display:inline-flex;align-items:center;gap:6px">📁 Add Audio from PC</button>
+        <p style="font-size:13px;margin-bottom:16px">Drag & drop MP3 / audio files anywhere or auto-generate with YouTube Music</p>
+        <button class="btn-primary" onclick="autoGenerateUserProfileLibrary(authState.currentUser, true)" style="display:inline-flex;align-items:center;gap:6px">⚡ Auto-Generate via YT Music</button>
       </div>`;
     return;
   }
 
-  const recResults = typeof getAutoRecommendations === 'function' ? getAutoRecommendations(state.currentSong || state.songs[0], 8) : [];
-  const songs = (recResults && recResults.length > 0)
-    ? recResults.map(r => r.song)
-    : state.songs.slice(0, 8);
   container.innerHTML = songs.map((s, i) => `
-    <div class="st-row" id="str-api-${s.id}" onclick="openPlayerById('${escapeHtmlAttr(String(s.id))}')">
+    <div class="st-row" id="str-api-${escapeHtmlAttr(String(s.id))}" onclick="openPlayerById('${escapeHtmlAttr(String(s.id))}')">
       <span class="st-num">${i+1}</span>
       <div class="st-title-col">
         <div class="st-thumb" style="background:${gradientFor(s.id)}">
-          <img src="${imgFor(s.id)}" alt="${s.title}" data-song-id="${s.id}"/>
+          <img src="${s.thumbnail || imgFor(s.id)}" alt="${escapeHtmlAttr(s.title)}" data-song-id="${escapeHtmlAttr(String(s.id))}"/>
         </div>
         <div>
-          <p class="st-song-name">${s.title} ${isYTSong(s.id) ? '<span class="yt-badge">🔴 YT Music</span>' : ''}</p>
-          <p class="st-artist">${s.artist}</p>
+          <p class="st-song-name">${escapeHtmlText(s.title)} ${isYTSong(s.id) ? '<span class="yt-badge">🔴 YT Music</span>' : ''}</p>
+          <p class="st-artist">${escapeHtmlText(s.artist)}</p>
         </div>
       </div>
-      <span class="st-cell">${s.album}</span>
-      <span class="st-cell">${s.genre}</span>
+      <span class="st-cell">${escapeHtmlText(s.album || 'Online Media')}</span>
+      <span class="st-cell">${escapeHtmlText(s.genre || 'Music')}</span>
       <span class="st-dur">${fmtDur(s.duration)}</span>
       <div class="st-acts">
-        <button class="icon-act like-btn" data-song-id="${s.id}"
-          onclick="toggleLike(this,event)" aria-label="Like ${s.title}">
+        <button class="icon-act like-btn" data-song-id="${escapeHtmlAttr(String(s.id))}"
+          onclick="toggleLike(this,event)" aria-label="Like ${escapeHtmlAttr(s.title)}">
           ${s.liked ? '❤️' : '♡'}
         </button>
         <button class="icon-act" title="Add to queue"
@@ -5496,19 +5693,22 @@ async function renderTrending() {
   const charts = await apiGet('/charts');
   const container = document.getElementById('trending-dynamic');
   if (!container) return;
-  const list = (charts && charts.length > 0) ? charts : state.songs;
+  let list = (charts && charts.length > 0) ? charts : state.songs;
+  if ((!list || list.length === 0) && typeof YTMusicAPI !== 'undefined' && YTMusicAPI.getTrending) {
+    list = YTMusicAPI.getTrending('trending').slice(0, 5);
+  }
   if (!list || list.length === 0) {
     container.innerHTML = '<p style="color:var(--text-muted);padding:16px;font-size:13px">Top played tracks will appear here</p>';
     return;
   }
   container.innerHTML = list.slice(0, 5).map((s, i) => `
-    <div class="trend-card" onclick="openPlayerById(${s.id})">
+    <div class="trend-card" onclick="openPlayerById('${escapeHtmlAttr(String(s.id))}')">
       <span class="trend-rank">#${i+1}</span>
       <div class="trend-thumb" style="background:${gradientFor(s.id)}">
-        <img src="${imgFor(s.id)}" alt="${s.title}" data-song-id="${s.id}"/>
+        <img src="${s.thumbnail || imgFor(s.id)}" alt="${escapeHtmlAttr(s.title)}" data-song-id="${escapeHtmlAttr(String(s.id))}"/>
       </div>
-      <p class="trend-name">${s.title}</p>
-      <p class="trend-artist">${s.artist}</p>
+      <p class="trend-name">${escapeHtmlText(s.title)}</p>
+      <p class="trend-artist">${escapeHtmlText(s.artist)}</p>
       <p class="trend-plays">${s.play_count || 1} play${(s.play_count || 1) === 1 ? '' : 's'}</p>
     </div>`).join('');
 }
@@ -5522,46 +5722,109 @@ function renderRecentlyPlayed() {
   }
   const recent = state.songs.slice(0, 3);
   container.innerHTML = recent.map(s => `
-    <div class="recent-song" onclick="openPlayerById(${s.id})">
+    <div class="recent-song" onclick="openPlayerById('${escapeHtmlAttr(String(s.id))}')">
       <div class="rs-thumb" style="background:${gradientFor(s.id)}">
-        <img src="${imgFor(s.id)}" alt="${s.title}" data-song-id="${s.id}"/>
+        <img src="${s.thumbnail || imgFor(s.id)}" alt="${escapeHtmlAttr(s.title)}" data-song-id="${escapeHtmlAttr(String(s.id))}"/>
       </div>
       <div class="rs-info">
-        <p class="rs-name">${s.title}</p>
-        <p class="rs-artist">${s.artist}</p>
+        <p class="rs-name">${escapeHtmlText(s.title)}</p>
+        <p class="rs-artist">${escapeHtmlText(s.artist)}</p>
       </div>
     </div>`).join('');
 }
 
-/* ── Inbuilt Auto-Recommendation Engine ───────────────────────── */
-function getAutoRecommendations(currentSong, limit = 4) {
-  if (!state.songs || state.songs.length === 0) return [];
+/* ── Inbuilt Auto-Recommendation Engine (YouTube & Category-Powered) ── */
+function getAutoRecommendations(currentSong, limit = 6) {
   const curr = currentSong || state.currentSong;
-  const currId = curr ? curr.id : null;
-  const candidates = state.songs.filter(s => s.id !== currId);
-  if (candidates.length === 0) return [];
+  const currId = curr ? String(curr.id) : null;
+  const candidates = (state.songs || []).filter(s => s && String(s.id) !== currId);
 
   const currGenre = (curr?.genre || '').toLowerCase().trim();
   const currArtist = (curr?.artist || '').toLowerCase().trim();
   const currWords = (curr?.title || '').toLowerCase().split(/\s+/).filter(w => w.length > 3);
 
-  const scored = candidates.map(s => {
+  // 1. YouTube-based category candidates
+  let ytCandidates = [];
+  if (typeof YTMusicAPI !== 'undefined') {
+    if (curr && YTMusicAPI.getSimilarSongsForTrack) {
+      ytCandidates = YTMusicAPI.getSimilarSongsForTrack(curr, limit * 2);
+    } else if (YTMusicAPI.getCategoryRecommendations) {
+      ytCandidates = YTMusicAPI.getCategoryRecommendations(currGenre || 'trending', limit * 2);
+    }
+  }
+
+  const seenIds = new Set();
+  const seenTitles = new Set();
+  if (curr && curr.title) seenTitles.add(curr.title.toLowerCase().trim());
+  if (currId) seenIds.add(currId);
+
+  const allRecommendations = [];
+
+  // Register and add YouTube candidates
+  for (const track of ytCandidates) {
+    if (!track || !track.id) continue;
+    const tId = String(track.id);
+    const tTitle = (track.title || '').toLowerCase().trim();
+    if (seenIds.has(tId) || seenTitles.has(tTitle)) continue;
+    seenIds.add(tId);
+    seenTitles.add(tTitle);
+
+    if (!pcSongAudioMap.has(tId)) {
+      const ytData = {
+        isYT: true,
+        videoId: track.videoId,
+        thumbnail: track.thumbnail || `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg`,
+        durationSec: track.durationSec || 210,
+        title: track.title,
+        artist: track.artist,
+        album: track.album || 'Online Media',
+        genre: track.genre || 'Music'
+      };
+      pcSongAudioMap.set(tId, ytData);
+      saveYTSongToStorage(tId, ytData);
+    }
+
+    allRecommendations.push({
+      song: {
+        id: tId,
+        videoId: track.videoId,
+        title: track.title,
+        artist: track.artist,
+        album: track.album || 'YouTube Music',
+        genre: track.genre || 'Music',
+        duration: track.duration || 3.5,
+        durationSec: track.durationSec || 210,
+        thumbnail: track.thumbnail,
+        source: 'ytmusic'
+      },
+      score: track.score || 45,
+      reason: track.reason || `🏷️ Same Category: ${track.genre || 'YouTube'}`
+    });
+  }
+
+  // 2. Score local library candidates
+  for (const s of candidates) {
+    if (!s) continue;
+    const sId = String(s.id);
+    const sTitle = (s.title || '').toLowerCase().trim();
+    if (seenIds.has(sId) || seenTitles.has(sTitle)) continue;
+
     let score = 0;
     let reason = s.genre || 'Recommended';
     const sGenre = (s.genre || '').toLowerCase().trim();
     const sArtist = (s.artist || '').toLowerCase().trim();
 
-    // 1. Same genre match (+45 pts)
+    // Genre match (+45 pts)
     if (currGenre && sGenre && (currGenre === sGenre || currGenre.includes(sGenre) || sGenre.includes(currGenre))) {
       score += 45;
-      reason = s.genre;
+      reason = `🏷️ Same Category: ${s.genre}`;
     }
 
-    // 2. Same artist / collaborator match (+40 pts)
+    // Artist match (+40 pts)
     if (currArtist && sArtist) {
       if (currArtist === sArtist) {
         score += 40;
-        reason = `More by ${s.artist.split(/[,/]/)[0]}`;
+        reason = `🎤 More by ${s.artist.split(/[,/]/)[0]}`;
       } else {
         const artistParts = currArtist.split(/[,/ft.&]/).map(p => p.trim()).filter(Boolean);
         for (const part of artistParts) {
@@ -5574,11 +5837,9 @@ function getAutoRecommendations(currentSong, limit = 4) {
       }
     }
 
-    // 3. Play count & Max-Heap rating metric (+10-20 pts)
     if (s.rating) score += Math.round(s.rating * 3);
     if (s.play_count) score += Math.min(20, s.play_count * 3);
 
-    // 4. Word similarity (+10 pts)
     for (const w of currWords) {
       if (s.title.toLowerCase().includes(w)) {
         score += 10;
@@ -5586,15 +5847,15 @@ function getAutoRecommendations(currentSong, limit = 4) {
       }
     }
 
-    if (reason === 'Recommended' && s.genre) {
-      reason = s.genre;
+    if (score >= 20) {
+      seenIds.add(sId);
+      seenTitles.add(sTitle);
+      allRecommendations.push({ song: s, score, reason });
     }
+  }
 
-    return { song: s, score, reason };
-  });
-
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, limit);
+  allRecommendations.sort((a, b) => b.score - a.score);
+  return allRecommendations.slice(0, limit);
 }
 
 function renderRelated() {
@@ -5603,22 +5864,25 @@ function renderRelated() {
   const recs = getAutoRecommendations(state.currentSong, 4);
 
   if (recs.length === 0) {
-    container.innerHTML = '<p style="padding:16px;color:var(--text-muted);font-size:13px">Add more songs to see recommendations</p>';
+    container.innerHTML = '<p style="padding:16px;color:var(--text-muted);font-size:13px">Play a song to see YouTube category recommendations</p>';
     return;
   }
 
-  container.innerHTML = recs.map(({ song: s, reason }) => `
-    <div class="queue-item rec-item" onclick="openPlayerById(${s.id})">
+  container.innerHTML = recs.map(({ song: s, reason }) => {
+    const songIdStr = escapeHtmlAttr(String(s.id));
+    return `
+    <div class="queue-item rec-item" onclick="openPlayerById('${songIdStr}')">
       <div class="qi-thumb" style="background:${gradientFor(s.id)}">
-        <img src="${imgFor(s.id)}" alt="${s.title}" data-song-id="${s.id}"/>
+        <img src="${s.thumbnail || imgFor(s.id)}" alt="${escapeHtmlAttr(s.title)}" data-song-id="${songIdStr}"/>
       </div>
       <div class="qi-info">
-        <p class="qi-name">${s.title}</p>
-        <p class="qi-artist">${s.artist}</p>
-        <span class="rec-tag">${reason}</span>
+        <p class="qi-name">${escapeHtmlText(s.title)}</p>
+        <p class="qi-artist">${escapeHtmlText(s.artist)}</p>
+        <span class="rec-tag">${escapeHtmlText(reason)}</span>
       </div>
-      <button class="qi-add" onclick="enqueueSong(${s.id},event)" title="Add to queue" aria-label="Add to queue">＋</button>
-    </div>`).join('');
+      <button class="qi-add" onclick="enqueueSong('${songIdStr}',event)" title="Add to queue" aria-label="Add to queue">＋</button>
+    </div>`;
+  }).join('');
 }
 
 /* Search page */
@@ -5647,13 +5911,13 @@ function renderQueue() {
     return;
   }
   list.innerHTML = state.queue.map((s, i) => `
-    <div class="queue-item ${i===0?'active-queue':''}" onclick="openPlayerById(${s.id})">
+    <div class="queue-item ${i===0?'active-queue':''}" onclick="openPlayerById('${escapeHtmlAttr(String(s.id))}')">
       <div class="qi-thumb" style="background:${gradientFor(s.id)}">
-        <img src="${imgFor(s.id)}" alt="${s.title}" data-song-id="${s.id}"/>
+        <img src="${s.thumbnail || imgFor(s.id)}" alt="${escapeHtmlAttr(s.title)}" data-song-id="${escapeHtmlAttr(String(s.id))}"/>
       </div>
       <div class="qi-info">
-        <p class="qi-name">${s.title}</p>
-        <p class="qi-artist">${s.artist}</p>
+        <p class="qi-name">${escapeHtmlText(s.title)}</p>
+        <p class="qi-artist">${escapeHtmlText(s.artist)}</p>
       </div>
       <span class="qi-dur">${fmtDur(s.duration)}</span>
     </div>`).join('');
@@ -6180,15 +6444,29 @@ function renderLibrary(songs) {
       <span class="st-h st-h-act"></span>
     </div>`;
   if (!songs.length) {
-    container.innerHTML = header + '<p style="padding:32px;color:var(--text-2);text-align:center">No songs found 🎵</p>';
+    container.innerHTML = header + `
+      <div style="padding:48px 20px;text-align:center;color:var(--text-2)">
+        <p style="font-size:36px;margin-bottom:10px">✨</p>
+        <p style="font-weight:700;font-size:16px;color:var(--text-1);margin-bottom:6px">Your Profile Library is Empty</p>
+        <p style="font-size:13px;color:var(--text-3);max-width:440px;margin:0 auto 18px">Instantly auto-generate your personal library tailored with top YouTube Music category hits for your profile!</p>
+        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+          <button class="btn-primary" onclick="autoGenerateUserProfileLibrary(authState.currentUser, true)" style="display:inline-flex;align-items:center;gap:6px;padding:9px 20px;background:linear-gradient(135deg,#e11d48,#7c3aed);border:none;box-shadow:0 4px 14px rgba(225,29,72,0.35);font-size:13px">
+            ⚡ Auto-Generate via YT Music
+          </button>
+          <button class="btn-secondary" onclick="triggerAddSongFromPC()" style="display:inline-flex;align-items:center;gap:6px;padding:9px 18px;font-size:13px">
+            📁 Add from PC
+          </button>
+        </div>
+      </div>
+    `;
     return;
   }
   container.innerHTML = header + songs.map((s, i) => `
-    <div class="st-row" id="lib-str-${s.id}" onclick="openPlayerById('${escapeHtmlAttr(String(s.id))}')">
+    <div class="st-row" id="lib-str-${escapeHtmlAttr(String(s.id))}" onclick="openPlayerById('${escapeHtmlAttr(String(s.id))}')">
       <span class="st-num">${i + 1}</span>
       <div class="st-title-col">
         <div class="st-thumb" style="background:${gradientFor(s.id)}">
-          <img src="${imgFor(s.id)}" alt="${escapeHtmlAttr(s.title)}" data-song-id="${s.id}"/>
+          <img src="${s.thumbnail || imgFor(s.id)}" alt="${escapeHtmlAttr(s.title)}" data-song-id="${escapeHtmlAttr(String(s.id))}"/>
         </div>
         <div>
           <p class="st-song-name">${escapeHtmlText(s.title)} ${isYTSong(s.id) ? '<span class="yt-badge">🔴 YT Music</span>' : ''}</p>
@@ -6753,13 +7031,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   await autoSeedLibraryWithOnlineMedia();
   loadYTFeed('for-you');
 
-  /* Load songs from API or local client storage */
-  let songs = await apiGet('/songs');
+  /* Load songs from User Profile Library, API, or local client storage */
+  let songs = null;
+  if (authState.currentUser) {
+    songs = loadUserProfileLibrary(authState.currentUser, false);
+  }
+  if (!songs || songs.length === 0) {
+    songs = await apiGet('/songs');
+  }
   if (!songs || songs.length === 0) {
     try {
       const stored = localStorage.getItem('dhun_client_songs');
       if (stored) songs = JSON.parse(stored);
     } catch (e) {}
+  }
+  if (!songs || songs.length === 0) {
+    if (authState.currentUser) {
+      songs = await autoGenerateUserProfileLibrary(authState.currentUser, false);
+    }
   }
   if (!songs || songs.length === 0) {
     songs = state.songs;
@@ -9239,59 +9528,112 @@ function renderSongInfoUI(song) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
-   OPTION 4: SMART SIMILAR DHUN DISCOVERY
+   OPTION 4: SMART SIMILAR DHUN DISCOVERY (YouTube & Category-Powered)
    ══════════════════════════════════════════════════════════════════════ */
 function calculateSimilarDhun(currentSong) {
-  if (!currentSong || !state.songs || state.songs.length <= 1) return [];
+  const curr = currentSong || state.currentSong || (state.songs && state.songs[0]);
+  if (!curr) {
+    if (typeof YTMusicAPI !== 'undefined' && YTMusicAPI.getTrending) {
+      return YTMusicAPI.getTrending('trending').slice(0, 4).map(track => ({
+        song: track,
+        score: 50,
+        reason: '🔥 Top Trending'
+      }));
+    }
+    return [];
+  }
 
-  const norm = str => (str || '').toLowerCase().trim();
-  const cTitle = norm(currentSong.title);
-  const cArtist = norm(currentSong.artist);
-  const cGenre = norm(currentSong.genre);
-  const cAlbum = norm(currentSong.album);
-  const cDur = (currentSong.duration || 3.5) * 60;
+  // 1. YouTube-based similar category tracks (independent of local library size)
+  let ytTracks = [];
+  if (typeof YTMusicAPI !== 'undefined' && YTMusicAPI.getSimilarSongsForTrack) {
+    ytTracks = YTMusicAPI.getSimilarSongsForTrack(curr, 8);
+  }
+
+  const seenIds = new Set();
+  const seenTitles = new Set();
+  const currTitle = (curr.title || '').toLowerCase().trim();
+  const currId = String(curr.id || '');
+  seenTitles.add(currTitle);
+  if (currId) seenIds.add(currId);
+  if (curr.videoId) seenIds.add(String(curr.videoId));
 
   const candidates = [];
 
-  for (const s of state.songs) {
-    // Exclude current track
-    if (s.id === currentSong.id || norm(s.title) === cTitle) continue;
+  // Register YouTube tracks
+  for (const track of ytTracks) {
+    if (!track || !track.id) continue;
+    const tId = String(track.id);
+    const tTitle = (track.title || '').toLowerCase().trim();
+    if (seenIds.has(tId) || seenTitles.has(tTitle)) continue;
+    seenIds.add(tId);
+    seenTitles.add(tTitle);
+
+    if (!pcSongAudioMap.has(tId)) {
+      const ytData = {
+        isYT: true,
+        videoId: track.videoId,
+        thumbnail: track.thumbnail || `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg`,
+        durationSec: track.durationSec || 210,
+        title: track.title,
+        artist: track.artist,
+        album: track.album || 'Online Media',
+        genre: track.genre || 'Music'
+      };
+      pcSongAudioMap.set(tId, ytData);
+      saveYTSongToStorage(tId, ytData);
+    }
+
+    candidates.push({
+      song: {
+        id: tId,
+        videoId: track.videoId,
+        title: track.title,
+        artist: track.artist,
+        album: track.album || 'YouTube Music',
+        genre: track.genre || 'Music',
+        duration: track.duration || 3.5,
+        durationSec: track.durationSec || 210,
+        thumbnail: track.thumbnail,
+        source: 'ytmusic'
+      },
+      score: track.score || 55,
+      reason: track.reason || `🏷️ Same Category: ${track.genre || 'YouTube'}`
+    });
+  }
+
+  // 2. Score local library matches
+  const norm = str => (str || '').toLowerCase().trim();
+  const cTitle = norm(curr.title);
+  const cArtist = norm(curr.artist);
+  const cGenre = norm(curr.genre);
+
+  for (const s of (state.songs || [])) {
+    if (!s || s.id === curr.id || norm(s.title) === cTitle) continue;
+    const sId = String(s.id);
+    const sTitle = norm(s.title);
+    if (seenIds.has(sId) || seenTitles.has(sTitle)) continue;
 
     const sArtist = norm(s.artist);
     const sGenre = norm(s.genre);
-    const sAlbum = norm(s.album);
-    const sDur = (s.duration || 3.5) * 60;
 
     let score = 0;
     let reason = '✨ Dhun Pick';
 
-    // Same Artist match (highest priority)
     if (cArtist && sArtist && (sArtist.includes(cArtist) || cArtist.includes(sArtist))) {
       score += 60;
       reason = `🎤 Same Artist: ${s.artist.split('/')[0].split(',')[0].trim()}`;
     }
 
-    // Genre match
     if (cGenre && sGenre && (cGenre.includes(sGenre) || sGenre.includes(cGenre))) {
       score += 40;
-      if (score === 40) reason = `🏷️ Same Genre: ${s.genre}`;
+      if (score === 40) reason = `🏷️ Same Category: ${s.genre}`;
     }
 
-    // Same album
-    if (cAlbum && sAlbum && cAlbum === sAlbum && cAlbum !== 'single') {
-      score += 35;
-      reason = `💿 Same Album: ${s.album}`;
+    if (score >= 40) {
+      seenIds.add(sId);
+      seenTitles.add(sTitle);
+      candidates.push({ song: s, score, reason });
     }
-
-    // Similar duration (within 45 seconds)
-    if (Math.abs(cDur - sDur) <= 45) {
-      score += 15;
-    }
-
-    // Natural variety bonus
-    score += Math.floor(Math.sin((s.id || 1) * 99) * 8 + 10);
-
-    candidates.push({ song: s, score, reason });
   }
 
   candidates.sort((a, b) => b.score - a.score);
@@ -9309,18 +9651,19 @@ function renderSimilarDhunUI(currentSong) {
   if (similarList.length === 0) {
     container.innerHTML = `
       <div class="similar-empty-box">
-        <span class="similar-empty-icon">✨</span>
-        <p style="margin:0 0 4px;font-weight:700;color:var(--text-1)">Expand Your Dhun Library</p>
-        <p style="margin:0;font-size:11.5px;color:var(--text-3)">Add more songs from your PC or Library to unlock personalized "You Might Also Like" recommendations!</p>
+        <span class="similar-empty-icon">🎵</span>
+        <p style="margin:0 0 4px;font-weight:700;color:var(--text-1)">Discover Similar Dhuns</p>
+        <p style="margin:0;font-size:11.5px;color:var(--text-3)">Play any song to see smart YouTube recommendations in the same category.</p>
       </div>
     `;
     return;
   }
 
   const html = similarList.map(({ song: s, reason }) => {
-    const thumb = imgFor(s.id);
+    const thumb = s.thumbnail || imgFor(s.id);
+    const songIdStr = escapeHtmlAttr(String(s.id));
     return `
-      <div class="dhun-similar-card" onclick="openPlayerById(${s.id})" title="Play ${escapeHtmlAttr(s.title)}">
+      <div class="dhun-similar-card" onclick="openPlayerById('${songIdStr}')" title="Play ${escapeHtmlAttr(s.title)}">
         <div class="similar-left">
           <img class="similar-thumb" src="${thumb}" alt="${escapeHtmlAttr(s.title)}" onerror="this.src='album1.jpg'" />
           <div class="similar-meta">
@@ -9330,8 +9673,8 @@ function renderSimilarDhunUI(currentSong) {
         </div>
         <span class="similar-tag">${escapeHtmlText(reason)}</span>
         <div class="similar-actions" onclick="event.stopPropagation()">
-          <button class="btn-sim-play" onclick="openPlayerById(${s.id})" title="Play Now">▶</button>
-          <button class="btn-sim-queue" onclick="enqueueSong(${s.id}, event)" title="Add to Queue">➕</button>
+          <button class="btn-sim-play" onclick="openPlayerById('${songIdStr}')" title="Play Now">▶</button>
+          <button class="btn-sim-queue" onclick="enqueueSong('${songIdStr}', event)" title="Add to Queue">➕</button>
         </div>
       </div>
     `;
@@ -9608,9 +9951,10 @@ function renderAllFunctionsDashboard(song) {
       `;
     } else {
       container.innerHTML = similarList.slice(0, 2).map(({ song: s, reason }) => {
-        const thumb = imgFor(s.id);
+        const thumb = s.thumbnail || imgFor(s.id);
+        const songIdStr = escapeHtmlAttr(String(s.id));
         return `
-          <div class="dhun-similar-card" onclick="openPlayerById(${s.id})" title="Play ${escapeHtmlAttr(s.title)}" style="padding:6px 9px">
+          <div class="dhun-similar-card" onclick="openPlayerById('${songIdStr}')" title="Play ${escapeHtmlAttr(s.title)}" style="padding:6px 9px">
             <div class="similar-left">
               <img class="similar-thumb" src="${thumb}" alt="${escapeHtmlAttr(s.title)}" onerror="this.src='album1.jpg'" style="width:30px;height:30px" />
               <div class="similar-meta">
@@ -9620,8 +9964,8 @@ function renderAllFunctionsDashboard(song) {
             </div>
             <span class="similar-tag" style="font-size:9.5px">${escapeHtmlText(reason)}</span>
             <div class="similar-actions" onclick="event.stopPropagation()">
-              <button class="btn-sim-play" onclick="openPlayerById(${s.id})" title="Play Now" style="width:26px;height:26px;font-size:10px">▶</button>
-              <button class="btn-sim-queue" onclick="enqueueSong(${s.id}, event)" title="Add to Queue" style="width:26px;height:26px;font-size:12px">➕</button>
+              <button class="btn-sim-play" onclick="openPlayerById('${songIdStr}')" title="Play Now" style="width:26px;height:26px;font-size:10px">▶</button>
+              <button class="btn-sim-queue" onclick="enqueueSong('${songIdStr}', event)" title="Add to Queue" style="width:26px;height:26px;font-size:12px">➕</button>
             </div>
           </div>
         `;
@@ -9779,6 +10123,7 @@ async function autoSeedLibraryWithOnlineMedia() {
     _libAllSongs = state.songs;
     try {
       localStorage.setItem('dhun_client_songs', JSON.stringify(state.songs));
+      saveUserProfileLibrary();
     } catch (e) {}
 
     if (count > 0) {
@@ -9860,6 +10205,7 @@ async function autoAddTrackToLibrary(track) {
   _libAllSongs = state.songs;
   try {
     localStorage.setItem('dhun_client_songs', JSON.stringify(state.songs));
+    saveUserProfileLibrary();
   } catch (e) {}
 
   const thumb = track.videoId ? `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg` : (track.thumbnail || ALBUM_IMGS[0]);

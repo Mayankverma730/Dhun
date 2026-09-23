@@ -15,7 +15,7 @@
     rel="stylesheet" />
   <link rel="icon" type="image/png" href="logo.png" />
   <link rel="apple-touch-icon" href="logo.png" />
-  <link rel="stylesheet" href="style.css?v=27.0" />
+  <link rel="stylesheet" href="style.css?v=28.0" />
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
     (function () {
@@ -1143,6 +1143,7 @@
             <div class="profile-actions">
               <button class="btn-primary" onclick="toggleEditProfile()" id="edit-profile-btn">✏️ Edit Profile</button>
               <button class="btn-secondary" onclick="openProfileCoverModal()" id="pcover-action-btn" title="Customize Profile Banner">🎨 Change Cover</button>
+              <button class="btn-secondary" onclick="autoGenerateUserProfileLibrary(authState.currentUser, true)" id="auto-gen-profile-lib-btn" title="Auto-Generate / Refresh Profile Library via YouTube Music Suggestions" style="display:inline-flex;align-items:center;gap:6px">⚡ Auto-Generate Library (YT)</button>
               <button class="btn-secondary" onclick="triggerProfileCloudSync(this)" id="sync-profile-btn" title="Sync Profile & Playlists Across Devices">☁️ Sync Devices</button>
               <button class="btn-secondary" onclick="showToast('Profile link copied 🔗')" aria-label="Share profile">🔗 Share</button>
             </div>
@@ -1256,6 +1257,9 @@
               <option value="plays">Sort: Most Played</option>
               <option value="rating">Sort: Top Rated</option>
             </select>
+            <button class="btn-primary" onclick="autoGenerateUserProfileLibrary(authState.currentUser, true)" style="padding:8px 16px;font-size:13px;display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#e11d48,#7c3aed);border:none;box-shadow:0 2px 10px rgba(225,29,72,0.3)" title="Auto-Generate Profile Library via YouTube Music Suggestions">
+              ⚡ Auto-Generate via YT
+            </button>
             <button class="btn-primary btn-add-pc" onclick="triggerAddSongFromPC()" style="padding:8px 18px;font-size:13px;display:inline-flex;align-items:center;gap:6px">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -2052,8 +2056,8 @@
   <script src="js/api.js?v=2.6"></script>
 
   <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.5/dist/mqtt.min.js"></script>
-  <script src="ytmusic_api.js?v=27.0"></script>
-  <script src="app.js?v=27.0"></script>
+  <script src="ytmusic_api.js?v=28.0"></script>
+  <script src="app.js?v=28.0"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 
