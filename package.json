@@ -1,9 +1,12 @@
 {
   "name": "dhun",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Dhun - Music Management System",
+  "description": "Dhun — Premium Music Management System",
+  "engines": {
+    "node": ">=18.x"
+  },
   "scripts": {
-    "start": "node -e \"console.log('Dhun serverless ready')\""
+    "start": "node -e \"console.log('Dhun static site — served by Vercel')\""
   }
 }

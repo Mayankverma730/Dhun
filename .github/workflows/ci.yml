@@ -1,0 +1,34 @@
+name: Dhun CI Build & Test
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc make
+
+      - name: Compile and run DSA test suite
+        run: |
+          gcc -Wall -Wextra -std=c99 -pedantic -o test_dsa test_dsa.c song.c library.c stack.c queue.c bst.c heap.c hash.c sort.c playlist.c avl.c trie.c graph.c cache.c logger.c -lm
+          ./test_dsa
+
+      - name: Compile and run performance benchmarks
+        run: |
+          gcc -Wall -Wextra -std=c99 -pedantic -o benchmark benchmark.c song.c library.c stack.c queue.c bst.c heap.c hash.c sort.c playlist.c avl.c trie.c graph.c cache.c logger.c -lm
+          ./benchmark
+
+      - name: Compile CLI binary
+        run: |
+          gcc -Wall -Wextra -std=c99 -pedantic -o music_mgr main.c song.c library.c stack.c queue.c bst.c heap.c hash.c sort.c playlist.c avl.c trie.c graph.c cache.c logger.c -lm

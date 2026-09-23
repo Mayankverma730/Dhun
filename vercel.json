@@ -1,6 +1,33 @@
 {
   "version": 2,
   "rewrites": [
-    { "source": "/api/search", "destination": "/api/search.js" }
+    { "source": "/api/songs/:id/play",    "destination": "/api/songs/[id]?action=play" },
+    { "source": "/api/songs/:id/like",    "destination": "/api/songs/[id]?action=like" },
+    { "source": "/api/songs/:id",         "destination": "/api/songs/[id]" },
+    { "source": "/api/playlists/:id/songs/:sid", "destination": "/api/playlists/[id]?action=removeSong&sid=:sid" },
+    { "source": "/api/playlists/:id/songs", "destination": "/api/playlists/[id]" },
+    { "source": "/api/playlists/:id",     "destination": "/api/playlists/[id]" },
+    { "source": "/api/history/back",      "destination": "/api/history?action=back" },
+    { "source": "/api/search",            "destination": "/api/search" },
+    { "source": "/api/:path*",            "destination": "/api/:path*" },
+    { "source": "/((?!api/).*)",          "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin",  "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,DELETE,OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type,Authorization" }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options",        "value": "SAMEORIGIN" },
+        { "key": "X-XSS-Protection",       "value": "1; mode=block" }
+      ]
+    }
   ]
 }

@@ -957,12 +957,34 @@ const audioEngine = {
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.setValueAtTime(this.volume, this.ctx.currentTime);
 
+    // 5-Band Equalizer filters [T5-09]
+    const bandSpecs = [
+      { freq: 60, type: 'lowshelf' },
+      { freq: 250, type: 'peaking' },
+      { freq: 1000, type: 'peaking' },
+      { freq: 4000, type: 'peaking' },
+      { freq: 16000, type: 'highshelf' }
+    ];
+    this.eqFilters = bandSpecs.map(spec => {
+      const f = this.ctx.createBiquadFilter();
+      f.type = spec.type;
+      f.frequency.setValueAtTime(spec.freq, this.ctx.currentTime);
+      f.gain.setValueAtTime(0, this.ctx.currentTime);
+      return f;
+    });
+
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 256;
     this.analyser.smoothingTimeConstant = 0.8;
     this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
 
-    this.masterGain.connect(this.analyser);
+    // Chain: masterGain -> eq0 -> eq1 -> eq2 -> eq3 -> eq4 -> analyser -> destination
+    let lastNode = this.masterGain;
+    this.eqFilters.forEach(f => {
+      lastNode.connect(f);
+      lastNode = f;
+    });
+    lastNode.connect(this.analyser);
     this.analyser.connect(this.ctx.destination);
 
     if (typeof vizState !== 'undefined') {
@@ -1028,8 +1050,79 @@ const audioEngine = {
       this.previousVolume = (this.volume > 0) ? this.volume : 0.75;
       this.setVolume(0);
     }
+  },
+
+  setEqGain(bandIndex, gainDb) {
+    this.resume();
+    if (this.eqFilters && this.eqFilters[bandIndex] && this.ctx) {
+      try {
+        this.eqFilters[bandIndex].gain.cancelScheduledValues(this.ctx.currentTime);
+        this.eqFilters[bandIndex].gain.setValueAtTime(gainDb, this.ctx.currentTime);
+      } catch (e) {}
+    }
   }
 };
+
+/* ══════════════════════════════════════════════════
+   5-BAND AUDIO EQUALIZER CONTROLLER [T5-09]
+══════════════════════════════════════════════════ */
+const EQ_PRESETS = {
+  flat: [0, 0, 0, 0, 0],
+  bass: [6, 4, 0, -1, -2],
+  vocal: [-2, 1, 4, 3, 0],
+  acoustic: [3, 1, 1, 2, 4],
+  electronic: [5, 3, -1, 2, 4]
+};
+
+let currentEqGains = [0, 0, 0, 0, 0];
+
+function openEqualizerModal() {
+  soundEngine.resume();
+  const modal = document.getElementById('equalizer-modal');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeEqualizerModal() {
+  const modal = document.getElementById('equalizer-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function updateEqBand(index, val) {
+  const dbVal = parseFloat(val);
+  currentEqGains[index] = dbVal;
+  const label = document.getElementById(`eq-val-${index}`);
+  if (label) label.textContent = `${dbVal > 0 ? '+' : ''}${dbVal.toFixed(1)}dB`;
+  soundEngine.setEqGain(index, dbVal);
+
+  // Deselect preset buttons
+  document.querySelectorAll('.eq-preset-btn').forEach(btn => btn.classList.remove('active'));
+}
+
+function applyEqPreset(presetName) {
+  const gains = EQ_PRESETS[presetName];
+  if (!gains) return;
+  document.querySelectorAll('.eq-preset-btn').forEach(btn => btn.classList.remove('active'));
+  const activeBtn = document.getElementById(`eq-btn-${presetName}`);
+  if (activeBtn) activeBtn.classList.add('active');
+
+  gains.forEach((gain, i) => {
+    currentEqGains[i] = gain;
+    const slider = document.getElementById(`eq-band-${i}`);
+    if (slider) slider.value = gain;
+    const label = document.getElementById(`eq-val-${i}`);
+    if (label) label.textContent = `${gain > 0 ? '+' : ''}${gain}dB`;
+    soundEngine.setEqGain(i, gain);
+  });
+
+  if (typeof toastManager !== 'undefined') {
+    toastManager.show(`Equalizer set to "${presetName.toUpperCase()}"`, { type: 'info', duration: 2000 });
+  }
+}
+
+window.openEqualizerModal = openEqualizerModal;
+window.closeEqualizerModal = closeEqualizerModal;
+window.updateEqBand = updateEqBand;
+window.applyEqPreset = applyEqPreset;
 
 // Global unlocker for AudioContext on first user interaction
 ['pointerdown', 'touchstart', 'keydown'].forEach(evt => {
@@ -2273,6 +2366,17 @@ function purgeLegacyAuthData() {
 
 function initAuth() {
   purgeLegacyAuthData();
+
+  // FIX (Guest Isolation): If a stale guest session was saved, erase it so the
+  // login gate is always shown fresh on reload — guest sessions are memory-only.
+  try {
+    const staleActiveId = localStorage.getItem('dhun_auth_active_user');
+    if (staleActiveId === 'guest') {
+      localStorage.removeItem('dhun_auth_active_user');
+      localStorage.removeItem('dhun_active_profile');
+    }
+  } catch(e) {}
+
   // Purge any previously stored passwords from localStorage
   try {
     const rawCreds = localStorage.getItem('dhun_saved_credentials');
@@ -2286,18 +2390,24 @@ function initAuth() {
   } catch(e) {}
 
   authState.users = getStoredUsers();
-  saveStoredUsers(authState.users); // Run deduplication pass immediately
+  // FIX (Guest Isolation): Remove guest from the persisted user list — guest is ephemeral
+  authState.users = authState.users.filter(u => u && u.id !== 'guest' && u.provider !== 'guest');
+  saveStoredUsers(authState.users);
 
   // 1. Check for actively authenticated session
   let activeUser = null;
   const activeUserId = localStorage.getItem('dhun_auth_active_user');
 
-  if (activeUserId) {
+  if (activeUserId && activeUserId !== 'guest') {
     activeUser = authState.users.find(u => u.id === activeUserId || (u.email && makeUserIdFromEmail(u.email) === activeUserId));
+    // Extra guard: never treat guest-provider as a persisted session
+    if (activeUser && (activeUser.provider === 'guest' || activeUser.id === 'guest')) {
+      activeUser = null;
+    }
   }
 
-  // 2. Check full active profile if session flag exists
-  if (activeUser) {
+  // 2. Normalise active user's canonical ID
+  if (activeUser && activeUser.email) {
     activeUser.id = makeUserIdFromEmail(activeUser.email);
     localStorage.setItem('dhun_auth_active_user', activeUser.id);
     localStorage.setItem('dhun_active_profile', JSON.stringify(activeUser));
@@ -2331,6 +2441,8 @@ function initAuth() {
       renderGateAvatarColorPicker();
       renderGateSavedProfiles();
       populateSavedCredentials();
+      // FIX (Google OAuth): Initialize Google Identity Services if available
+      initGoogleOneTap();
     }
     if (appShell) {
       appShell.style.display = 'none';
@@ -2412,23 +2524,35 @@ function enterAppFromGate(user) {
   user.lastLoginAt = Date.now();
   authState.currentUser = user;
 
-  try {
-    localStorage.setItem('dhun_auth_active_user', user.id);
-    localStorage.setItem('dhun_active_profile', JSON.stringify(user));
+  const isGuest = (user.provider === 'guest' || user.id === 'guest');
 
-    const users = getStoredUsers();
-    const idx = users.findIndex(u => u.id === user.id);
-    if (idx !== -1) {
-      users[idx] = { ...users[idx], ...user };
-    } else {
-      users.push(user);
-    }
-    saveStoredUsers(users);
+  if (!isGuest) {
+    // Real user: persist session to localStorage
+    try {
+      localStorage.setItem('dhun_auth_active_user', user.id);
+      localStorage.setItem('dhun_active_profile', JSON.stringify(user));
 
-    if (user.email) {
-      saveCredentials(user.email, user.password || '');
-    }
-  } catch(e) {}
+      const users = getStoredUsers().filter(u => u && u.id !== 'guest' && u.provider !== 'guest');
+      const idx = users.findIndex(u => u.id === user.id);
+      if (idx !== -1) {
+        users[idx] = { ...users[idx], ...user };
+      } else {
+        users.push(user);
+      }
+      saveStoredUsers(users);
+
+      if (user.email) {
+        saveCredentials(user.email);
+      }
+    } catch(e) {}
+  } else {
+    // Guest: session is in-memory ONLY — never persisted to localStorage
+    // This ensures no stale guest session auto-loads on refresh
+    try {
+      localStorage.removeItem('dhun_auth_active_user');
+      localStorage.removeItem('dhun_active_profile');
+    } catch(e) {}
+  }
 
   const gateScreen = document.getElementById('login-gate-screen');
   const appShell   = document.getElementById('app');
@@ -2452,24 +2576,19 @@ function enterAppFromGate(user) {
 }
 
 function continueAsGuestFromGate() {
-  const users = getStoredUsers();
-  let guestUser = users.find(u => u.id === 'guest');
-  if (!guestUser) {
-    guestUser = {
-      id: 'guest',
-      name: 'Guest User',
-      email: 'guest@dhun.local',
-      avatarColor: '#7c3aed',
-      provider: 'guest',
-      bio: '🎵 Exploring Dhun Music',
-      joinedAt: Date.now(),
-      lastLoginAt: Date.now()
-    };
-    users.push(guestUser);
-    saveStoredUsers(users);
-  }
+  // Guest is strictly in-memory: never stored to dhun_auth_users or dhun_auth_active_user
+  const guestUser = {
+    id: 'guest',
+    name: 'Guest',
+    email: 'guest@dhun.local',
+    avatarColor: '#7c3aed',
+    provider: 'guest',
+    bio: '🎵 Exploring Dhun Music',
+    joinedAt: Date.now(),
+    lastLoginAt: Date.now()
+  };
   enterAppFromGate(guestUser);
-  showToast('👤 Exploring as Guest. Your session is active.');
+  showToast('👤 Exploring as Guest — data resets on page reload.');
 }
 
 function switchGateTab(tab) {
@@ -2851,6 +2970,31 @@ function closeAuthModal() {
   const modal = document.getElementById('auth-modal');
   if (modal) modal.style.display = 'none';
 }
+
+function openShortcutsModal() {
+  const modal = document.getElementById('shortcuts-modal');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeShortcutsModal() {
+  const modal = document.getElementById('shortcuts-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function closeAllActiveModals() {
+  closeAuthModal();
+  closeShortcutsModal();
+  if (typeof closeEqualizerModal === 'function') closeEqualizerModal();
+  if (typeof hideAddSongModal === 'function') hideAddSongModal();
+  if (typeof closeListenTogetherModal === 'function') closeListenTogetherModal();
+  if (typeof closeProfileCoverModal === 'function') closeProfileCoverModal();
+  const editModal = document.getElementById('edit-song-modal');
+  if (editModal) editModal.style.display = 'none';
+}
+
+window.openShortcutsModal = openShortcutsModal;
+window.closeShortcutsModal = closeShortcutsModal;
+window.closeAllActiveModals = closeAllActiveModals;
 
 function switchAuthTab(tab) {
   const tabGroup    = document.getElementById('auth-tab-group');
@@ -3342,7 +3486,135 @@ function checkResetTokenInURL() {
 
 let _googleAuthIsFromGate = false;
 
+/* ── Google Identity Services (Real OAuth) Integration ─────────────────────
+   Uses Google's official GSI library (accounts.google.com/gsi/client).
+   On first-time: triggers One Tap or Popup flow for real Google auth.
+   On returning: shows the existing Google account chooser (local profiles).
+   SETUP: Replace DHUN_GOOGLE_CLIENT_ID with your real Google Cloud Client ID.
+   Get one at: console.cloud.google.com → APIs & Services → Credentials
+   Add http://localhost:3000 as an Authorized JavaScript origin.
+─────────────────────────────────────────────────────────────────────────── */
+const DHUN_GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
+let _gsiInitialized = false;
+let _gsiOneTapShown = false;
+
+function initGoogleOneTap() {
+  // Only initialize if the GSI library loaded successfully
+  if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) return;
+  if (_gsiInitialized) return;
+  _gsiInitialized = true;
+
+  // Skip if no real Client ID configured
+  if (DHUN_GOOGLE_CLIENT_ID.startsWith('YOUR_GOOGLE')) return;
+
+  try {
+    google.accounts.id.initialize({
+      client_id: DHUN_GOOGLE_CLIENT_ID,
+      callback: handleGSICredentialResponse,
+      auto_select: false,
+      cancel_on_tap_outside: true,
+      context: 'signin',
+      ux_mode: 'popup'
+    });
+  } catch(e) {
+    console.warn('[Dhun] Google GSI init failed:', e);
+  }
+}
+
+function handleGSICredentialResponse(response) {
+  // response.credential is a JWT ID token from Google
+  try {
+    const token = response && response.credential;
+    if (!token) throw new Error('No credential');
+
+    // Decode the JWT payload (base64url middle part)
+    const parts = token.split('.');
+    if (parts.length < 2) throw new Error('Invalid JWT');
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+
+    const email = (payload.email || '').toLowerCase().trim();
+    const name  = payload.name || payload.given_name || email.split('@')[0];
+    const pic   = payload.picture || null;
+    const sub   = payload.sub || null; // Google unique user ID
+
+    if (!email) throw new Error('No email in token');
+
+    const canonicalId = makeUserIdFromEmail(email);
+    const users = getStoredUsers().filter(u => u && u.id !== 'guest' && u.provider !== 'guest');
+    let existing = users.find(u => u.email && u.email.toLowerCase().trim() === email);
+
+    if (!existing) {
+      existing = {
+        id: canonicalId,
+        name: name,
+        email: email,
+        avatarUrl: pic || null,
+        avatarColor: '#1a73e8',
+        provider: 'google',
+        googleSub: sub,
+        bio: 'Google Verified Listener 🎧',
+        joinedAt: Date.now(),
+        lastLoginAt: Date.now()
+      };
+      users.push(existing);
+    } else {
+      // Update with freshest data from Google
+      existing.id = canonicalId;
+      existing.name = name || existing.name;
+      existing.avatarUrl = pic || existing.avatarUrl;
+      existing.provider = 'google';
+      existing.googleSub = sub || existing.googleSub;
+      existing.lastLoginAt = Date.now();
+    }
+
+    saveStoredUsers(users);
+    saveCredentials(email);
+
+    // Close any open auth modals
+    const googleModal = document.getElementById('google-auth-modal');
+    if (googleModal) googleModal.style.display = 'none';
+    closeAuthModal();
+
+    if (_googleAuthIsFromGate) {
+      enterAppFromGate(existing);
+    } else {
+      switchToUser(existing);
+    }
+
+    showToast(`✅ Signed in with Google as ${existing.name}!`);
+    pushProfileToCloud();
+
+  } catch(err) {
+    console.error('[Dhun] GSI credential decode failed:', err);
+    showToast('⚠️ Google sign-in failed. Please try again.');
+    // Fall back to the manual Google form
+    openGoogleAuthModal(_googleAuthIsFromGate);
+  }
+}
+
 function handleGoogleSignIn(isFromGate = false) {
+  _googleAuthIsFromGate = isFromGate;
+
+  // Try real Google GSI One Tap / Popup first
+  if (typeof google !== 'undefined' && google.accounts && google.accounts.id &&
+      !DHUN_GOOGLE_CLIENT_ID.startsWith('YOUR_GOOGLE')) {
+    try {
+      if (!_gsiInitialized) initGoogleOneTap();
+      // Show the Google popup sign-in flow
+      google.accounts.id.prompt((notification) => {
+        // If One Tap was suppressed (dismissed too many times, cookies blocked, etc.)
+        // fall back to the manual chooser modal
+        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+          openGoogleAuthModal(isFromGate);
+        }
+      });
+      return;
+    } catch(e) {
+      // GSI not ready, fall through to manual modal
+    }
+  }
+
+  // Fallback: open the manual Google account chooser/form
   openGoogleAuthModal(isFromGate);
 }
 
@@ -3360,7 +3632,7 @@ function openGoogleAuthModal(isFromGate = false) {
   const currentHost = (window.location && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
     ? window.location.hostname
     : 'dhun.live';
-  
+
   const siteLink1 = document.getElementById('google-dest-site');
   if (siteLink1) siteLink1.textContent = currentHost;
   const siteLink2 = document.getElementById('google-dest-site-2');
@@ -3369,12 +3641,9 @@ function openGoogleAuthModal(isFromGate = false) {
     el.textContent = currentHost;
   });
 
-  // Stored Google users ONLY - ZERO mock data
+  // Real stored Google users ONLY — no mock data, no guest
   const googleUsers = (getStoredUsers() || []).filter(u => u && u.provider === 'google');
 
-  // NEW APPROACH:
-  // If zero Google accounts are registered on this device: directly open the authentic Google Sign-in screen!
-  // If accounts exist: open the Google "Choose an account" screen with only their real accounts!
   if (googleUsers.length === 0) {
     showGoogleAddAccountScreen(false);
   } else {
@@ -3677,6 +3946,13 @@ function signOutUser() {
     localStorage.removeItem('dhun_active_profile');
     authState.currentUser = null;
 
+    // FIX (Guest Isolation): Purge any guest entries from persisted users list on every sign-out
+    try {
+      const cleanedUsers = (getStoredUsers() || []).filter(u => u && u.id !== 'guest' && u.provider !== 'guest');
+      saveStoredUsers(cleanedUsers);
+      authState.users = cleanedUsers;
+    } catch(e) {}
+
     // 1. Reset in-memory playlists and songs state cleanly to prevent cross-session bleed
     state.playlists = [];
     if (Array.isArray(state.songs)) {
@@ -3719,11 +3995,15 @@ function signOutUser() {
       renderGateAvatarColorPicker();
       renderGateSavedProfiles();
       populateSavedCredentials();
+      // Re-init Google One Tap for next sign-in
+      _gsiInitialized = false;
+      initGoogleOneTap();
     }
 
     showToast('👋 Signed out. Please sign in to enter Dhun.');
   });
 }
+
 
 function toggleUserMenu(force) {
   const popover = document.getElementById('user-menu-popover');
@@ -6500,12 +6780,129 @@ document.addEventListener('DOMContentLoaded', async () => {
   await autoGenerateMultiplePlaylists();
   await refreshPlaylists();
 
-  /* Keyboard shortcuts */
+  /* ══════════════════════════════════════════════════
+     KEYBOARD SHORTCUTS SYSTEM [T3-04]
+  ══════════════════════════════════════════════════ */
   document.addEventListener('keydown', e => {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-    if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
-    if (e.code === 'ArrowRight') nextSong();
-    if (e.code === 'ArrowLeft')  prevSong();
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
+      if (e.key === 'Escape') {
+        e.target.blur();
+        closeAllActiveModals();
+      }
+      return;
+    }
+
+    switch (e.code) {
+      case 'Space':
+        e.preventDefault();
+        togglePlay();
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        nextSong();
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        prevSong();
+        break;
+      case 'ArrowUp': {
+        e.preventDefault();
+        const slider = document.getElementById('vol-slider');
+        const cur = Number(slider?.value || 75);
+        const nextVol = Math.min(150, cur + 5);
+        if (slider) slider.value = nextVol;
+        setVolume(nextVol);
+        break;
+      }
+      case 'ArrowDown': {
+        e.preventDefault();
+        const slider = document.getElementById('vol-slider');
+        const cur = Number(slider?.value || 75);
+        const nextVol = Math.max(0, cur - 5);
+        if (slider) slider.value = nextVol;
+        setVolume(nextVol);
+        break;
+      }
+      case 'KeyM':
+        toggleMute();
+        break;
+      case 'KeyS':
+        toggleShuffle();
+        break;
+      case 'KeyR':
+        toggleRepeat();
+        break;
+      case 'KeyL':
+        if (state.currentSong) toggleLike(state.currentSong.id);
+        break;
+      case 'KeyQ':
+        navigate('player');
+        break;
+      case 'KeyE':
+        openEqualizerModal();
+        break;
+      case 'Slash':
+        if (e.shiftKey || e.key === '?') {
+          e.preventDefault();
+          openShortcutsModal();
+        }
+        break;
+      case 'Escape':
+        closeAllActiveModals();
+        break;
+    }
+  });
+
+  /* ══════════════════════════════════════════════════
+     MOBILE TOUCH SWIPE GESTURES ON ARTWORK [T3-15]
+  ══════════════════════════════════════════════════ */
+  let touchStartX = 0;
+  let touchStartY = 0;
+
+  document.addEventListener('touchstart', e => {
+    const target = e.target.closest('.player-art-wrap, .player-hero-artwork, #player-page, .pb-left');
+    if (target && e.touches && e.touches.length > 0) {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchend', e => {
+    if (!touchStartX) return;
+    const target = e.target.closest('.player-art-wrap, .player-hero-artwork, #player-page, .pb-left');
+    if (target && e.changedTouches && e.changedTouches.length > 0) {
+      const deltaX = e.changedTouches[0].clientX - touchStartX;
+      const deltaY = e.changedTouches[0].clientY - touchStartY;
+      if (Math.abs(deltaX) > 60 && Math.abs(deltaY) < 50) {
+        if (deltaX < 0) {
+          nextSong();
+          showToast('⏭️ Next Track');
+        } else {
+          prevSong();
+          showToast('⏮️ Previous Track');
+        }
+      }
+    }
+    touchStartX = 0;
+    touchStartY = 0;
+  }, { passive: true });
+
+  /* ══════════════════════════════════════════════════
+     VISUALIZER VISIBILITY API OPTIMIZATION [T4-06]
+  ══════════════════════════════════════════════════ */
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (typeof vizState !== 'undefined' && vizState.animFrameId) {
+        cancelAnimationFrame(vizState.animFrameId);
+        vizState.animFrameId = null;
+      }
+    } else {
+      if (typeof vizState !== 'undefined' && !vizState.animFrameId && state.isPlaying) {
+        if (typeof renderFlowVisualizerLoop === 'function') {
+          vizState.animFrameId = requestAnimationFrame(renderFlowVisualizerLoop);
+        }
+      }
+    }
   });
 
   /* Drag & Drop Audio files from PC */
@@ -6888,6 +7285,38 @@ function handleJamMessageData(data) {
       case 'REACTION':
         renderJamReactionParticle(data.emoji, data.sender);
         break;
+
+      case 'CHAT':
+      case 'CHAT_MESSAGE':
+        if (data.message) {
+          addJamChatMessage(data.sender, data.message, false);
+        }
+        break;
+
+      case 'SUGGEST_SONG':
+      case 'SONG_SUGGEST': {
+        const songData = data.song || (typeof getSongById === 'function' ? getSongById(data.songId) : null);
+        const title = (songData && songData.title) || (data.song && data.song.title) || 'Unknown Track';
+        if (typeof toastManager !== 'undefined') {
+          toastManager.show(`💡 ${data.sender} suggested: "${title}"`, {
+            type: 'info',
+            duration: 8000,
+            action: {
+              label: 'Add to Queue',
+              callback: () => {
+                if (songData) {
+                  state.queue.push(songData);
+                  renderQueue();
+                  showToast(`Added "${title}" to Queue!`);
+                }
+              }
+            }
+          });
+        } else {
+          showToast(`💡 ${data.sender} suggested: "${title}"`);
+        }
+        break;
+      }
 
       case 'JOIN_REQUEST':
       case 'JOIN_ROOM':
@@ -7438,6 +7867,84 @@ function updateJamUI() {
     if (stack) stack.style.display = 'none';
   }
 }
+
+/* ═══════════════════════════════════════════════
+   LIVE JAM CHAT & HOST HEARTBEAT [T3-06, T3-08]
+═══════════════════════════════════════════════ */
+function sendJamChatMessage() {
+  const input = document.getElementById('jam-chat-input');
+  if (!input) return;
+  const text = (input.value || '').trim();
+  if (!text) return;
+  input.value = '';
+
+  addJamChatMessage(jamState.userName, text, true);
+
+  broadcastJam({
+    type: 'CHAT_MESSAGE',
+    sender: jamState.userName,
+    message: text
+  });
+
+  // Also POST to backend API endpoint if running
+  jamApi('POST', '/jam/chat', {
+    roomId: jamState.roomId,
+    sender: jamState.userName,
+    message: text
+  }).catch(() => {});
+}
+
+function addJamChatMessage(sender, message, isOwn) {
+  const container = document.getElementById('jam-chat-messages');
+  if (!container) return;
+  const msgEl = document.createElement('div');
+  msgEl.className = `jam-chat-msg ${isOwn ? 'own' : ''}`;
+
+  const senderSpan = document.createElement('span');
+  senderSpan.className = 'jam-chat-sender';
+  senderSpan.textContent = sender || 'Guest';
+
+  const textSpan = document.createElement('span');
+  textSpan.className = 'jam-chat-text';
+  textSpan.textContent = message || '';
+
+  msgEl.appendChild(senderSpan);
+  msgEl.appendChild(textSpan);
+  container.appendChild(msgEl);
+  container.scrollTop = container.scrollHeight;
+}
+
+// Host inactivity detection and takeover [T3-06]
+setInterval(() => {
+  if (jamState.active && !jamState.isHost && jamState.lastHostHeartbeat) {
+    const elapsed = Date.now() - jamState.lastHostHeartbeat;
+    if (elapsed > 20000 && !jamState._hostWarningShown) {
+      jamState._hostWarningShown = true;
+      if (typeof toastManager !== 'undefined') {
+        toastManager.show('⚠️ Host seems disconnected', {
+          type: 'warning',
+          duration: 10000,
+          action: {
+            label: 'Take Over',
+            callback: () => {
+              jamState.isHost = true;
+              jamState.userName = `${jamState.userName} (Host)`;
+              jamState.members.forEach(m => {
+                if (m.name.includes(jamState.userName)) m.isHost = true;
+              });
+              renderJamMembers();
+              broadcastJam({ type: 'HOST_TAKEOVER', newHost: jamState.userName });
+              showToast('👑 You are now the Jam Session Host!');
+            }
+          }
+        });
+      }
+    }
+  }
+}, 7000);
+
+window.sendJamChatMessage = sendJamChatMessage;
+window.addJamChatMessage = addJamChatMessage;
 
 /* ═══════════════════════════════════════════════
    WINDOWS 7 MEDIA PLAYER BEAT-REACTIVE FLOW VISUALIZER
@@ -8837,15 +9344,10 @@ function renderSimilarDhunUI(currentSong) {
   container.innerHTML = html;
 }
 
-function escapeHtmlText(str) {
-  if (!str) return '';
-  return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
-}
+// escapeHtmlText and escapeHtmlAttr are defined at the top of this file as const aliases for escapeHTML/escapeAttribute
+// (removed duplicate declarations here to prevent strict-mode redeclaration errors)
 
-function escapeHtmlAttr(str) {
-  if (!str) return '';
-  return String(str).replace(/"/g, '&quot;');
-}
+
 
 /* ══════════════════════════════════════════════════════════════════════
    OPTION 6: DYNAMIC DHUN VIBE BOARD & AURA VISUALIZER

@@ -119,7 +119,17 @@
           </div>
 
           <!-- Google Sign-In Button -->
-          <button class="google-auth-btn gate-google-btn" onclick="handleGoogleSignIn(true)" title="Continue with Google">
+          <!-- Google One Tap / GSI auto-mount div (auto-hidden until GSI is ready) -->
+          <div id="g_id_onload"
+            data-client_id="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
+            data-context="signin"
+            data-ux_mode="popup"
+            data-callback="handleGSICredentialResponse"
+            data-auto_select="false"
+            data-itp_support="true"
+            style="display:none">
+          </div>
+          <button class="google-auth-btn gate-google-btn" id="gate-google-btn" onclick="handleGoogleSignIn(true)" title="Continue with Google">
             <svg class="google-icon" viewBox="0 0 24 24" width="20" height="20">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
               <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -128,6 +138,7 @@
             </svg>
             <span>Continue with Google</span>
           </button>
+
 
           <div class="auth-divider">
             <span>OR CONTINUE WITH EMAIL</span>
@@ -1352,6 +1363,22 @@
             <path d="M11 12H3M16 6H3M16 18H3M18 9v6M15 12h6"/>
           </svg>
         </button>
+        <button class="pb-ctrl" aria-label="Audio Equalizer" title="Audio Equalizer (E)" onclick="openEqualizerModal()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" y1="21" x2="4" y2="14"></line>
+            <line x1="4" y1="10" x2="4" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12" y2="3"></line>
+            <line x1="20" y1="21" x2="20" y2="16"></line>
+            <line x1="20" y1="12" x2="20" y2="3"></line>
+            <line x1="1" y1="14" x2="7" y2="14"></line>
+            <line x1="9" y1="8" x2="15" y2="8"></line>
+            <line x1="17" y1="16" x2="23" y2="16"></line>
+          </svg>
+        </button>
+        <button class="pb-ctrl" aria-label="Keyboard Shortcuts" title="Keyboard Shortcuts (?)" onclick="openShortcutsModal()">
+          <span style="font-size:15px;">⌨️</span>
+        </button>
         <button class="pb-ctrl" aria-label="Queue" onclick="navigate('player')">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
             <path d="M9 18V5l12-2v13M9 9l12-2" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -1550,6 +1577,23 @@
             <button class="jam-emoji-btn" onclick="sendJamReaction('🎵')">🎵</button>
             <button class="jam-emoji-btn" onclick="sendJamReaction('👏')">👏</button>
             <button class="jam-emoji-btn" onclick="sendJamReaction('🚀')">🚀</button>
+          </div>
+        </div>
+
+        <!-- Live Jam Chat [T3-08] -->
+        <div class="jam-chat-wrapper">
+          <div class="jam-chat-header">
+            <span>💬 Live Jam Chat</span>
+            <span style="font-size:10.5px;color:var(--text-3);">Encrypted Room Channel</span>
+          </div>
+          <div class="jam-chat-messages" id="jam-chat-messages">
+            <div class="jam-chat-msg" style="align-self:center;font-size:11.5px;color:var(--text-3);background:none;">
+              Welcome to the Jam! Chat with fellow listeners in real-time.
+            </div>
+          </div>
+          <div class="jam-chat-input-bar">
+            <input type="text" id="jam-chat-input" class="jam-chat-input" placeholder="Type a message to room..." onkeydown="if(event.key==='Enter')sendJamChatMessage()" />
+            <button class="jam-chat-send-btn" onclick="sendJamChatMessage()">Send</button>
           </div>
         </div>
 
@@ -1936,6 +1980,87 @@
   </div>
 
 
+
+  <!-- ══ KEYBOARD SHORTCUTS MODAL [T3-04] ══ -->
+  <div id="shortcuts-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeShortcutsModal()">
+    <div class="glass-card modal-box" style="max-width:440px;width:90%;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h3 style="margin:0;font-size:1.3rem;font-weight:800;">⌨️ Keyboard Shortcuts</h3>
+        <button onclick="closeShortcutsModal()" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="shortcuts-list">
+        <div class="shortcut-row"><span class="shortcut-desc">Play / Pause</span><span class="shortcut-keys"><span class="shortcut-key">Space</span></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Next Track</span><span class="shortcut-keys"><span class="shortcut-key">→</span></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Previous Track</span><span class="shortcut-keys"><span class="shortcut-key">←</span></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Volume Up / Down</span><span class="shortcut-keys"><span class="shortcut-key">↑</span> <span class="shortcut-key">↓</span></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Mute / Unmute</span><span class="shortcut-keys"><span class="shortcut-key">M</span></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Toggle Shuffle</span><span class="shortcut-keys"><span class="shortcut-key">S</span></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Toggle Repeat</span><span class="shortcut-keys"><span class="shortcut-key">R</span></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Like / Unlike Song</span><span class="shortcut-keys"><span class="shortcut-key">L</span></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Toggle Queue Panel</span><span class="shortcut-keys"><span class="shortcut-key">Q</span></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Audio Equalizer</span><span class="shortcut-keys"><span class="shortcut-key">E</span></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Show Shortcuts</span><span class="shortcut-keys"><span class="shortcut-key">?</span></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Close Modals</span><span class="shortcut-keys"><span class="shortcut-key">Esc</span></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 5-BAND AUDIO EQUALIZER MODAL [T5-09] ══ -->
+  <div id="equalizer-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeEqualizerModal()">
+    <div class="glass-card modal-box" style="max-width:480px;width:90%;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h3 style="margin:0;font-size:1.3rem;font-weight:800;">🎛️ Audio Equalizer</h3>
+        <button onclick="closeEqualizerModal()" class="modal-close-btn">&times;</button>
+      </div>
+      <p style="font-size:12.5px;color:var(--text-2);margin:0 0 16px 0;">Tailor your sonic experience with 5 precision hardware-modeled EQ bands.</p>
+      
+      <div class="eq-modal-body">
+        <div class="eq-presets-row">
+          <button class="eq-preset-btn active" id="eq-btn-flat" onclick="applyEqPreset('flat')">Flat</button>
+          <button class="eq-preset-btn" id="eq-btn-bass" onclick="applyEqPreset('bass')">Bass Boost</button>
+          <button class="eq-preset-btn" id="eq-btn-vocal" onclick="applyEqPreset('vocal')">Vocal Clarity</button>
+          <button class="eq-preset-btn" id="eq-btn-acoustic" onclick="applyEqPreset('acoustic')">Acoustic</button>
+          <button class="eq-preset-btn" id="eq-btn-electronic" onclick="applyEqPreset('electronic')">Electronic</button>
+        </div>
+
+        <div class="eq-bands-container">
+          <div class="eq-band-col">
+            <span class="eq-band-val" id="eq-val-0">0dB</span>
+            <input type="range" class="eq-band-slider" min="-12" max="12" step="0.5" value="0" id="eq-band-0" oninput="updateEqBand(0, this.value)" />
+            <span class="eq-band-label">60Hz</span>
+          </div>
+          <div class="eq-band-col">
+            <span class="eq-band-val" id="eq-val-1">0dB</span>
+            <input type="range" class="eq-band-slider" min="-12" max="12" step="0.5" value="0" id="eq-band-1" oninput="updateEqBand(1, this.value)" />
+            <span class="eq-band-label">250Hz</span>
+          </div>
+          <div class="eq-band-col">
+            <span class="eq-band-val" id="eq-val-2">0dB</span>
+            <input type="range" class="eq-band-slider" min="-12" max="12" step="0.5" value="0" id="eq-band-2" oninput="updateEqBand(2, this.value)" />
+            <span class="eq-band-label">1kHz</span>
+          </div>
+          <div class="eq-band-col">
+            <span class="eq-band-val" id="eq-val-3">0dB</span>
+            <input type="range" class="eq-band-slider" min="-12" max="12" step="0.5" value="0" id="eq-band-3" oninput="updateEqBand(3, this.value)" />
+            <span class="eq-band-label">4kHz</span>
+          </div>
+          <div class="eq-band-col">
+            <span class="eq-band-val" id="eq-val-4">0dB</span>
+            <input type="range" class="eq-band-slider" min="-12" max="12" step="0.5" value="0" id="eq-band-4" oninput="updateEqBand(4, this.value)" />
+            <span class="eq-band-label">16kHz</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modular Data & Utilities Layer [T2-01 to T2-07] -->
+  <script src="js/config.js?v=2.5"></script>
+  <script src="js/utils.js?v=2.5"></script>
+  <script src="js/models.js?v=2.5"></script>
+  <script src="js/state.js?v=2.5"></script>
+  <script src="js/db.js?v=2.5"></script>
+  <script src="js/api.js?v=2.5"></script>
 
   <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.5/dist/mqtt.min.js"></script>
   <script src="ytmusic_api.js?v=8.0"></script>

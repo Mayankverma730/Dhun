@@ -9,3 +9,18 @@
 .idea/
 Thumbs.db
 Desktop.ini
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Large media files (too big for git)
+*.mp3
+*.wav
+*.flac
+*.aac
+
+# Local environment
+.env
+.env.local
+.vercel

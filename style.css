@@ -3817,17 +3817,28 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   cursor: none !important;
 }
 
+/* HIGH-SPECIFICITY AUTOHIDE OVERRIDES
+   These rules must beat the .pvp-dock-overlay:hover .pvp-fs-btn selector
+   (specificity 0,3,0) by using a higher-weight chain (0,4,0+).
+   When autohide is active the buttons MUST be invisible even on hover. */
+.pvp-dock-overlay.autohide .pvp-fs-btn,
+.pvp-dock-overlay.autohide .pvp-center-badge,
+.pvp-dock-overlay:hover.autohide .pvp-fs-btn,
+.pvp-dock-overlay:hover.autohide .pvp-center-badge,
 .yt-player-dock.autohide .pvp-fs-btn,
 .yt-player-dock.autohide .pvp-center-badge,
+.yt-player-dock.autohide .pvp-dock-overlay .pvp-fs-btn,
+.yt-player-dock.autohide .pvp-dock-overlay .pvp-center-badge,
+.yt-player-dock.autohide .pvp-dock-overlay:hover .pvp-fs-btn,
+.yt-player-dock.autohide .pvp-dock-overlay:hover .pvp-center-badge,
 .yt-player-dock:fullscreen.autohide .pvp-fs-btn,
 .yt-player-dock:fullscreen.autohide .pvp-center-badge,
 .yt-player-dock:-webkit-full-screen.autohide .pvp-fs-btn,
-.yt-player-dock:-webkit-full-screen.autohide .pvp-center-badge,
-.pvp-dock-overlay.autohide .pvp-fs-btn,
-.pvp-dock-overlay.autohide .pvp-center-badge {
+.yt-player-dock:-webkit-full-screen.autohide .pvp-center-badge {
   opacity: 0 !important;
   transform: scale(0.85) !important;
   pointer-events: none !important;
+  transition: none !important; /* Instant disappear, no fade-back on hover */
 }
 
 /* Clean video presentation - unhindered crisp edge-to-edge view */
@@ -5812,4 +5823,295 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
 #yt-mode-header,
 #discover-taste-banner {
   display: none !important;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   TIER 3 & TIER 5 STYLING EXTENSIONS
+   ══════════════════════════════════════════════════════════════ */
+
+/* [T3-05] Loading Skeletons */
+.skeleton {
+  background: linear-gradient(90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.09) 50%,
+    rgba(255, 255, 255, 0.04) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite ease-in-out;
+  border-radius: 8px;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* [T3-03] Enhanced Toast System */
+.dhun-toast-container {
+  position: fixed;
+  bottom: 104px;
+  right: 28px;
+  z-index: 999999;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 10px;
+  pointer-events: none;
+}
+.dhun-toast {
+  pointer-events: auto;
+  min-width: 280px;
+  max-width: 440px;
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: rgba(18, 18, 28, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-family: var(--font, 'Outfit', sans-serif);
+  font-size: 13.5px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  opacity: 0;
+  transform: translateY(12px) scale(0.96);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dhun-toast.visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+.dhun-toast-success {
+  border-left: 4px solid #10b981;
+}
+.dhun-toast-error {
+  border-left: 4px solid #ef4444;
+}
+.dhun-toast-warning {
+  border-left: 4px solid #f59e0b;
+}
+.dhun-toast-info {
+  border-left: 4px solid #8b5cf6;
+}
+.dhun-toast-msg {
+  flex: 1;
+  line-height: 1.4;
+}
+.dhun-toast-action {
+  background: rgba(139, 92, 246, 0.25);
+  color: #c4b5fd;
+  border: 1px solid rgba(139, 92, 246, 0.45);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.dhun-toast-action:hover {
+  background: rgba(139, 92, 246, 0.45);
+  color: #fff;
+}
+.dhun-toast-close {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 2px;
+  transition: color 0.15s;
+}
+.dhun-toast-close:hover {
+  color: #fff;
+}
+
+/* [T3-08] Jam Session Chat */
+.jam-chat-wrapper {
+  margin-top: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.jam-chat-header {
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  justify-content: space-between;
+}
+.jam-chat-messages {
+  height: 140px;
+  overflow-y: auto;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  scroll-behavior: smooth;
+}
+.jam-chat-msg {
+  display: flex;
+  flex-direction: column;
+  align-self: flex-start;
+  max-width: 82%;
+  background: rgba(255, 255, 255, 0.07);
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-size: 12.5px;
+}
+.jam-chat-msg.own {
+  align-self: flex-end;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.35), rgba(99, 102, 241, 0.35));
+  border: 1px solid rgba(139, 92, 246, 0.4);
+}
+.jam-chat-sender {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--purple-bright);
+  margin-bottom: 2px;
+}
+.jam-chat-msg.own .jam-chat-sender {
+  color: #c4b5fd;
+}
+.jam-chat-text {
+  color: var(--text-1);
+  word-break: break-word;
+}
+.jam-chat-input-bar {
+  display: flex;
+  padding: 8px;
+  gap: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.2);
+}
+.jam-chat-input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 7px 12px;
+  color: #fff;
+  font-size: 12.5px;
+  font-family: inherit;
+  outline: none;
+}
+.jam-chat-input:focus {
+  border-color: var(--purple);
+}
+.jam-chat-send-btn {
+  background: var(--purple);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.jam-chat-send-btn:hover {
+  opacity: 0.9;
+}
+
+/* [T3-04] Keyboard Shortcuts Modal */
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.shortcut-row:last-child {
+  border-bottom: none;
+}
+.shortcut-desc {
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+.shortcut-keys {
+  display: flex;
+  gap: 6px;
+}
+.shortcut-key {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* [T5-09] Audio Equalizer Controls */
+.eq-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 10px 0;
+}
+.eq-bands-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 14px;
+}
+.eq-band-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+.eq-band-slider {
+  writing-mode: bt-lr; /* IE/Edge */
+  -webkit-appearance: slider-vertical;
+  appearance: slider-vertical;
+  width: 8px;
+  height: 140px;
+  cursor: pointer;
+  accent-color: var(--purple-bright);
+}
+.eq-band-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-2);
+}
+.eq-band-val {
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-family: monospace;
+}
+.eq-presets-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.eq-preset-btn {
+  padding: 6px 14px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.eq-preset-btn:hover,
+.eq-preset-btn.active {
+  background: var(--purple);
+  color: #fff;
+  border-color: var(--purple-bright);
 }

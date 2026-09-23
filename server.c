@@ -50,6 +50,11 @@
 #include "hash.h"
 #include "sort.h"
 #include "playlist.h"
+#include "avl.h"
+#include "trie.h"
+#include "graph.h"
+#include "cache.h"
+#include "logger.h"
 
 /* ── Port ─────────────────────────────────────── */
 #define PORT 3000
@@ -64,6 +69,10 @@ static Heap           *g_heap_plays;
 static Heap           *g_heap_rating;
 static HashTable      *g_hash;
 static PlaylistManager*g_pm;
+static AVLTree        *g_avl;
+static Trie           *g_trie;
+static SongGraph      *g_graph;
+static LRUCache       *g_cache;
 
 /* ── JSON helpers ─────────────────────────────── */
 static void json_escape(const char *src, char *dst, int max)
@@ -452,12 +461,108 @@ static void route_search_songs(SOCKET sock, const char *q)
 /* GET /api/songs/:id */
 static void route_get_song_by_id(SOCKET sock, int id)
 {
+    /* LRU Cache check [T5-08] */
+    Song *cached = cache_get(g_cache, id);
+    if (cached) {
+        char buf[512];
+        song_to_json_liked(cached, buf, sizeof(buf));
+        send_ok(sock, buf);
+        return;
+    }
+
     Song *s = hash_lookup(g_hash, id);
     if (!s) s = lib_find_by_id(g_lib, id);
     if (!s) { send_error(sock, 404, "song not found"); return; }
+
+    cache_put(g_cache, id, *s);
+
     char buf[512];
     song_to_json_liked(s, buf, sizeof(buf));
     send_ok(sock, buf);
+}
+
+/* GET /api/songs/autocomplete?q=... [T5-02] */
+static void route_autocomplete(SOCKET sock, const char *prefix)
+{
+    if (!prefix || !prefix[0]) {
+        send_ok(sock, "[]");
+        return;
+    }
+
+    int ids[20];
+    char titles[20][128];
+    int count = trie_autocomplete(g_trie, prefix, ids, titles, 10);
+
+    char *resp = malloc(BUF);
+    if (!resp) { send_error(sock, 500, "out of memory"); return; }
+    int pos = 0;
+    resp[pos++] = '[';
+    for (int i = 0; i < count; i++) {
+        Song *s = hash_lookup(g_hash, ids[i]);
+        if (!s) s = lib_find_by_id(g_lib, ids[i]);
+        if (s) {
+            if (i > 0) resp[pos++] = ',';
+            char tmp[512];
+            song_to_json_liked(s, tmp, sizeof(tmp));
+            int len = (int)strlen(tmp);
+            if (pos + len + 4 < BUF) { memcpy(resp + pos, tmp, len); pos += len; }
+        }
+    }
+    resp[pos++] = ']';
+    resp[pos] = '\0';
+    send_ok(sock, resp);
+    free(resp);
+}
+
+/* GET /api/songs/avl/search?q=... [T5-01] */
+static void route_avl_search(SOCKET sock, const char *q)
+{
+    if (!q || !q[0]) {
+        route_get_songs(sock);
+        return;
+    }
+
+    AVLNode *n = avl_search(g_avl, q);
+    if (!n) {
+        send_ok(sock, "[]");
+        return;
+    }
+
+    char tmp[512];
+    song_to_json_liked(&n->song, tmp, sizeof(tmp));
+    char resp[600];
+    snprintf(resp, sizeof(resp), "[%s]", tmp);
+    send_ok(sock, resp);
+}
+
+/* GET /api/songs/:id/similar [T5-03] */
+static void route_song_similar(SOCKET sock, int id)
+{
+    int similar_ids[10];
+    float scores[10];
+    int count = graph_get_similar(g_graph, id, similar_ids, scores, 5);
+
+    char *resp = malloc(BUF);
+    if (!resp) { send_error(sock, 500, "out of memory"); return; }
+    int pos = 0;
+    resp[pos++] = '[';
+    int first = 1;
+    for (int i = 0; i < count; i++) {
+        Song *s = hash_lookup(g_hash, similar_ids[i]);
+        if (!s) s = lib_find_by_id(g_lib, similar_ids[i]);
+        if (s) {
+            if (!first) resp[pos++] = ',';
+            first = 0;
+            char tmp[512];
+            song_to_json_liked(s, tmp, sizeof(tmp));
+            int len = (int)strlen(tmp);
+            if (pos + len + 4 < BUF) { memcpy(resp + pos, tmp, len); pos += len; }
+        }
+    }
+    resp[pos++] = ']';
+    resp[pos] = '\0';
+    send_ok(sock, resp);
+    free(resp);
 }
 
 /* POST /api/songs  body: {title,artist,album,genre,duration,rating} */
@@ -511,9 +616,13 @@ static void route_add_song(SOCKET sock, const char *body)
     Song *s = lib_find_by_id(g_lib, id);
     if (s) {
         bst_insert(g_bst, *s);
+        avl_insert(g_avl, *s);
         hash_insert(g_hash, *s);
         heap_insert(g_heap_plays, *s);
         heap_insert(g_heap_rating, *s);
+        trie_insert(g_trie, s->title, s->id, s->title);
+        graph_add_song(g_graph, s);
+        cache_put(g_cache, s->id, *s);
     }
 
     char buf[512];
@@ -527,9 +636,12 @@ static void route_delete_song(SOCKET sock, int id)
     Song *s = lib_find_by_id(g_lib, id);
     if (!s) { send_error(sock, 404, "song not found"); return; }
 
-    /* BST deletes by title, hash by id */
+    /* BST and AVL deletes by title, hash by id */
     Song *sdel = lib_find_by_id(g_lib, id);
-    if (sdel) bst_delete(g_bst, sdel->title);
+    if (sdel) {
+        bst_delete(g_bst, sdel->title);
+        avl_delete(g_avl, sdel->title);
+    }
     hash_delete(g_hash, id);
     lib_remove_song(g_lib, id);
 
@@ -1369,6 +1481,56 @@ static void route_jam_leave(SOCKET sock, const char *body)
     send_ok(sock, "{\"success\":true}");
 }
 
+/* POST /api/jam/suggest [T3-09] */
+static void route_jam_suggest(SOCKET sock, const char *body)
+{
+    char room_code[32], sender[64], song_buf[2048];
+    json_str(body, "roomId", room_code, sizeof(room_code));
+    json_str(body, "sender", sender, sizeof(sender));
+    if (!sender[0]) strcpy(sender, "Guest");
+
+    JamRoom *r = jam_find_room(room_code);
+    if (!r) {
+        send_error(sock, 404, "jam room not found");
+        return;
+    }
+
+    if (json_obj(body, "song", song_buf, sizeof(song_buf))) {
+        jam_add_event(r, "SONG_SUGGEST", sender, song_buf);
+        send_ok(sock, "{\"success\":true,\"message\":\"Song suggested to host\"}");
+    } else {
+        send_error(sock, 400, "song object required");
+    }
+}
+
+/* POST /api/jam/chat [T3-08] */
+static void route_jam_chat(SOCKET sock, const char *body)
+{
+    char room_code[32], sender[64], message[512];
+    json_str(body, "roomId", room_code, sizeof(room_code));
+    json_str(body, "sender", sender, sizeof(sender));
+    json_str(body, "message", message, sizeof(message));
+    if (!sender[0]) strcpy(sender, "Guest");
+
+    JamRoom *r = jam_find_room(room_code);
+    if (!r) {
+        send_error(sock, 404, "jam room not found");
+        return;
+    }
+
+    if (!message[0]) {
+        send_error(sock, 400, "message cannot be empty");
+        return;
+    }
+
+    char payload[1024];
+    char escaped_msg[512];
+    json_escape(message, escaped_msg, sizeof(escaped_msg));
+    snprintf(payload, sizeof(payload), "{\"sender\":\"%s\",\"message\":\"%s\"}", sender, escaped_msg);
+    jam_add_event(r, "CHAT_MESSAGE", sender, payload);
+    send_ok(sock, "{\"success\":true}");
+}
+
 /* ═══════════════════════════════════════════════
    USER AUTHENTICATION & PASSWORD RESET MODULE
    ═══════════════════════════════════════════════ */
@@ -1688,9 +1850,12 @@ static void handle_request(SOCKET sock, char *req, int req_len, const char *clie
 
     /* Rate limiting check for all API routes [T1-04] */
     if (!check_rate_limit(client_ip)) {
+        LOG_WARN("Rate limit exceeded for %s", client_ip);
         send_response(sock, 429, "{\"error\":\"Rate limit exceeded. Please wait a moment.\"}");
         return;
     }
+
+    LOG_INFO("%s %s from %s", method, path, client_ip);
 
     /* ── /api/songs ─────────────────────────── */
     if (strcmp(seg2,"songs")==0) {
@@ -1709,6 +1874,20 @@ static void handle_request(SOCKET sock, char *req, int req_len, const char *clie
             route_search_songs(sock, q); return;
         }
 
+        if (strcmp(seg3,"autocomplete")==0) {
+            /* /api/songs/autocomplete?q= [T5-02] */
+            char q[MAX_TITLE];
+            get_query_param(path, "q", q, sizeof(q));
+            route_autocomplete(sock, q); return;
+        }
+
+        if (strcmp(seg3,"avl")==0 && strcmp(seg4,"search")==0) {
+            /* /api/songs/avl/search?q= [T5-01] */
+            char q[MAX_TITLE];
+            get_query_param(path, "q", q, sizeof(q));
+            route_avl_search(sock, q); return;
+        }
+
         int song_id = atoi(seg3);
 
         if (seg4[0]=='\0') {
@@ -1716,6 +1895,11 @@ static void handle_request(SOCKET sock, char *req, int req_len, const char *clie
             if (strcmp(method,"GET")==0)    { route_get_song_by_id(sock, song_id); return; }
             if (strcmp(method,"DELETE")==0) { route_delete_song(sock, song_id); return; }
             send_error(sock,405,"method not allowed"); return;
+        }
+
+        if (strcmp(seg4,"similar")==0 && strcmp(method,"GET")==0) {
+            /* /api/songs/:id/similar [T5-03] */
+            route_song_similar(sock, song_id); return;
         }
 
         if (strcmp(seg4,"play")==0 && strcmp(method,"PUT")==0) {
@@ -1796,6 +1980,12 @@ static void handle_request(SOCKET sock, char *req, int req_len, const char *clie
         if (strcmp(seg3,"leave")==0 && strcmp(method,"POST")==0) {
             route_jam_leave(sock, body); return;
         }
+        if (strcmp(seg3,"suggest")==0 && strcmp(method,"POST")==0) {
+            route_jam_suggest(sock, body); return;
+        }
+        if (strcmp(seg3,"chat")==0 && strcmp(method,"POST")==0) {
+            route_jam_chat(sock, body); return;
+        }
         send_error(sock,404,"not found"); return;
     }
 
@@ -1826,6 +2016,12 @@ static void handle_request(SOCKET sock, char *req, int req_len, const char *clie
     send_error(sock, 404, "endpoint not found");
 }
 
+static int get_server_port(void)
+{
+    const char *p = getenv("DHUN_PORT");
+    return p ? atoi(p) : PORT;
+}
+
 /* ── Seed sample songs ────────────────────────── */
 static void seed_data(void)
 {
@@ -1842,9 +2038,13 @@ static void seed_data(void)
         if (s) {
             s->play_count = 1;
             bst_insert(g_bst, *s);
+            avl_insert(g_avl, *s);
             hash_insert(g_hash, *s);
             heap_insert(g_heap_plays, *s);
             heap_insert(g_heap_rating, *s);
+            trie_insert(g_trie, s->title, s->id, s->title);
+            graph_add_song(g_graph, s);
+            cache_put(g_cache, s->id, *s);
         }
     }
 }
@@ -1854,6 +2054,9 @@ static void seed_data(void)
 ══════════════════════════════════════════════ */
 int main(void)
 {
+    log_init(LOG_LEVEL_INFO, NULL);
+    LOG_INFO("Starting Dhun Music Management System server...");
+
     /* Init DSA */
     g_lib          = lib_create();
     g_history      = stack_create();
@@ -1863,10 +2066,16 @@ int main(void)
     g_heap_rating  = heap_create(HEAP_BY_RATING);
     g_hash         = hash_create();
     g_pm           = pm_create();
+    g_avl          = avl_create();
+    g_trie         = trie_create();
+    g_graph        = graph_create();
+    g_cache        = cache_create(50);
     memset(g_liked, 0, sizeof(g_liked));
 
     if (!g_lib || !g_history || !g_queue || !g_bst ||
-        !g_heap_plays || !g_heap_rating || !g_hash || !g_pm) {
+        !g_heap_plays || !g_heap_rating || !g_hash || !g_pm ||
+        !g_avl || !g_trie || !g_graph || !g_cache) {
+        LOG_ERROR("Failed to initialize DSA structures");
         fprintf(stderr, "Failed to initialize DSA structures\n");
         return 1;
     }
@@ -1876,11 +2085,13 @@ int main(void)
     /* Winsock init */
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2,2), &wsa) != 0) {
+        LOG_ERROR("WSAStartup failed");
         fprintf(stderr, "WSAStartup failed\n"); return 1;
     }
 
     SOCKET server_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (server_sock == INVALID_SOCKET) {
+        LOG_ERROR("socket() failed");
         fprintf(stderr, "socket() failed\n"); WSACleanup(); return 1;
     }
 
@@ -1888,18 +2099,36 @@ int main(void)
     int opt = 1;
     setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
 
+    int active_port = get_server_port();
+
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family      = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port        = htons(PORT);
+    addr.sin_port        = htons((u_short)active_port);
 
     if (bind(server_sock, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
-        fprintf(stderr, "bind() failed (port %d in use?)\n", PORT);
-        closesocket(server_sock); WSACleanup(); return 1;
+        /* Port may be in TIME_WAIT — try fallback ports 3001, 3002, 3003 */
+        int fallback_ports[] = {3001, 3002, 3003, 3004, 8080, 8888};
+        int fb_count = (int)(sizeof(fallback_ports)/sizeof(fallback_ports[0]));
+        int bound = 0;
+        for (int f = 0; f < fb_count && !bound; f++) {
+            active_port = fallback_ports[f];
+            addr.sin_port = htons((u_short)active_port);
+            if (bind(server_sock, (struct sockaddr*)&addr, sizeof(addr)) != SOCKET_ERROR) {
+                bound = 1;
+                printf("[Server] Port 3000 busy, using fallback port %d\n", active_port);
+            }
+        }
+        if (!bound) {
+            LOG_ERROR("bind() failed on all ports");
+            fprintf(stderr, "bind() failed — all ports busy\n");
+            closesocket(server_sock); WSACleanup(); return 1;
+        }
     }
 
     if (listen(server_sock, 10) == SOCKET_ERROR) {
+        LOG_ERROR("listen() failed");
         fprintf(stderr, "listen() failed\n");
         closesocket(server_sock); WSACleanup(); return 1;
     }
@@ -1908,18 +2137,20 @@ int main(void)
     printf("  ╔══════════════════════════════════════════════════╗\n");
     printf("  ║  🎵  VIBE API Server — C + DSA Backend           ║\n");
     printf("  ╠══════════════════════════════════════════════════╣\n");
-    printf("  ║  Listening on  http://localhost:%d              ║\n", PORT);
-    printf("  ║  Library: DLL  |  Search: BST  |  Lookup: Hash  ║\n");
+    printf("  ║  Listening on  http://localhost:%d              ║\n", active_port);
+    printf("  ║  Library: DLL  |  Search: BST & AVL | Hash: O(1) ║\n");
     printf("  ║  Queue: CQ     |  History: Stack | Charts: Heap  ║\n");
-    printf("  ║  Sort: MergeSort  |  Playlists: SLL             ║\n");
+    printf("  ║  Trie: Prefix  |  Graph: Similar | Cache: LRU    ║\n");
     printf("  ╠══════════════════════════════════════════════════╣\n");
     printf("  ║  Songs seeded: %d                                ║\n", lib_size(g_lib));
     printf("  ║  Press Ctrl+C to stop.                          ║\n");
     printf("  ╚══════════════════════════════════════════════════╝\n\n");
     fflush(stdout);
 
+    LOG_INFO("Server listening on port %d with all DSA engines initialized", active_port);
+
     char *req_buf = malloc(BUF);
-    if (!req_buf) { fprintf(stderr,"oom\n"); return 1; }
+    if (!req_buf) { LOG_ERROR("oom for req_buf"); fprintf(stderr,"oom\n"); return 1; }
 
     for (;;) {
         struct sockaddr_in client_addr;
@@ -1977,6 +2208,11 @@ int main(void)
     heap_destroy(g_heap_rating);
     hash_destroy(g_hash);
     pm_destroy(g_pm);
+    avl_destroy(g_avl);
+    trie_destroy(g_trie);
+    graph_destroy(g_graph);
+    cache_destroy(g_cache);
+    log_close();
     WSACleanup();
     return 0;
 }

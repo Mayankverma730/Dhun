@@ -21,12 +21,17 @@
 #include <stdlib.h>
 #include "hash.h"
 
-/* ── Hash function ─────────────────────────────
- * Simple modulo — good for integer keys.
- * Using prime table size (101) reduces clustering. */
+/* ── Hash function (MurmurHash3 Integer Finalizer) [T5-06] ────
+ * Provides uniform bucket distribution and eliminates clustering. */
 static int hash_fn(int id)
 {
-    return ((id % HASH_TABLE_SIZE) + HASH_TABLE_SIZE) % HASH_TABLE_SIZE;
+    unsigned int key = (unsigned int)id;
+    key ^= key >> 16;
+    key *= 0x85ebca6b;
+    key ^= key >> 13;
+    key *= 0xc2b2ae35;
+    key ^= key >> 16;
+    return (int)(key % HASH_TABLE_SIZE);
 }
 
 /* ── Create ──────────────────────────────────── */

@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  dhun:
+    build: .
+    container_name: dhun_music_server
+    ports:
+      - "3000:3000"
+    environment:
+      - DHUN_PORT=3000
+      - DHUN_ENV=production
+    restart: unless-stopped
+    volumes:
+      - dhun_data:/app/data
+
+volumes:
+  dhun_data:
