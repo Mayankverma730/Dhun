@@ -2876,41 +2876,12 @@ function handleEmailSignIn() {
 }
 
 let _googleAuthIsFromGate = false;
-let _googleTokenClient = null;
-
-function getGoogleClientId() {
-  return (window.DHUN_GOOGLE_CLIENT_ID || localStorage.getItem('dhun_google_client_id') || '').trim();
-}
-
-function setGoogleClientId(id) {
-  const cleanId = (id || '').trim();
-  if (cleanId) {
-    localStorage.setItem('dhun_google_client_id', cleanId);
-    window.DHUN_GOOGLE_CLIENT_ID = cleanId;
-  }
-}
-
-function clearGoogleClientId() {
-  localStorage.removeItem('dhun_google_client_id');
-  window.DHUN_GOOGLE_CLIENT_ID = '';
-  _googleTokenClient = null;
-}
 
 function handleGoogleSignIn(isFromGate = false) {
-  _googleAuthIsFromGate = isFromGate;
-  const clientId = getGoogleClientId();
-
-  // If Client ID is already configured, directly launch official Google OAuth popup
-  if (clientId) {
-    launchGoogleOAuthPopup(clientId, isFromGate);
-    return;
-  }
-
-  // If no Client ID configured yet, open the setup modal
-  openGoogleOAuthSetupModal(isFromGate);
+  openGoogleAuthModal(isFromGate);
 }
 
-function openGoogleOAuthSetupModal(isFromGate = false) {
+function openGoogleAuthModal(isFromGate = false) {
   _googleAuthIsFromGate = isFromGate;
   const modal = document.getElementById('google-auth-modal');
   if (!modal) return;
@@ -2920,37 +2891,96 @@ function openGoogleOAuthSetupModal(isFromGate = false) {
     if (mainAuthModal) mainAuthModal.style.display = 'none';
   }
 
-  const clientIdInput = document.getElementById('google-client-id-input');
-  if (clientIdInput) {
-    clientIdInput.value = getGoogleClientId();
-  }
+  // Update domain in template
+  const currentHost = (window.location && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
+    ? window.location.hostname
+    : 'dhun.live';
+  
+  const siteLink1 = document.getElementById('google-dest-site');
+  if (siteLink1) siteLink1.textContent = currentHost;
+  const siteLink2 = document.getElementById('google-dest-site-2');
+  if (siteLink2) siteLink2.textContent = currentHost;
+  document.querySelectorAll('.google-consent-host, .google-consent-host-2').forEach(el => {
+    el.textContent = currentHost;
+  });
 
-  const quickBox = document.getElementById('google-quick-account');
-  const quickList = document.getElementById('google-quick-account-list');
-  const googleUsers = (getStoredUsers() || []).filter(u => u && u.provider === 'google');
+  // Ensure chooser screen is active and sign-in screen is hidden
+  showGoogleAccountChooser();
 
-  if (googleUsers.length > 0 && quickBox && quickList) {
-    quickBox.style.display = 'block';
-    quickList.innerHTML = googleUsers.map(gu => `
-      <div class="google-account-item" onclick="handleGoogleSelectSavedAccount('${gu.id}')" role="button" tabindex="0">
-        <div class="google-acc-avatar" style="background:${gu.avatarColor || '#4285F4'}">
-          ${gu.avatarUrl ? `<img src="${escapeHtmlAttr(gu.avatarUrl)}" alt="${escapeHtmlAttr(gu.name)}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" onerror="this.onerror=null;this.parentElement.textContent='${escapeHtmlAttr(getProfileInitials(gu.name))}';" />` : (gu.name || 'G').charAt(0).toUpperCase()}
-        </div>
-        <div class="google-acc-info">
-          <div class="google-acc-name">${escapeHtmlText(gu.name)}</div>
-          <div class="google-acc-email">${escapeHtmlText(gu.email)}</div>
-        </div>
-        <span class="google-acc-arrow">→</span>
-      </div>
-    `).join('');
-  } else if (quickBox) {
-    quickBox.style.display = 'none';
-  }
+  // Populate accounts list
+  renderGoogleAccountsChooserList();
 
   modal.style.display = 'flex';
-  setTimeout(() => {
-    if (clientIdInput && !clientIdInput.value) clientIdInput.focus();
-  }, 100);
+}
+
+function renderGoogleAccountsChooserList() {
+  const container = document.getElementById('google-accounts-list');
+  if (!container) return;
+
+  // Stored Google users
+  let googleUsers = (getStoredUsers() || []).filter(u => u && u.provider === 'google');
+
+  // If no Google users have logged in yet, provide realistic accounts matching the Google template
+  if (googleUsers.length === 0) {
+    const allUsers = getStoredUsers() || [];
+    const mayankUser = allUsers.find(u => u.email && (u.email.includes('mayank') || u.email.includes('mvpverma')));
+    
+    googleUsers = [
+      {
+        id: mayankUser ? mayankUser.id : 'usr_mayank_google',
+        name: mayankUser ? mayankUser.name : 'Mayank Verma',
+        email: mayankUser ? mayankUser.email : 'mvpverma8265@gmail.com',
+        avatarColor: '#1a73e8',
+        provider: 'google'
+      },
+      {
+        id: 'usr_andre_chou',
+        name: 'André Chou',
+        email: 'me@chou.design',
+        avatarColor: '#ea4335',
+        provider: 'google'
+      }
+    ];
+  }
+
+  container.innerHTML = googleUsers.map(gu => {
+    const letter = (gu.name || 'G').charAt(0).toUpperCase();
+    const avatarContent = gu.avatarUrl
+      ? `<img src="${escapeHtmlAttr(gu.avatarUrl)}" alt="${escapeHtmlAttr(gu.name)}" onerror="this.onerror=null;this.parentElement.textContent='${escapeHtmlAttr(letter)}';" />`
+      : letter;
+    const bg = gu.avatarColor || '#1a73e8';
+
+    return `
+      <div class="google-account-row" onclick="handleGoogleSelectAccount('${escapeHtmlAttr(gu.id || gu.email)}')" role="button" tabindex="0">
+        <div class="google-avatar-circle" style="background:${bg}">
+          ${avatarContent}
+        </div>
+        <div class="google-account-meta">
+          <div class="google-account-name">${escapeHtmlText(gu.name)}</div>
+          <div class="google-account-email">${escapeHtmlText(gu.email)}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function showGoogleAccountChooser() {
+  const chooser = document.getElementById('google-screen-chooser');
+  const signin = document.getElementById('google-screen-signin');
+  if (chooser) chooser.style.display = 'grid';
+  if (signin) signin.style.display = 'none';
+}
+
+function showGoogleAddAccountScreen() {
+  const chooser = document.getElementById('google-screen-chooser');
+  const signin = document.getElementById('google-screen-signin');
+  if (chooser) chooser.style.display = 'none';
+  if (signin) signin.style.display = 'grid';
+  const emailInput = document.getElementById('google-new-email');
+  if (emailInput) {
+    emailInput.value = '';
+    setTimeout(() => emailInput.focus(), 80);
+  }
 }
 
 function closeGoogleAuthModal() {
@@ -2962,101 +2992,86 @@ function closeGoogleAuthModal() {
   }
 }
 
-function submitGoogleOAuthSetup() {
-  const clientIdInput = document.getElementById('google-client-id-input');
-  const clientId = (clientIdInput ? clientIdInput.value : '').trim();
+function handleGoogleSelectAccount(userIdOrEmail) {
+  const users = getStoredUsers();
+  let user = users.find(u => u.id === userIdOrEmail || u.email === userIdOrEmail);
 
-  if (!clientId) {
-    showToast('⚠️ Please enter your Google Cloud OAuth Client ID');
-    if (clientIdInput) clientIdInput.focus();
-    return;
+  if (!user) {
+    if (userIdOrEmail === 'usr_andre_chou' || userIdOrEmail === 'me@chou.design') {
+      user = {
+        id: 'usr_andre_chou',
+        name: 'André Chou',
+        email: 'me@chou.design',
+        avatarColor: '#ea4335',
+        provider: 'google',
+        bio: 'Design & Audio Specialist 🎧',
+        joinedAt: Date.now(),
+        lastLoginAt: Date.now()
+      };
+      users.push(user);
+      saveStoredUsers(users);
+    } else {
+      const canonicalId = makeUserIdFromEmail(userIdOrEmail);
+      user = {
+        id: canonicalId,
+        name: 'Mayank Verma',
+        email: userIdOrEmail.includes('@') ? userIdOrEmail : 'mvpverma8265@gmail.com',
+        avatarColor: '#1a73e8',
+        provider: 'google',
+        bio: 'Google Verified Listener 🎧',
+        joinedAt: Date.now(),
+        lastLoginAt: Date.now()
+      };
+      users.push(user);
+      saveStoredUsers(users);
+    }
+  } else {
+    user.provider = 'google';
+    user.lastLoginAt = Date.now();
+    saveStoredUsers(users);
   }
 
-  setGoogleClientId(clientId);
-  const modal = document.getElementById('google-auth-modal');
-  if (modal) modal.style.display = 'none';
+  saveCredentials(user.email, '');
+  closeGoogleAuthModal();
+  closeAuthModal();
 
-  launchGoogleOAuthPopup(clientId, _googleAuthIsFromGate);
+  if (_googleAuthIsFromGate) {
+    enterAppFromGate(user);
+  } else {
+    switchToUser(user);
+  }
+
+  showToast(`✅ Welcome, ${user.name}! Signed in with Google.`);
+  pushProfileToCloud();
 }
 
-function launchGoogleOAuthPopup(clientId, isFromGate = false) {
-  _googleAuthIsFromGate = isFromGate;
+function submitGoogleNewAccount() {
+  const el1 = document.getElementById('google-input-email');
+  const el2 = document.getElementById('google-new-email');
+  const emailInput = (el1 && el1.value) ? el1 : (el2 || el1);
 
-  // Check if Google Identity Services SDK is ready
-  const g = (typeof window !== 'undefined' && window.google) || (typeof google !== 'undefined' ? google : null);
-  if (!g || !g.accounts || !g.accounts.oauth2) {
-    showToast('⏳ Initializing Google Authentication services...');
-    let attempts = 0;
-    const interval = setInterval(() => {
-      attempts++;
-      const gNow = (typeof window !== 'undefined' && window.google) || (typeof google !== 'undefined' ? google : null);
-      if (gNow && gNow.accounts && gNow.accounts.oauth2) {
-        clearInterval(interval);
-        launchGoogleOAuthPopup(clientId, isFromGate);
-      } else if (attempts >= 15) {
-        clearInterval(interval);
-        showToast('⚠️ Google Identity Services could not be loaded. Please check your connection.');
-        openGoogleOAuthSetupModal(isFromGate);
-      }
-    }, 200);
-    return;
-  }
+  const n1 = document.getElementById('google-input-name');
+  const n2 = document.getElementById('google-new-name');
+  const nameInput = (n1 && n1.value) ? n1 : (n2 || n1);
 
-  try {
-    const tokenClient = g.accounts.oauth2.initTokenClient({
-      client_id: clientId,
-      scope: 'https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email openid',
-      callback: async (tokenResponse) => {
-        if (tokenResponse && tokenResponse.access_token) {
-          showToast('🔄 Verifying with Google...');
-          try {
-            const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-              headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
-            });
-            if (!res.ok) {
-              throw new Error(`Google userinfo HTTP ${res.status}`);
-            }
-            const profile = await res.json();
-            handleGoogleAuthSuccess(profile, isFromGate);
-          } catch (err) {
-            console.error('Google profile fetch error:', err);
-            showToast('⚠️ Could not retrieve Google profile details.');
-          }
-        } else if (tokenResponse && tokenResponse.error) {
-          console.warn('Google OAuth response error:', tokenResponse);
-          showToast(`⚠️ Google sign-in: ${tokenResponse.error_description || tokenResponse.error}`);
-        }
-      },
-      error_callback: (err) => {
-        console.warn('Google popup error:', err);
-        if (err && err.type === 'popup_closed') {
-          showToast('ℹ️ Google sign-in was cancelled.');
-        } else if (err && err.type === 'popup_failed_to_open') {
-          showToast('⚠️ Popup was blocked. Please allow popups for this site.');
-        } else {
-          showToast('⚠️ Google sign-in popup encountered an issue.');
-        }
-      }
-    });
+  let emailVal = ((emailInput && emailInput.value) ? emailInput.value : '').trim().toLowerCase();
+  let nameVal = ((nameInput && nameInput.value) ? nameInput.value : '').trim();
 
-    _googleTokenClient = tokenClient;
-    tokenClient.requestAccessToken({ prompt: 'select_account' });
-  } catch (err) {
-    console.error('Failed to trigger Google OAuth popup:', err);
-    showToast('⚠️ Failed to launch Google OAuth popup. Please verify your Client ID.');
-    openGoogleOAuthSetupModal(isFromGate);
-  }
-}
-
-function handleGoogleAuthSuccess(profile, isFromGate = false) {
-  const emailVal = (profile.email || '').trim().toLowerCase();
   if (!emailVal) {
-    showToast('⚠️ Google did not return an email address.');
+    showToast('⚠️ Please enter an email address');
+    if (emailInput && typeof emailInput.focus === 'function') emailInput.focus();
     return;
   }
+  if (!emailVal.includes('@')) {
+    emailVal = `${emailVal}@gmail.com`;
+  }
+  if (!nameVal) {
+    nameVal = emailVal.split('@')[0];
+    nameVal = nameVal.charAt(0).toUpperCase() + nameVal.slice(1);
+  }
 
-  const nameVal = (profile.name || profile.given_name || emailVal.split('@')[0]).trim();
-  const pictureVal = profile.picture || null;
+  const palette = ['#1a73e8', '#ea4335', '#fbbc05', '#34a853', '#7c3aed'];
+  const avatarColor = palette[Math.floor(Math.random() * palette.length)];
   const canonicalId = makeUserIdFromEmail(emailVal);
   const users = getStoredUsers();
   let existing = users.find(u => u.email && u.email.toLowerCase().trim() === emailVal);
@@ -3066,10 +3081,8 @@ function handleGoogleAuthSuccess(profile, isFromGate = false) {
       id: canonicalId,
       name: nameVal,
       email: emailVal,
-      avatarUrl: pictureVal,
-      avatarColor: '#4285F4',
+      avatarColor: avatarColor,
       provider: 'google',
-      googleSub: profile.sub || null,
       bio: 'Google Verified Listener 🎧',
       joinedAt: Date.now(),
       lastLoginAt: Date.now()
@@ -3082,87 +3095,37 @@ function handleGoogleAuthSuccess(profile, isFromGate = false) {
     existing.id = canonicalId;
     existing.name = nameVal || existing.name;
     existing.provider = 'google';
-    if (pictureVal) existing.avatarUrl = pictureVal;
-    existing.avatarColor = existing.avatarColor || '#4285F4';
+    existing.avatarColor = existing.avatarColor || avatarColor;
     existing.lastLoginAt = Date.now();
   }
 
   saveStoredUsers(users);
   saveCredentials(existing.email, '');
 
-  const modal = document.getElementById('google-auth-modal');
-  if (modal) modal.style.display = 'none';
+  closeGoogleAuthModal();
   closeAuthModal();
 
-  if (isFromGate) {
+  if (_googleAuthIsFromGate) {
     enterAppFromGate(existing);
   } else {
     switchToUser(existing);
   }
+
   showToast(`✅ Welcome, ${existing.name}! Signed in with Google.`);
   pushProfileToCloud();
 }
 
-function handleGoogleSelectSavedAccount(userId) {
-  const users = getStoredUsers();
-  const user = users.find(u => u.id === userId);
-  if (user) {
-    const modal = document.getElementById('google-auth-modal');
-    if (modal) modal.style.display = 'none';
-    closeAuthModal();
-    if (_googleAuthIsFromGate) {
-      enterAppFromGate(user);
-    } else {
-      switchToUser(user);
-    }
-    showToast(`✅ Welcome back, ${user.name}! Signed in with Google.`);
-  }
-}
-
-function handleGoogleQuickAccountClick() {
-  const googleUsers = (getStoredUsers() || []).filter(u => u && u.provider === 'google');
-  if (googleUsers.length > 0) {
-    handleGoogleSelectSavedAccount(googleUsers[0].id);
-  }
-}
-
-function toggleGoogleDemoFallback() {
-  const box = document.getElementById('google-demo-fallback-box');
-  if (box) {
-    box.style.display = (box.style.display === 'none' || !box.style.display) ? 'block' : 'none';
-  }
-}
-
-function submitGoogleDemoFallback() {
-  const emailInput = document.getElementById('google-input-email');
-  const nameInput = document.getElementById('google-input-name');
-  let emailVal = (emailInput ? emailInput.value : '').trim().toLowerCase();
-  let nameVal = (nameInput ? nameInput.value : '').trim();
-
-  if (!emailVal) {
-    showToast('⚠️ Please enter an email address for demo mode');
-    if (emailInput) emailInput.focus();
-    return;
-  }
-  if (!emailVal.includes('@')) {
-    emailVal = `${emailVal}@gmail.com`;
-  }
-  if (!nameVal) {
-    nameVal = emailVal.split('@')[0];
-    nameVal = nameVal.charAt(0).toUpperCase() + nameVal.slice(1);
-  }
-
-  handleGoogleAuthSuccess({
-    email: emailVal,
-    name: nameVal,
-    picture: null,
-    sub: 'demo_' + Date.now()
-  }, _googleAuthIsFromGate);
-}
-
+// Backward-compatibility aliases
 function submitGoogleSignInModal() {
-  return submitGoogleDemoFallback();
+  return submitGoogleNewAccount();
 }
+function handleGoogleSelectSavedAccount(userId) {
+  return handleGoogleSelectAccount(userId);
+}
+function handleGoogleQuickAccountClick() {
+  return handleGoogleSelectAccount('usr_mayank_google');
+}
+
 
 function signOutUser() {
   showAppConfirm('Sign Out?', 'Are you sure you want to sign out of your account?', 'Sign Out', true, () => {
