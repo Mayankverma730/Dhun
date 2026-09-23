@@ -5477,6 +5477,35 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   text-overflow: ellipsis;
 }
 
+.google-acc-remove-btn {
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  color: #747775;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.45;
+  transition: all 0.15s ease;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+.google-account-row:hover .google-acc-remove-btn {
+  opacity: 0.9;
+}
+
+.google-acc-remove-btn:hover {
+  background: #fce8e6;
+  color: #c5221f;
+  opacity: 1;
+  transform: scale(1.1);
+}
+
 /* Consent Disclaimer */
 .google-consent-disclaimer {
   font-size: 12px;

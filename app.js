@@ -2187,7 +2187,26 @@ function getSavedCredentials() {
   return null;
 }
 
+function purgeLegacyAuthData() {
+  try {
+    const raw = localStorage.getItem('dhun_auth_users');
+    if (raw) {
+      const users = JSON.parse(raw);
+      if (Array.isArray(users)) {
+        const cleaned = users.filter(u => u && u.id !== 'usr_andre_chou' && u.email !== 'me@chou.design');
+        localStorage.setItem('dhun_auth_users', JSON.stringify(cleaned));
+      }
+    }
+    const active = localStorage.getItem('dhun_auth_active_user');
+    if (active === 'usr_andre_chou') {
+      localStorage.removeItem('dhun_auth_active_user');
+      localStorage.removeItem('dhun_active_profile');
+    }
+  } catch(e) {}
+}
+
 function initAuth() {
+  purgeLegacyAuthData();
   // Purge any previously stored passwords from localStorage
   try {
     const rawCreds = localStorage.getItem('dhun_saved_credentials');
@@ -2904,11 +2923,18 @@ function openGoogleAuthModal(isFromGate = false) {
     el.textContent = currentHost;
   });
 
-  // Ensure chooser screen is active and sign-in screen is hidden
-  showGoogleAccountChooser();
+  // Stored Google users ONLY - ZERO mock data
+  const googleUsers = (getStoredUsers() || []).filter(u => u && u.provider === 'google');
 
-  // Populate accounts list
-  renderGoogleAccountsChooserList();
+  // NEW APPROACH:
+  // If zero Google accounts are registered on this device: directly open the authentic Google Sign-in screen!
+  // If accounts exist: open the Google "Choose an account" screen with only their real accounts!
+  if (googleUsers.length === 0) {
+    showGoogleAddAccountScreen(false);
+  } else {
+    renderGoogleAccountsChooserList();
+    showGoogleAccountChooser();
+  }
 
   modal.style.display = 'flex';
 }
@@ -2917,30 +2943,12 @@ function renderGoogleAccountsChooserList() {
   const container = document.getElementById('google-accounts-list');
   if (!container) return;
 
-  // Stored Google users
-  let googleUsers = (getStoredUsers() || []).filter(u => u && u.provider === 'google');
+  // Real stored Google users ONLY
+  const googleUsers = (getStoredUsers() || []).filter(u => u && u.provider === 'google');
 
-  // If no Google users have logged in yet, provide realistic accounts matching the Google template
   if (googleUsers.length === 0) {
-    const allUsers = getStoredUsers() || [];
-    const mayankUser = allUsers.find(u => u.email && (u.email.includes('mayank') || u.email.includes('mvpverma')));
-    
-    googleUsers = [
-      {
-        id: mayankUser ? mayankUser.id : 'usr_mayank_google',
-        name: mayankUser ? mayankUser.name : 'Mayank Verma',
-        email: mayankUser ? mayankUser.email : 'mvpverma8265@gmail.com',
-        avatarColor: '#1a73e8',
-        provider: 'google'
-      },
-      {
-        id: 'usr_andre_chou',
-        name: 'André Chou',
-        email: 'me@chou.design',
-        avatarColor: '#ea4335',
-        provider: 'google'
-      }
-    ];
+    container.innerHTML = '';
+    return;
   }
 
   container.innerHTML = googleUsers.map(gu => {
@@ -2951,7 +2959,7 @@ function renderGoogleAccountsChooserList() {
     const bg = gu.avatarColor || '#1a73e8';
 
     return `
-      <div class="google-account-row" onclick="handleGoogleSelectAccount('${escapeHtmlAttr(gu.id || gu.email)}')" role="button" tabindex="0">
+      <div class="google-account-row" onclick="handleGoogleSelectAccount('${escapeHtmlAttr(gu.id)}')" role="button" tabindex="0">
         <div class="google-avatar-circle" style="background:${bg}">
           ${avatarContent}
         </div>
@@ -2959,9 +2967,30 @@ function renderGoogleAccountsChooserList() {
           <div class="google-account-name">${escapeHtmlText(gu.name)}</div>
           <div class="google-account-email">${escapeHtmlText(gu.email)}</div>
         </div>
+        <button type="button" class="google-acc-remove-btn" onclick="event.stopPropagation();handleRemoveGoogleAccount('${escapeHtmlAttr(gu.id)}')" title="Remove account from device" aria-label="Remove account">✕</button>
       </div>
     `;
   }).join('');
+}
+
+function handleRemoveGoogleAccount(userId) {
+  let users = getStoredUsers();
+  users = users.filter(u => u.id !== userId);
+  saveStoredUsers(users);
+
+  if (authState.currentUser && authState.currentUser.id === userId) {
+    localStorage.removeItem('dhun_auth_active_user');
+    localStorage.removeItem('dhun_active_profile');
+    authState.currentUser = null;
+  }
+
+  const googleUsers = users.filter(u => u && u.provider === 'google');
+  if (googleUsers.length === 0) {
+    showGoogleAddAccountScreen(false);
+  } else {
+    renderGoogleAccountsChooserList();
+  }
+  showToast('ℹ️ Account removed from this device.');
 }
 
 function showGoogleAccountChooser() {
@@ -2971,16 +3000,24 @@ function showGoogleAccountChooser() {
   if (signin) signin.style.display = 'none';
 }
 
-function showGoogleAddAccountScreen() {
+function showGoogleAddAccountScreen(canGoBack = true) {
   const chooser = document.getElementById('google-screen-chooser');
   const signin = document.getElementById('google-screen-signin');
   if (chooser) chooser.style.display = 'none';
   if (signin) signin.style.display = 'grid';
-  const emailInput = document.getElementById('google-new-email');
+
+  const backBtn = document.getElementById('google-back-to-chooser-btn');
+  if (backBtn) {
+    backBtn.style.display = canGoBack ? 'inline-block' : 'none';
+  }
+
+  const emailInput = document.getElementById('google-new-email') || document.getElementById('google-input-email');
   if (emailInput) {
     emailInput.value = '';
-    setTimeout(() => emailInput.focus(), 80);
+    setTimeout(() => { if (typeof emailInput.focus === 'function') emailInput.focus(); }, 80);
   }
+  const nameInput = document.getElementById('google-new-name') || document.getElementById('google-input-name');
+  if (nameInput) nameInput.value = '';
 }
 
 function closeGoogleAuthModal() {
@@ -2997,41 +3034,15 @@ function handleGoogleSelectAccount(userIdOrEmail) {
   let user = users.find(u => u.id === userIdOrEmail || u.email === userIdOrEmail);
 
   if (!user) {
-    if (userIdOrEmail === 'usr_andre_chou' || userIdOrEmail === 'me@chou.design') {
-      user = {
-        id: 'usr_andre_chou',
-        name: 'André Chou',
-        email: 'me@chou.design',
-        avatarColor: '#ea4335',
-        provider: 'google',
-        bio: 'Design & Audio Specialist 🎧',
-        joinedAt: Date.now(),
-        lastLoginAt: Date.now()
-      };
-      users.push(user);
-      saveStoredUsers(users);
-    } else {
-      const canonicalId = makeUserIdFromEmail(userIdOrEmail);
-      user = {
-        id: canonicalId,
-        name: 'Mayank Verma',
-        email: userIdOrEmail.includes('@') ? userIdOrEmail : 'mvpverma8265@gmail.com',
-        avatarColor: '#1a73e8',
-        provider: 'google',
-        bio: 'Google Verified Listener 🎧',
-        joinedAt: Date.now(),
-        lastLoginAt: Date.now()
-      };
-      users.push(user);
-      saveStoredUsers(users);
-    }
-  } else {
-    user.provider = 'google';
-    user.lastLoginAt = Date.now();
-    saveStoredUsers(users);
+    showToast('⚠️ Google account not found.');
+    return;
   }
 
+  user.provider = 'google';
+  user.lastLoginAt = Date.now();
+  saveStoredUsers(users);
   saveCredentials(user.email, '');
+
   closeGoogleAuthModal();
   closeAuthModal();
 
@@ -3123,7 +3134,10 @@ function handleGoogleSelectSavedAccount(userId) {
   return handleGoogleSelectAccount(userId);
 }
 function handleGoogleQuickAccountClick() {
-  return handleGoogleSelectAccount('usr_mayank_google');
+  const googleUsers = (getStoredUsers() || []).filter(u => u && u.provider === 'google');
+  if (googleUsers.length > 0) {
+    handleGoogleSelectAccount(googleUsers[0].id);
+  }
 }
 
 

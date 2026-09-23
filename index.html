@@ -14,7 +14,7 @@
     rel="stylesheet" />
   <link rel="icon" type="image/png" href="logo.png" />
   <link rel="apple-touch-icon" href="logo.png" />
-  <link rel="stylesheet" href="style.css?v=18.0" />
+  <link rel="stylesheet" href="style.css?v=19.0" />
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
     (function () {
@@ -1634,13 +1634,13 @@
               <input type="email" id="google-new-email" class="google-styled-input" placeholder="Email or phone" required autocomplete="email" />
             </div>
             <div class="google-input-group" style="margin-top:14px;">
-              <input type="text" id="google-new-name" class="google-styled-input" placeholder="Name (e.g. André Chou)" autocomplete="name" />
+              <input type="text" id="google-new-name" class="google-styled-input" placeholder="Display Name (optional)" autocomplete="name" />
             </div>
             <div style="font-size:12px;color:#5f6368;margin-top:12px;line-height:1.4;">
               Not your computer? Use Guest mode to sign in privately. <a href="javascript:void(0)" onclick="closeGoogleAuthModal();enterGuestMode();" style="color:#0b57d0;text-decoration:none;">Learn more</a>
             </div>
             <div class="google-form-actions">
-              <button type="button" class="google-btn-text" onclick="showGoogleAccountChooser()">Back</button>
+              <button type="button" class="google-btn-text" id="google-back-to-chooser-btn" onclick="showGoogleAccountChooser()">Back</button>
               <button type="submit" class="google-btn-blue">Next</button>
             </div>
           </form>
@@ -1810,7 +1810,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.5/dist/mqtt.min.js"></script>
   <script src="ytmusic_api.js?v=8.0"></script>
-  <script src="app.js?v=18.0"></script>
+  <script src="app.js?v=19.0"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 
