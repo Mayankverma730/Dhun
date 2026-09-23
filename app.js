@@ -2311,7 +2311,7 @@ function renderGateSavedProfiles() {
               </p>
               <p style="font-size:11px;color:var(--text-3);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtmlText(u.email || 'Profile')}</p>
             </div>
-            <span style="font-size:12px;color:${isG ? '#4285F4' : 'var(--purple)'};font-weight:600;">${isG ? '1-Tap ⚡' : 'Select 🔑'}</span>
+            <span style="font-size:12px;color:${isG ? '#4285F4' : 'var(--purple)'};font-weight:600;">${isG ? 'Google ⚡' : 'Select 🔑'}</span>
           </button>`;
         }).join('')}
       </div>
@@ -2324,8 +2324,8 @@ function selectSavedProfileForSignIn(userId) {
   const user = users.find(u => u.id === userId);
   if (!user) return;
   if (user.provider === 'google') {
-    enterAppFromGate(user);
-    showToast(`✅ Welcome back, ${user.name}! Signed in with Google.`);
+    // Open Google auth modal for confirmation instead of auto-login
+    handleGoogleSignIn(true);
     return;
   }
   switchGateTab('signin');
@@ -3393,10 +3393,95 @@ function handleGoogleSelectAccount(userIdOrEmail) {
     return;
   }
 
+  // Show a Google-style confirmation step before signing in
+  _pendingGoogleUser = user;
+  _pendingGoogleUsers = users;
+  showGoogleConfirmScreen(user);
+}
+
+let _pendingGoogleUser = null;
+let _pendingGoogleUsers = null;
+
+function showGoogleConfirmScreen(user) {
+  const chooser = document.getElementById('google-screen-chooser');
+  const signin = document.getElementById('google-screen-signin');
+  let confirmScreen = document.getElementById('google-screen-confirm');
+
+  if (chooser) chooser.style.display = 'none';
+  if (signin) signin.style.display = 'none';
+
+  // Create confirm screen if it doesn't exist
+  if (!confirmScreen) {
+    confirmScreen = document.createElement('div');
+    confirmScreen.id = 'google-screen-confirm';
+    confirmScreen.className = 'google-dialog-body';
+    const container = document.querySelector('.google-dialog-container');
+    if (container) {
+      const footer = document.querySelector('.google-dialog-footer');
+      container.insertBefore(confirmScreen, footer);
+    }
+  }
+
+  const initial = (user.name || 'U').charAt(0).toUpperCase();
+  const bg = user.avatarColor || '#4285F4';
+
+  confirmScreen.innerHTML = `
+    <div class="google-body-left">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <div style="width:36px;height:36px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;color:#fff;flex-shrink:0;">${initial}</div>
+        <div>
+          <div style="font-size:14px;font-weight:600;color:#202124;">${escapeHtmlText(user.name)}</div>
+          <div style="font-size:12px;color:#5f6368;">${escapeHtmlText(user.email)}</div>
+        </div>
+      </div>
+      <h1 class="google-choose-title" style="font-size:22px;margin-top:12px;">Confirm sign-in</h1>
+      <p class="google-choose-sub" style="margin-top:6px;">You'll be signed in to Dhun as <strong>${escapeHtmlText(user.name)}</strong></p>
+    </div>
+    <div class="google-body-right">
+      <div style="background:#f8f9fa;border:1px solid #dadce0;border-radius:12px;padding:18px;margin-bottom:16px;">
+        <p style="font-size:13px;color:#5f6368;margin:0 0 10px;line-height:1.5;">Google will share your name, email address, and profile picture with Dhun Music.</p>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="#34a853"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+          <span style="font-size:12px;color:#202124;">Verified Google Account</span>
+        </div>
+      </div>
+      <div class="google-form-actions" style="justify-content:flex-end;gap:12px;">
+        <button type="button" class="google-btn-text" onclick="cancelGoogleConfirm()">Cancel</button>
+        <button type="button" class="google-btn-blue" onclick="confirmGoogleSignIn()">Continue</button>
+      </div>
+    </div>
+  `;
+
+  confirmScreen.style.display = 'grid';
+}
+
+function cancelGoogleConfirm() {
+  const confirmScreen = document.getElementById('google-screen-confirm');
+  if (confirmScreen) confirmScreen.style.display = 'none';
+  _pendingGoogleUser = null;
+  _pendingGoogleUsers = null;
+
+  // Go back to chooser or close
+  const googleUsers = (getStoredUsers() || []).filter(u => u && u.provider === 'google');
+  if (googleUsers.length > 0) {
+    showGoogleAccountChooser();
+  } else {
+    closeGoogleAuthModal();
+  }
+}
+
+function confirmGoogleSignIn() {
+  const user = _pendingGoogleUser;
+  const users = _pendingGoogleUsers || getStoredUsers();
+  if (!user) return;
+
   user.provider = 'google';
   user.lastLoginAt = Date.now();
   saveStoredUsers(users);
-  saveCredentials(user.email, '');
+  saveCredentials(user.email);
+
+  const confirmScreen = document.getElementById('google-screen-confirm');
+  if (confirmScreen) confirmScreen.style.display = 'none';
 
   closeGoogleAuthModal();
   closeAuthModal();
@@ -3409,6 +3494,9 @@ function handleGoogleSelectAccount(userIdOrEmail) {
 
   showToast(`✅ Welcome, ${user.name}! Signed in with Google.`);
   pushProfileToCloud();
+
+  _pendingGoogleUser = null;
+  _pendingGoogleUsers = null;
 }
 
 function submitGoogleNewAccount() {
@@ -3431,6 +3519,8 @@ function submitGoogleNewAccount() {
   if (!emailVal.includes('@')) {
     emailVal = `${emailVal}@gmail.com`;
   }
+  // Only generate a default name if user left it blank — use email prefix
+  const userProvidedName = nameVal; // Preserve what user explicitly typed
   if (!nameVal) {
     nameVal = emailVal.split('@')[0];
     nameVal = nameVal.charAt(0).toUpperCase() + nameVal.slice(1);
@@ -3459,26 +3549,22 @@ function submitGoogleNewAccount() {
       mergeUserStorageData(existing.id, canonicalId);
     }
     existing.id = canonicalId;
-    existing.name = nameVal || existing.name;
+    // Only update name if user explicitly provided one in this session
+    if (userProvidedName) {
+      existing.name = userProvidedName;
+    }
     existing.provider = 'google';
     existing.avatarColor = existing.avatarColor || avatarColor;
     existing.lastLoginAt = Date.now();
   }
 
   saveStoredUsers(users);
-  saveCredentials(existing.email, '');
+  saveCredentials(existing.email);
 
-  closeGoogleAuthModal();
-  closeAuthModal();
-
-  if (_googleAuthIsFromGate) {
-    enterAppFromGate(existing);
-  } else {
-    switchToUser(existing);
-  }
-
-  showToast(`✅ Welcome, ${existing.name}! Signed in with Google.`);
-  pushProfileToCloud();
+  // Show confirmation instead of auto-login
+  _pendingGoogleUser = existing;
+  _pendingGoogleUsers = users;
+  showGoogleConfirmScreen(existing);
 }
 
 // Backward-compatibility aliases
@@ -3489,10 +3575,8 @@ function handleGoogleSelectSavedAccount(userId) {
   return handleGoogleSelectAccount(userId);
 }
 function handleGoogleQuickAccountClick() {
-  const googleUsers = (getStoredUsers() || []).filter(u => u && u.provider === 'google');
-  if (googleUsers.length > 0) {
-    handleGoogleSelectAccount(googleUsers[0].id);
-  }
+  // Always open Google auth modal for explicit confirmation
+  handleGoogleSignIn(true);
 }
 
 
