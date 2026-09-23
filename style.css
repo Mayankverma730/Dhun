@@ -6074,9 +6074,8 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   flex: 1;
 }
 .eq-band-slider {
-  writing-mode: bt-lr; /* IE/Edge */
-  -webkit-appearance: slider-vertical;
-  appearance: slider-vertical;
+  writing-mode: vertical-lr;
+  direction: rtl;
   width: 8px;
   height: 140px;
   cursor: pointer;

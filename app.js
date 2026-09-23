@@ -9722,6 +9722,7 @@ async function autoSeedLibraryWithOnlineMedia() {
       deletedSongTitles = new Set(JSON.parse(rawDel));
     } catch(e){}
 
+    const existingTitleSet = new Set((currentSongs || []).map(s => (s && s.title ? s.title.toLowerCase().trim() : '')));
     let count = 0;
     for (const track of seedCatalog) {
       const key = (track.title || '').toLowerCase().trim();
