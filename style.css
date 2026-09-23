@@ -440,7 +440,13 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
 .page::-webkit-scrollbar-thumb { background: rgba(139,92,246,0.28); border-radius: 4px; }
 .page::-webkit-scrollbar-thumb:hover { background: rgba(139,92,246,0.6); }
 .page.active { display: block; animation: fadeIn 0.3s ease; }
-#page-player.active { display: flex; flex-direction: column; }
+#page-player.active {
+  display: block !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  height: auto;
+  min-height: 100%;
+}
 /* Keep player page audio & YouTube engine continuously alive in background when switching tabs */
 #page-player:not(.active) {
   display: flex !important;
@@ -724,11 +730,15 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
 /* ═══════════════════════════════════════════════
    PLAYER PAGE
 ═══════════════════════════════════════════════ */
-.player-page-layout { display: grid; grid-template-columns: 1fr 340px; gap: 24px; flex: 1; min-height: 0; }
-.player-left  { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-height: 0; }
-.player-left::-webkit-scrollbar { width: 4px; }
-.player-left::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
-.player-right { display: flex; flex-direction: column; }
+.player-page-layout {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 24px;
+  min-height: 100%;
+  padding-bottom: 60px;
+}
+.player-left  { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.player-right { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
 
 /* ═══════════════════════════════════════════════
    WINDOWS 7 MEDIA PLAYER STYLE FLOW VISUALIZER

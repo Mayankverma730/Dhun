@@ -1063,6 +1063,12 @@ const audioEngine = {
   }
 };
 
+const soundEngine = audioEngine;
+if (typeof window !== 'undefined') {
+  window.soundEngine = audioEngine;
+  window.audioEngine = audioEngine;
+}
+
 /* ══════════════════════════════════════════════════
    5-BAND AUDIO EQUALIZER CONTROLLER [T5-09]
 ══════════════════════════════════════════════════ */

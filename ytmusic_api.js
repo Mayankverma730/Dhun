@@ -43,13 +43,27 @@ const YTMusicAPI = (() => {
    */
   async function getSuggestions(query) {
     if (!query || query.trim().length < 2) return [];
+    const trimmed = query.trim().toLowerCase();
     try {
-      const url = `https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q=${encodeURIComponent(query.trim())}`;
-      const res = await fetch(url);
-      if (!res.ok) return [];
-      const data = await res.json();
-      return Array.isArray(data[1]) ? data[1].slice(0, 7) : [];
-    } catch (e) {
+      const res = await fetch(`/api/suggestions?q=${encodeURIComponent(trimmed)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) return data.slice(0, 7);
+      }
+    } catch (e) {}
+
+    // Fallback: match songs and artists from local library / state
+    try {
+      const allSongs = (typeof state !== 'undefined' && state.songs) ? state.songs : [];
+      const matches = allSongs
+        .filter(s => s && (
+          (s.title && s.title.toLowerCase().includes(trimmed)) ||
+          (s.artist && s.artist.toLowerCase().includes(trimmed))
+        ))
+        .map(s => s.title)
+        .slice(0, 5);
+      return matches;
+    } catch(e) {
       return [];
     }
   }
