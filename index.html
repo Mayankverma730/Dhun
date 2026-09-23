@@ -15,7 +15,7 @@
     rel="stylesheet" />
   <link rel="icon" type="image/png" href="logo.png" />
   <link rel="apple-touch-icon" href="logo.png" />
-  <link rel="stylesheet" href="style.css?v=30.0" />
+  <link rel="stylesheet" href="style.css?v=31.0" />
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
     (function () {
@@ -607,11 +607,13 @@
         <!-- Unified Search Bar -->
         <div class="search-hero" id="search-hero-section">
           <div class="search-hero-bar" id="search-hero-bar">
-            <span class="shi-icon" id="search-bar-icon" onclick="handleSearch(document.getElementById('search-input').value, true)" style="cursor:pointer" title="Search">🔍</span>
+            <span class="shi-icon" id="search-bar-icon" onclick="hideSuggestions();handleSearch(document.getElementById('search-input').value, true)" style="cursor:pointer" title="Search">🔍</span>
             <input type="search" class="search-hero-input" id="search-input"
               placeholder="Search YouTube Music library, artist, album, or paste YouTube link..." autocomplete="off" aria-label="Search"
-              oninput="handleSearch(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();handleSearch(this.value, true);}" onfocus="showSugg()" />
-            <button type="button" class="btn-primary" onclick="handleSearch(document.getElementById('search-input').value, true)" style="padding:7px 16px;border-radius:20px;font-size:13px;font-weight:600;display:inline-flex;align-items:center;cursor:pointer;border:none">Search</button>
+              oninput="handleSearch(this.value)"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();hideSuggestions();this.blur();handleSearch(this.value, true);}else if(event.key==='Escape'){hideSuggestions();}"
+              onfocus="showSugg()" />
+            <button type="button" class="btn-primary" onclick="hideSuggestions();handleSearch(document.getElementById('search-input').value, true)" style="padding:7px 16px;border-radius:20px;font-size:13px;font-weight:600;display:inline-flex;align-items:center;cursor:pointer;border:none">Search</button>
             <button id="clear-btn" onclick="clearSearch()" style="display:none" aria-label="Clear search"
               class="shi-clear">✕</button>
           </div>
@@ -2059,8 +2061,8 @@
   <script src="js/api.js?v=2.6"></script>
 
   <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.5/dist/mqtt.min.js"></script>
-  <script src="ytmusic_api.js?v=30.0"></script>
-  <script src="app.js?v=30.0"></script>
+  <script src="ytmusic_api.js?v=31.0"></script>
+  <script src="app.js?v=31.0"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 

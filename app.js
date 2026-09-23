@@ -6531,7 +6531,11 @@ async function handleSearch(q, immediate = false) {
   if (in1 && in1.value !== query) in1.value = query;
   if (in2 && in2.value !== query) in2.value = query;
 
-  showSugg();
+  if (immediate) {
+    hideSuggestions();
+  } else {
+    showSugg();
+  }
 
   // If user searched from topbar while on another page, navigate to Discover/Search page
   if (query.trim() && state.currentPage !== 'search') {
@@ -6606,10 +6610,23 @@ async function handleSearch(q, immediate = false) {
 }
 
 let ytMusicSearchReqId = 0;
+let suggReqId = 0;
+
+function hideSuggestions() {
+  suggReqId++;
+  const boxes = ['suggestions-box', 'suggestions-box-2'];
+  boxes.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+}
+window.hideSuggestions = hideSuggestions;
 
 async function performYTMusicSearch(query) {
   const q = (query || '').trim();
   if (!q) return;
+
+  hideSuggestions();
 
   const thisReqId = ++ytMusicSearchReqId;
   const countEl = document.getElementById('yt-results-count');
@@ -6626,6 +6643,8 @@ async function performYTMusicSearch(query) {
       if (thisReqId !== ytMusicSearchReqId) {
         return;
       }
+
+      hideSuggestions();
 
       if (isCat && Array.isArray(tracks)) {
         tracks = tracks.map(t => ({
@@ -6653,13 +6672,20 @@ async function performYTMusicSearch(query) {
 const performUnifiedSearch = performYTMusicSearch;
 
 async function showSugg() {
+  const currentReq = ++suggReqId;
   const activeInput = (document.activeElement && (document.activeElement.id === 'search-input' || document.activeElement.id === 'search-input-top'))
     ? document.activeElement
-    : (document.getElementById('search-input') || document.getElementById('search-input-top'));
-  const q = (activeInput?.value || '').trim();
-  const boxes = ['suggestions-box','suggestions-box-2'];
+    : null;
+
+  // Only show suggestions when a search input is actively focused
+  if (!activeInput) {
+    hideSuggestions();
+    return;
+  }
+
+  const q = (activeInput.value || '').trim();
   if (!q) {
-    boxes.forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+    hideSuggestions();
     return;
   }
 
@@ -6670,16 +6696,27 @@ async function showSugg() {
     } catch(e) {}
   }
 
+  // If search was executed or another suggestion request was made, discard
+  if (currentReq !== suggReqId) return;
+
+  // Confirm search input is still focused
+  const stillFocused = document.activeElement && (document.activeElement.id === 'search-input' || document.activeElement.id === 'search-input-top');
+  if (!stillFocused) {
+    hideSuggestions();
+    return;
+  }
+
   const items = (onlineSugg || []).slice(0, 6).map(s => ({
     html: `🔍 <span style="font-weight:600">${escapeHtmlText(s)}</span>`,
     val: s
   }));
 
+  const boxes = ['suggestions-box','suggestions-box-2'];
   boxes.forEach(id => {
     const box = document.getElementById(id);
     if (!box) return;
     if (items.length) {
-      box.innerHTML = items.map(it => `<div class="sugg-item" onclick="selectSuggestion('${escapeHtmlAttr(it.val)}')">${it.html}</div>`).join('');
+      box.innerHTML = items.map(it => `<div class="sugg-item" onmousedown="event.preventDefault()" onclick="selectSuggestion('${escapeHtmlAttr(it.val)}')">${it.html}</div>`).join('');
       box.style.display = 'block';
     } else {
       box.style.display = 'none';
@@ -6688,9 +6725,9 @@ async function showSugg() {
 }
 
 function clearSearch() {
+  hideSuggestions();
   ['search-input','search-input-top'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
-  handleSearch('');
-  ['suggestions-box','suggestions-box-2'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+  handleSearch('', true);
 }
 
 function clearRecent() {
@@ -6699,10 +6736,13 @@ function clearRecent() {
 }
 
 function selectSuggestion(text) {
+  hideSuggestions();
   ['search-input','search-input-top'].forEach(id => { const el=document.getElementById(id); if(el) el.value=text; });
-  ['suggestions-box','suggestions-box-2'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
-  handleSearch(text);
+  handleSearch(text, true);
   addToRecent(text);
+  if (document.activeElement && document.activeElement.blur) {
+    document.activeElement.blur();
+  }
 }
 
 function addToRecent(text) {
@@ -6726,9 +6766,13 @@ function selectFilter(btn, filter) {
 }
 
 function searchCategory(cat) {
+  hideSuggestions();
   navigate('search');
   ['search-input','search-input-top'].forEach(id => { const el=document.getElementById(id); if(el) el.value=cat; });
-  handleSearch(cat);
+  handleSearch(cat, true);
+  if (document.activeElement && document.activeElement.blur) {
+    document.activeElement.blur();
+  }
 }
 
 /* DEMO STUB — Simulates voice search by auto-selecting the first library song after a delay.
@@ -6985,9 +7029,10 @@ function setTheme(theme, showNotice = true) {
 
 /* ── Click outside to close suggestions & notif panel & theme panel ── */
 document.addEventListener('click', e => {
-  const inSearch = e.target.closest('.search-hero-bar, .topbar-search, #suggestions-box, #suggestions-box-2');
-  if (!inSearch) {
-    ['suggestions-box','suggestions-box-2'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+  const inSearchInput = e.target.closest('#search-input, #search-input-top');
+  const inSuggBox     = e.target.closest('#suggestions-box, #suggestions-box-2');
+  if (!inSearchInput && !inSuggBox) {
+    hideSuggestions();
   }
   const inNotif = e.target.closest('#notif-panel, #notif-btn');
   if (!inNotif) {
