@@ -5362,6 +5362,17 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   transform: translateX(3px);
   color: #4285F4;
 }
+.google-acc-avatar img,
+.su-avatar img,
+.topbar-avatar img,
+.ump-avatar img,
+.pav-large img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
 
 /* Playlist Chooser List */
 .playlist-chooser-list {
