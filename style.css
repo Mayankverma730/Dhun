@@ -140,7 +140,7 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   position: relative; z-index: 1;
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
-  grid-template-rows: 1fr var(--player-h);
+  grid-template-rows: minmax(0, 1fr) var(--player-h);
   grid-template-areas:
     "sidebar main"
     "playerbar playerbar";
@@ -276,12 +276,33 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
 ═══════════════════════════════════════════════ */
 .main-content {
   grid-area: main;
-  display: flex; flex-direction: column;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
   background: transparent;
   min-width: 0;
   width: 100%;
   max-width: 100%;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+.main-content::-webkit-scrollbar {
+  width: 7px;
+}
+.main-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+.main-content::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.35);
+  border-radius: 4px;
+}
+.main-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.7);
 }
 
 /* ── Topbar ───────────────────────────────────── */
@@ -293,7 +314,10 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--glass-border);
-  flex-shrink: 0; position: relative; z-index: 10;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 .topbar-left { flex: 0 0 auto; }
 .breadcrumb { font-size: 20px; font-weight: 800; color: var(--text-1); }
@@ -430,22 +454,18 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
 
 /* ── Pages ────────────────────────────────────── */
 .page {
-  display: none; flex: 1;
-  overflow-y: auto; overflow-x: hidden;
-  padding: 24px 28px 64px 28px; scroll-behavior: smooth;
-  min-width: 0; width: 100%; box-sizing: border-box;
+  display: none;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 24px 28px 80px 28px;
 }
-.page::-webkit-scrollbar { width: 7px; }
-.page::-webkit-scrollbar-track { background: transparent; }
-.page::-webkit-scrollbar-thumb { background: rgba(139,92,246,0.28); border-radius: 4px; }
-.page::-webkit-scrollbar-thumb:hover { background: rgba(139,92,246,0.6); }
-.page.active { display: block; animation: fadeIn 0.3s ease; }
+.page.active {
+  display: block !important;
+  animation: fadeIn 0.3s ease;
+}
 #page-player.active {
   display: block !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  height: auto;
-  min-height: 100%;
 }
 /* Keep player page audio & YouTube engine continuously alive in background when switching tabs */
 #page-player:not(.active) {
@@ -3961,7 +3981,7 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   /* Full App Shell auto-adjusts to single vertical column with fixed app navigation */
   .app-shell {
     grid-template-columns: 100% !important;
-    grid-template-rows: 1fr auto auto !important;
+    grid-template-rows: minmax(0, 1fr) auto auto !important;
     grid-template-areas:
       "main"
       "playerbar"

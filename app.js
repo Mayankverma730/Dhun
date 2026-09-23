@@ -1564,6 +1564,9 @@ function navigate(page) {
 
   toggleMobileSidebar(false);
 
+  const mainContent = document.getElementById('main-content');
+  if (mainContent) mainContent.scrollTop = 0;
+
   const target = document.getElementById('page-' + page);
   if (target) target.classList.add('active');
 
@@ -1585,7 +1588,7 @@ function navigate(page) {
   const appShell  = document.getElementById('app');
   if (playerBar) playerBar.style.display = (page === 'player') ? 'none' : '';
   if (appShell) {
-    appShell.style.gridTemplateRows = (page === 'player') ? '1fr' : '';
+    appShell.style.gridTemplateRows = (page === 'player') ? 'minmax(0, 1fr)' : '';
   }
 
   /* Refresh data on navigation */
