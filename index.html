@@ -8,14 +8,14 @@
   <title>Dhun – Music Management</title>
   <meta name="description"
     content="Dhun – Your premium music management experience. Discover, play, and manage your music." />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.youtube.com https://accounts.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://*.googleusercontent.com; media-src 'self' blob: data:; connect-src 'self' wss://broker.emqx.io:8084 wss://broker.hivemq.com:8884 https://*; frame-src 'self' https://www.youtube.com https://accounts.google.com;" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.youtube.com https://accounts.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://*.googleusercontent.com; media-src 'self' blob: data:; connect-src 'self' wss://broker.emqx.io:8084 wss://broker.hivemq.com:8884 https://*; frame-src 'self' https://www.youtube.com https://accounts.google.com;" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap"
     rel="stylesheet" />
   <link rel="icon" type="image/png" href="logo.png" />
   <link rel="apple-touch-icon" href="logo.png" />
-  <link rel="stylesheet" href="style.css?v=22.0" />
+  <link rel="stylesheet" href="style.css?v=23.0" />
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
     (function () {
@@ -119,16 +119,6 @@
           </div>
 
           <!-- Google Sign-In Button -->
-          <!-- Google One Tap / GSI auto-mount div (auto-hidden until GSI is ready) -->
-          <div id="g_id_onload"
-            data-client_id="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
-            data-context="signin"
-            data-ux_mode="popup"
-            data-callback="handleGSICredentialResponse"
-            data-auto_select="false"
-            data-itp_support="true"
-            style="display:none">
-          </div>
           <button class="google-auth-btn gate-google-btn" id="gate-google-btn" onclick="handleGoogleSignIn(true)" title="Continue with Google">
             <svg class="google-icon" viewBox="0 0 24 24" width="20" height="20">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -2055,16 +2045,16 @@
   </div>
 
   <!-- Modular Data & Utilities Layer [T2-01 to T2-07] -->
-  <script src="js/config.js?v=2.5"></script>
-  <script src="js/utils.js?v=2.5"></script>
-  <script src="js/models.js?v=2.5"></script>
-  <script src="js/state.js?v=2.5"></script>
-  <script src="js/db.js?v=2.5"></script>
-  <script src="js/api.js?v=2.5"></script>
+  <script src="js/config.js?v=2.6"></script>
+  <script src="js/utils.js?v=2.6"></script>
+  <script src="js/models.js?v=2.6"></script>
+  <script src="js/state.js?v=2.6"></script>
+  <script src="js/db.js?v=2.6"></script>
+  <script src="js/api.js?v=2.6"></script>
 
   <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.5/dist/mqtt.min.js"></script>
   <script src="ytmusic_api.js?v=8.0"></script>
-  <script src="app.js?v=22.0"></script>
+  <script src="app.js?v=23.0"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 

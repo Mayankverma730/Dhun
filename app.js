@@ -79,18 +79,18 @@ const pcSongAudioMap = new Map(); /* songId -> { url, file, durationSec } */
 const globalAudioPlayer = new Audio();
 globalAudioPlayer.preload = 'auto';
 
-const DB_NAME = 'VibeAudioDB';
-const DB_VERSION = 1;
-const STORE_NAME = 'songAudio';
+const AUDIO_DB_NAME = 'VibeAudioDB';
+const AUDIO_DB_VERSION = 1;
+const AUDIO_STORE_NAME = 'songAudio';
 
 function openAudioDB() {
   return new Promise((resolve) => {
     try {
-      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      const req = indexedDB.open(AUDIO_DB_NAME, AUDIO_DB_VERSION);
       req.onupgradeneeded = (e) => {
         const db = e.target.result;
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        if (!db.objectStoreNames.contains(AUDIO_STORE_NAME)) {
+          db.createObjectStore(AUDIO_STORE_NAME, { keyPath: 'id' });
         }
       };
       req.onsuccess = () => resolve(req.result);
@@ -105,8 +105,8 @@ async function saveAudioBlobToDB(songId, blob, durationSec, fileName) {
   try {
     const db = await openAudioDB();
     if (!db) return;
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).put({ id: songId, blob, durationSec, fileName });
+    const tx = db.transaction(AUDIO_STORE_NAME, 'readwrite');
+    tx.objectStore(AUDIO_STORE_NAME).put({ id: songId, blob, durationSec, fileName });
   } catch (e) {
     console.warn('Could not cache audio to IndexedDB:', e);
   }
@@ -116,8 +116,8 @@ async function loadAudioBlobsFromDB() {
   try {
     const db = await openAudioDB();
     if (!db) return;
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
+    const tx = db.transaction(AUDIO_STORE_NAME, 'readonly');
+    const store = tx.objectStore(AUDIO_STORE_NAME);
     const req = store.getAll();
     req.onsuccess = () => {
       const items = req.result || [];
@@ -3616,6 +3616,11 @@ function handleGoogleSignIn(isFromGate = false) {
 
   // Fallback: open the manual Google account chooser/form
   openGoogleAuthModal(isFromGate);
+}
+
+if (typeof window !== 'undefined') {
+  window.handleGSICredentialResponse = handleGSICredentialResponse;
+  window.handleGoogleSignIn = handleGoogleSignIn;
 }
 
 function openGoogleAuthModal(isFromGate = false) {

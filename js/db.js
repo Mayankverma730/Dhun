@@ -3,8 +3,8 @@
  * Dhun Music Management System [T2-04]
  */
 
-const DB_NAME = 'DhunUserDB';
-const DB_VERSION = 2;
+const DHUN_DB_NAME = (typeof CONFIG !== 'undefined' && CONFIG.DB_NAME) ? CONFIG.DB_NAME : 'DhunUserDB';
+const DHUN_DB_VERSION = (typeof CONFIG !== 'undefined' && CONFIG.DB_VERSION) ? CONFIG.DB_VERSION : 2;
 
 class DhunDB {
     constructor() {
@@ -20,7 +20,7 @@ class DhunDB {
                 return;
             }
 
-            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            const request = indexedDB.open(DHUN_DB_NAME, DHUN_DB_VERSION);
 
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;

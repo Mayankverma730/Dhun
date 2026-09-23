@@ -143,7 +143,7 @@ static void send_response(SOCKET sock, int status, const char *body)
         "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
         "X-Content-Type-Options: nosniff\r\n"
         "X-Frame-Options: SAMEORIGIN\r\n"
-        "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.youtube.com https://accounts.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://*.googleusercontent.com; media-src 'self' blob: data:; connect-src 'self' wss://broker.emqx.io:8084 wss://broker.hivemq.com:8884 https://*; frame-src 'self' https://www.youtube.com https://accounts.google.com;\r\n"
+        "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.youtube.com https://accounts.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://*.googleusercontent.com; media-src 'self' blob: data:; connect-src 'self' wss://broker.emqx.io:8084 wss://broker.hivemq.com:8884 https://*; frame-src 'self' https://www.youtube.com https://accounts.google.com;\r\n"
         "Content-Length: %d\r\n"
         "Connection: close\r\n"
         "\r\n",
@@ -234,7 +234,7 @@ static void serve_static(SOCKET sock, const char *url_path)
         "Cache-Control: no-cache\r\n"
         "X-Content-Type-Options: nosniff\r\n"
         "X-Frame-Options: SAMEORIGIN\r\n"
-        "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.youtube.com https://accounts.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://*.googleusercontent.com; media-src 'self' blob: data:; connect-src 'self' wss://broker.emqx.io:8084 wss://broker.hivemq.com:8884 https://*; frame-src 'self' https://www.youtube.com https://accounts.google.com;\r\n"
+        "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.youtube.com https://accounts.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://*.googleusercontent.com; media-src 'self' blob: data:; connect-src 'self' wss://broker.emqx.io:8084 wss://broker.hivemq.com:8884 https://*; frame-src 'self' https://www.youtube.com https://accounts.google.com;\r\n"
         "Connection: close\r\n"
         "\r\n",
         mime_type(rel), size);
