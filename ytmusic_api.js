@@ -74,6 +74,8 @@ const YTMusicAPI = (() => {
   async function search(query, maxResults = 25) {
     if (!query || !query.trim()) return [];
     const q = query.trim();
+    const isCategory = /^(pop|electronic|bollywood|punjabi|lo-?fi|rock|romantic|hip-?hop|dance|chill|ambient|classical|indie|jazz|metal)$/i.test(q);
+    const catFormatted = q.charAt(0).toUpperCase() + q.slice(1);
 
     // 1. Check if user pasted a direct YouTube or YouTube Music link
     const directId = extractVideoId(q);
@@ -101,8 +103,35 @@ const YTMusicAPI = (() => {
         const ct = res.headers.get('content-type') || '';
         if (res.ok && ct.includes('application/json')) {
           const data = await res.json();
-          if (Array.isArray(data) && data.length > 0) {
-            return data.slice(0, maxResults);
+          if (Array.isArray(data)) {
+            if (isCategory) {
+              const curated = getCategoryRecommendations(q, 10);
+              const seen = new Set();
+              const merged = [];
+              for (const t of curated) {
+                if (t.videoId && !seen.has(t.videoId)) {
+                  seen.add(t.videoId);
+                  merged.push({
+                    ...t,
+                    genre: catFormatted,
+                    album: t.album || `${catFormatted} Hits`
+                  });
+                }
+              }
+              for (const t of data) {
+                if (t.videoId && !seen.has(t.videoId)) {
+                  seen.add(t.videoId);
+                  merged.push({
+                    ...t,
+                    genre: (t.genre && t.genre !== 'Online Media' && t.genre !== 'Media') ? t.genre : catFormatted,
+                    album: (t.album && t.album !== 'Online Media') ? t.album : `${catFormatted} Music`
+                  });
+                }
+              }
+              if (merged.length > 0) return merged.slice(0, maxResults);
+            } else if (data.length > 0) {
+              return data.slice(0, maxResults);
+            }
           }
         }
       } catch (e) {
@@ -137,6 +166,9 @@ const YTMusicAPI = (() => {
     }
 
     // 4. Fallback exclusively to curated YouTube Music library with smart fuzzy matching
+    if (isCategory) {
+      return getCategoryRecommendations(q, maxResults);
+    }
     return getCuratedFallback(q);
   }
 
@@ -236,9 +268,10 @@ const YTMusicAPI = (() => {
     if (/arijit|kumar sanu|shreya|sonu|pritam|crook|aashiqui|bollywood|hindi/.test(text)) return 'Bollywood';
     if (/diljit|ap dhillon|karan aujla|shubh|sidhu|punjabi/.test(text)) return 'Punjabi';
     if (/lofi|lo-fi|chill|relax|study|rain/.test(text)) return 'Lo-Fi';
-    if (/edm|remix|dj|alan walker|martin garrix|club/.test(text)) return 'Electronic';
+    if (/edm|remix|dj|alan walker|martin garrix|club|electronic/.test(text)) return 'Electronic';
     if (/rock|guitar|metal|linkin/.test(text)) return 'Rock';
     if (/hip\s*hop|rap|eminem|drake|subh/.test(text)) return 'Hip-Hop';
+    if (/romantic|romance|love|heart|tum hi ho|kesariya|channa mereya/.test(text)) return 'Romantic';
     return 'Pop';
   }
 
@@ -294,12 +327,31 @@ const YTMusicAPI = (() => {
       { videoId: 'kJQP7kiw5Fk', title: 'Despacito', artist: 'Luis Fonsi ft. Daddy Yankee', album: 'Vida', genre: 'Pop', duration: 4.42, durationSec: 265 },
       { videoId: 'JGwWNGJdvx8', title: 'Shape of You', artist: 'Ed Sheeran', album: '÷ (Divide)', genre: 'Pop', duration: 3.88, durationSec: 233 },
       { videoId: '4NRXx6U8ABQ', title: 'Blinding Lights', artist: 'The Weeknd', album: 'After Hours', genre: 'Pop', duration: 3.33, durationSec: 200 },
-      { videoId: 'fJ9rUzIMcZQ', title: 'Bohemian Rhapsody', artist: 'Queen', album: 'A Night at the Opera', genre: 'Rock', duration: 5.98, durationSec: 359 },
       { videoId: '2Vv-BfVoq4g', title: 'Perfect', artist: 'Ed Sheeran', album: '÷ (Divide)', genre: 'Pop', duration: 4.38, durationSec: 263 },
-      { videoId: '7wtfhZwyrcc', title: 'Believer', artist: 'Imagine Dragons', album: 'Evolve', genre: 'Rock', duration: 3.4, durationSec: 204 },
       { videoId: '34Na4j8AVgA', title: 'Starboy', artist: 'The Weeknd ft. Daft Punk', album: 'Starboy', genre: 'Pop', duration: 3.84, durationSec: 230 },
       { videoId: 'H5v3kku4y6Q', title: 'As It Was', artist: 'Harry Styles', album: "Harry's House", genre: 'Pop', duration: 2.78, durationSec: 167 },
       { videoId: 'FM7Z-Xq8Drc', title: 'Something Just Like This', artist: 'Coldplay, The Chainsmokers', album: 'Memories...Do Not Open', genre: 'Pop', duration: 4.12, durationSec: 247 }
+    ],
+    rock: [
+      { videoId: 'fJ9rUzIMcZQ', title: 'Bohemian Rhapsody', artist: 'Queen', album: 'A Night at the Opera', genre: 'Rock', duration: 5.98, durationSec: 359 },
+      { videoId: '7wtfhZwyrcc', title: 'Believer', artist: 'Imagine Dragons', album: 'Evolve', genre: 'Rock', duration: 3.4, durationSec: 204 },
+      { videoId: 'eVTXPUF4Oz4', title: 'In The End', artist: 'Linkin Park', album: 'Hybrid Theory', genre: 'Rock', duration: 3.6, durationSec: 216 },
+      { videoId: 'kXYiU_JCYtU', title: 'Numb', artist: 'Linkin Park', album: 'Meteora', genre: 'Rock', duration: 3.12, durationSec: 187 },
+      { videoId: '1w7OgIMMRc4', title: 'Sweet Child O Mine', artist: "Guns N' Roses", album: 'Appetite for Destruction', genre: 'Rock', duration: 5.05, durationSec: 303 }
+    ],
+    romantic: [
+      { videoId: 'fsiPzT50ZiM', title: 'Tum Hi Ho', artist: 'Arijit Singh', album: 'Aashiqui 2', genre: 'Romantic', duration: 4.37, durationSec: 262 },
+      { videoId: 'brnIlxX_XKs', title: 'Kesariya', artist: 'Arijit Singh, Pritam', album: 'Brahmāstra', genre: 'Romantic', duration: 4.47, durationSec: 268 },
+      { videoId: 'rtOvBOTyX00', title: 'Dil Diyan Gallan', artist: 'Atif Aslam', album: 'Tiger Zinda Hai', genre: 'Romantic', duration: 4.34, durationSec: 260 },
+      { videoId: '2Vv-BfVoq4g', title: 'Perfect', artist: 'Ed Sheeran', album: '÷ (Divide)', genre: 'Romantic', duration: 4.38, durationSec: 263 },
+      { videoId: 'ElZfdU54Cp8', title: 'Apna Bana Le', artist: 'Arijit Singh, Sachin-Jigar', album: 'Bhediya', genre: 'Romantic', duration: 4.35, durationSec: 261 },
+      { videoId: 'V7LwfY5U5WI', title: 'Raataan Lambiyan', artist: 'Jubin Nautiyal, Asees Kaur', album: 'Shershaah', genre: 'Romantic', duration: 3.83, durationSec: 230 }
+    ],
+    hiphop: [
+      { videoId: '8nK_4VfFpYc', title: 'Cheques', artist: 'Shubh', album: 'Still Rollin', genre: 'Hip-Hop', duration: 3.05, durationSec: 183 },
+      { videoId: '47dwt3_yC3s', title: 'Winning Speech', artist: 'Karan Aujla, Mxrci', album: 'Four You', genre: 'Hip-Hop', duration: 3.42, durationSec: 205 },
+      { videoId: '_Yhyp-_hX2s', title: 'Lose Yourself', artist: 'Eminem', album: '8 Mile', genre: 'Hip-Hop', duration: 5.4, durationSec: 324 },
+      { videoId: 'e-ORhEE9VVg', title: '295', artist: 'Sidhu Moose Wala', album: 'Moosetape', genre: 'Hip-Hop', duration: 4.5, durationSec: 270 }
     ]
   };
 
@@ -323,7 +375,10 @@ const YTMusicAPI = (() => {
       ...TRENDING_FEEDS.punjabi,
       ...TRENDING_FEEDS.lofi,
       ...TRENDING_FEEDS.electronic,
-      ...TRENDING_FEEDS.pop
+      ...TRENDING_FEEDS.pop,
+      ...TRENDING_FEEDS.rock,
+      ...TRENDING_FEEDS.romantic,
+      ...TRENDING_FEEDS.hiphop
     ];
 
     // 1. Exact or substring match across title, artist, genre, album
@@ -361,7 +416,10 @@ const YTMusicAPI = (() => {
       ...TRENDING_FEEDS.punjabi,
       ...TRENDING_FEEDS.lofi,
       ...TRENDING_FEEDS.electronic,
-      ...TRENDING_FEEDS.pop
+      ...TRENDING_FEEDS.pop,
+      ...TRENDING_FEEDS.rock,
+      ...TRENDING_FEEDS.romantic,
+      ...TRENDING_FEEDS.hiphop
     ];
     for (const item of all) {
       const it = cleanSongTitle(item.title).toLowerCase().trim();
@@ -417,8 +475,10 @@ const YTMusicAPI = (() => {
     if (/punjabi|bhangra/.test(c)) return 'punjabi';
     if (/lo-?fi|chill|study|relax|ambient/.test(c)) return 'lofi';
     if (/electronic|edm|dance|house|techno|dj/.test(c)) return 'electronic';
+    if (/rock|metal|alternative|guitar/.test(c)) return 'rock';
+    if (/hip-?hop|rap|trap|urban/.test(c)) return 'hiphop';
+    if (/romantic|romance|love|heart|soulful|ballad/.test(c)) return 'romantic';
     if (/pop|english|global/.test(c)) return 'pop';
-    if (/rock|metal|alternative/.test(c)) return 'pop';
     return TRENDING_FEEDS[c] ? c : 'trending';
   }
 
@@ -450,7 +510,10 @@ const YTMusicAPI = (() => {
       ...TRENDING_FEEDS.punjabi,
       ...TRENDING_FEEDS.pop,
       ...TRENDING_FEEDS.electronic,
-      ...TRENDING_FEEDS.lofi
+      ...TRENDING_FEEDS.lofi,
+      ...TRENDING_FEEDS.rock,
+      ...TRENDING_FEEDS.romantic,
+      ...TRENDING_FEEDS.hiphop
     ];
 
     const targetVid = track.videoId || (typeof track.id === 'string' && track.id.startsWith('yt_') ? track.id.replace('yt_', '') : null);

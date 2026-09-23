@@ -6575,8 +6575,16 @@ async function handleSearch(q, immediate = false) {
   if (searchDef)   searchDef.style.display = 'none';
   if (ytMusicView) ytMusicView.style.display = '';
 
-  if (titleEl) titleEl.textContent = `YouTube Music Results for "${query.trim()}"`;
-  if (countEl) countEl.textContent = 'Searching YouTube Music…';
+  const trimmedQ = query.trim();
+  const isCategory = /^(pop|electronic|bollywood|punjabi|lo-?fi|rock|romantic|hip-?hop|dance|chill|ambient|classical|indie|jazz|metal)$/i.test(trimmedQ);
+  const catFormatted = trimmedQ ? (trimmedQ.charAt(0).toUpperCase() + trimmedQ.slice(1)) : '';
+
+  if (titleEl) {
+    titleEl.textContent = isCategory ? `🎵 ${catFormatted} Music Tracks` : `YouTube Music Results for "${trimmedQ}"`;
+  }
+  if (countEl) {
+    countEl.textContent = isCategory ? 'Curated Music Tracks' : 'Searching YouTube Music…';
+  }
 
   if (grid) {
     grid.innerHTML = `
@@ -6589,10 +6597,10 @@ async function handleSearch(q, immediate = false) {
 
   clearTimeout(ytSearchDebounceTimer);
   if (immediate) {
-    performYTMusicSearch(query.trim());
+    performYTMusicSearch(trimmedQ);
   } else {
     ytSearchDebounceTimer = setTimeout(async () => {
-      await performYTMusicSearch(query.trim());
+      await performYTMusicSearch(trimmedQ);
     }, 220);
   }
 }
@@ -6609,14 +6617,27 @@ async function performYTMusicSearch(query) {
 
   if (typeof YTMusicAPI !== 'undefined') {
     try {
-      const tracks = await YTMusicAPI.search(q, 24);
+      const isCat = /^(pop|electronic|bollywood|punjabi|lo-?fi|rock|romantic|hip-?hop|dance|chill|ambient|classical|indie|jazz|metal)$/i.test(q);
+      const catFormatted = q.charAt(0).toUpperCase() + q.slice(1);
+
+      let tracks = await YTMusicAPI.search(q, 24);
 
       // Prevent race conditions if user typed a newer search query
       if (thisReqId !== ytMusicSearchReqId) {
         return;
       }
 
-      if (countEl) countEl.textContent = `${tracks.length} YouTube Music Tracks`;
+      if (isCat && Array.isArray(tracks)) {
+        tracks = tracks.map(t => ({
+          ...t,
+          genre: (t.genre && t.genre !== 'Online Media' && t.genre !== 'Media') ? t.genre : catFormatted,
+          album: (t.album && t.album !== 'Online Media') ? t.album : `${catFormatted} Music`
+        }));
+      }
+
+      if (countEl) {
+        countEl.textContent = isCat ? `${tracks.length} ${catFormatted} Music Tracks` : `${tracks.length} YouTube Music Tracks`;
+      }
       renderYTMusicGrid(tracks, grid, countEl);
     } catch (e) {
       console.warn('YouTube Music search error:', e);
@@ -10514,7 +10535,7 @@ function renderYTMusicGrid(tracks, customGrid = null, customCount = null) {
     grid.innerHTML = `
       <div style="grid-column:1/-1;text-align:center;padding:36px 20px;color:var(--text-muted)">
         <p style="font-size:28px;margin-bottom:6px">🎵</p>
-        <p style="font-weight:600;font-size:15px;color:var(--text-1);margin-bottom:4px">No media tracks found</p>
+        <p style="font-weight:600;font-size:15px;color:var(--text-1);margin-bottom:4px">No music tracks found</p>
         <p style="font-size:12px;margin-bottom:14px">Try another search or explore trending tracks</p>
         <button class="btn-primary" onclick="loadYTFeed('trending')" style="display:inline-flex;align-items:center;gap:6px">
           🔥 Explore Trending Tracks
@@ -10556,7 +10577,7 @@ function renderYTMusicGrid(tracks, customGrid = null, customCount = null) {
           <h4 class="yt-card-title" title="${escapeHtmlAttr(t.title)}" onclick="playYTMusicIndex(${idx})">${escapeHtmlText(t.title)}</h4>
           <p class="yt-card-artist" title="${escapeHtmlAttr(t.artist)}">${escapeHtmlText(t.artist)}</p>
           <div class="yt-card-meta">
-            <span class="yt-genre-pill">${escapeHtmlText(t.genre || 'Media')}</span>
+            <span class="yt-genre-pill">${escapeHtmlText(t.genre || 'Music')}</span>
             ${t.matchReason ? `<span class="yt-match-tag">${escapeHtmlText(t.matchReason)}</span>` : ''}
           </div>
         </div>
