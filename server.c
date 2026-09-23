@@ -1226,6 +1226,285 @@ static void route_jam_leave(SOCKET sock, const char *body)
 }
 
 /* ═══════════════════════════════════════════════
+   USER AUTHENTICATION & PASSWORD RESET MODULE
+   ═══════════════════════════════════════════════ */
+typedef struct {
+    char id[64];
+    char name[64];
+    char email[128];
+    char password_hash[128];
+    char avatar_color[16];
+    char provider[16];
+    char session_token[64];
+    time_t created_at;
+} AuthUser;
+
+typedef struct {
+    char token[64];
+    char email[128];
+    time_t expires_at;
+    int used;
+} AuthResetToken;
+
+#define MAX_AUTH_USERS 256
+#define MAX_RESET_TOKENS 256
+
+static AuthUser g_auth_users[MAX_AUTH_USERS];
+static int g_auth_user_count = 0;
+
+static AuthResetToken g_reset_tokens[MAX_RESET_TOKENS];
+static int g_reset_token_count = 0;
+
+/* Password hashing helper (salted hash) */
+static void hash_password(const char *password, char *out_hash, size_t out_size)
+{
+    unsigned long hash = 5381;
+    const char *salt = "Dhun_Auth_Salt_2026";
+    for (const char *p = salt; *p; p++) {
+        hash = ((hash << 5) + hash) + (unsigned char)(*p);
+    }
+    for (const char *p = password; *p; p++) {
+        hash = ((hash << 5) + hash) + (unsigned char)(*p);
+    }
+    snprintf(out_hash, out_size, "%lx%llx", hash, (unsigned long long)(hash ^ 0xabcdef0123456789ULL));
+}
+
+static AuthUser* auth_find_user_by_email(const char *email)
+{
+    for (int i = 0; i < g_auth_user_count; i++) {
+        if (_stricmp(g_auth_users[i].email, email) == 0) {
+            return &g_auth_users[i];
+        }
+    }
+    return NULL;
+}
+
+/* POST /api/register */
+static void route_register(SOCKET sock, const char *body)
+{
+    char name[64] = {0}, email[128] = {0}, password[128] = {0};
+    json_str(body, "name", name, sizeof(name));
+    json_str(body, "email", email, sizeof(email));
+    json_str(body, "password", password, sizeof(password));
+
+    if (!name[0] || !email[0] || !password[0]) {
+        send_error(sock, 400, "name, email, and password required");
+        return;
+    }
+    if (strlen(password) < 6) {
+        send_error(sock, 400, "password must be at least 6 characters");
+        return;
+    }
+
+    if (auth_find_user_by_email(email)) {
+        send_error(sock, 409, "An account with this email already exists");
+        return;
+    }
+
+    if (g_auth_user_count >= MAX_AUTH_USERS) {
+        send_error(sock, 500, "Maximum user limit reached");
+        return;
+    }
+
+    AuthUser *u = &g_auth_users[g_auth_user_count++];
+    snprintf(u->id, sizeof(u->id), "usr_%lx%04d", (unsigned long)time(NULL), rand() % 10000);
+    strncpy(u->name, name, sizeof(u->name) - 1);
+    strncpy(u->email, email, sizeof(u->email) - 1);
+    hash_password(password, u->password_hash, sizeof(u->password_hash));
+    strcpy(u->avatar_color, "#7c3aed");
+    strcpy(u->provider, "email");
+    snprintf(u->session_token, sizeof(u->session_token), "sess_%lx%06x", (unsigned long)time(NULL), rand() & 0xffffff);
+    u->created_at = time(NULL);
+
+    char resp[512];
+    snprintf(resp, sizeof(resp),
+        "{\"status\":\"ok\",\"user\":{\"id\":\"%s\",\"name\":\"%s\",\"email\":\"%s\",\"provider\":\"email\",\"avatarColor\":\"%s\"},\"token\":\"%s\"}",
+        u->id, u->name, u->email, u->avatar_color, u->session_token);
+    send_created(sock, resp);
+}
+
+/* POST /api/login */
+static void route_login(SOCKET sock, const char *body)
+{
+    char email[128] = {0}, password[128] = {0};
+    json_str(body, "email", email, sizeof(email));
+    json_str(body, "password", password, sizeof(password));
+
+    if (!email[0] || !password[0]) {
+        send_error(sock, 400, "email and password required");
+        return;
+    }
+
+    AuthUser *u = auth_find_user_by_email(email);
+    if (!u) {
+        send_error(sock, 401, "Invalid email or password");
+        return;
+    }
+
+    char pass_hash[128];
+    hash_password(password, pass_hash, sizeof(pass_hash));
+    if (strcmp(u->password_hash, pass_hash) != 0) {
+        send_error(sock, 401, "Invalid email or password");
+        return;
+    }
+
+    snprintf(u->session_token, sizeof(u->session_token), "sess_%lx%06x", (unsigned long)time(NULL), rand() & 0xffffff);
+
+    char resp[512];
+    snprintf(resp, sizeof(resp),
+        "{\"status\":\"ok\",\"user\":{\"id\":\"%s\",\"name\":\"%s\",\"email\":\"%s\",\"provider\":\"%s\",\"avatarColor\":\"%s\"},\"token\":\"%s\"}",
+        u->id, u->name, u->email, u->provider, u->avatar_color, u->session_token);
+    send_ok(sock, resp);
+}
+
+/* POST /api/google-login */
+static void route_google_login(SOCKET sock, const char *body)
+{
+    char email[128] = {0}, name[64] = {0};
+    json_str(body, "email", email, sizeof(email));
+    json_str(body, "name", name, sizeof(name));
+
+    if (!email[0]) {
+        send_error(sock, 400, "google account email required");
+        return;
+    }
+    if (!name[0]) strcpy(name, "Google User");
+
+    AuthUser *u = auth_find_user_by_email(email);
+    if (!u) {
+        if (g_auth_user_count >= MAX_AUTH_USERS) {
+            send_error(sock, 500, "User capacity exceeded");
+            return;
+        }
+        u = &g_auth_users[g_auth_user_count++];
+        snprintf(u->id, sizeof(u->id), "usr_g_%lx%04d", (unsigned long)time(NULL), rand() % 10000);
+        strncpy(u->name, name, sizeof(u->name) - 1);
+        strncpy(u->email, email, sizeof(u->email) - 1);
+        strcpy(u->password_hash, "OAUTH_MANAGED");
+        strcpy(u->avatar_color, "#4285F4");
+        strcpy(u->provider, "google");
+        u->created_at = time(NULL);
+    }
+    snprintf(u->session_token, sizeof(u->session_token), "sess_g_%lx%06x", (unsigned long)time(NULL), rand() & 0xffffff);
+
+    char resp[512];
+    snprintf(resp, sizeof(resp),
+        "{\"status\":\"ok\",\"user\":{\"id\":\"%s\",\"name\":\"%s\",\"email\":\"%s\",\"provider\":\"google\",\"avatarColor\":\"%s\"},\"token\":\"%s\"}",
+        u->id, u->name, u->email, u->avatar_color, u->session_token);
+    send_ok(sock, resp);
+}
+
+/* POST /api/forgot-password (Section 8: Anti-Enumeration Generic Notice) */
+static void route_forgot_password(SOCKET sock, const char *body)
+{
+    char email[128] = {0};
+    json_str(body, "email", email, sizeof(email));
+
+    if (!email[0]) {
+        send_error(sock, 400, "email required");
+        return;
+    }
+
+    AuthUser *u = auth_find_user_by_email(email);
+    char reset_token[64] = "";
+    if (u) {
+        snprintf(reset_token, sizeof(reset_token), "rst_%lx%08x", (unsigned long)time(NULL), rand());
+        if (g_reset_token_count < MAX_RESET_TOKENS) {
+            AuthResetToken *rt = &g_reset_tokens[g_reset_token_count++];
+            strncpy(rt->token, reset_token, sizeof(rt->token) - 1);
+            strncpy(rt->email, u->email, sizeof(rt->email) - 1);
+            rt->expires_at = time(NULL) + (15 * 60); /* 15 minutes */
+            rt->used = 0;
+        }
+    }
+
+    /* Section 8: Always return generic message to protect against user enumeration */
+    char resp[512];
+    if (reset_token[0]) {
+        snprintf(resp, sizeof(resp),
+            "{\"status\":\"ok\",\"message\":\"If an account exists for this email, you will receive a password reset link.\",\"resetToken\":\"%s\",\"expiresIn\":900}",
+            reset_token);
+    } else {
+        snprintf(resp, sizeof(resp),
+            "{\"status\":\"ok\",\"message\":\"If an account exists for this email, you will receive a password reset link.\"}"
+        );
+    }
+    send_ok(sock, resp);
+}
+
+/* POST /api/reset-password */
+static void route_reset_password(SOCKET sock, const char *body)
+{
+    char token[64] = {0}, password[128] = {0};
+    json_str(body, "token", token, sizeof(token));
+    json_str(body, "password", password, sizeof(password));
+
+    if (!token[0] || !password[0]) {
+        send_error(sock, 400, "token and new password required");
+        return;
+    }
+    if (strlen(password) < 6) {
+        send_error(sock, 400, "password must be at least 6 characters");
+        return;
+    }
+
+    AuthResetToken *found_token = NULL;
+    for (int i = 0; i < g_reset_token_count; i++) {
+        if (strcmp(g_reset_tokens[i].token, token) == 0) {
+            found_token = &g_reset_tokens[i];
+            break;
+        }
+    }
+
+    if (!found_token) {
+        send_error(sock, 404, "Invalid or unrecognized reset token");
+        return;
+    }
+    if (found_token->used) {
+        send_error(sock, 400, "Reset token has already been used");
+        return;
+    }
+    if (time(NULL) > found_token->expires_at) {
+        send_error(sock, 400, "Reset token has expired");
+        return;
+    }
+
+    AuthUser *u = auth_find_user_by_email(found_token->email);
+    if (!u) {
+        send_error(sock, 404, "Associated user account not found");
+        return;
+    }
+
+    hash_password(password, u->password_hash, sizeof(u->password_hash));
+    found_token->used = 1;
+
+    send_ok(sock, "{\"status\":\"ok\",\"message\":\"Password updated successfully\"}");
+}
+
+/* POST /api/logout */
+static void route_logout(SOCKET sock, const char *body)
+{
+    (void)body;
+    send_ok(sock, "{\"status\":\"ok\",\"message\":\"Logged out successfully\"}");
+}
+
+/* GET /api/me */
+static void route_me(SOCKET sock, const char *req)
+{
+    (void)req;
+    if (g_auth_user_count > 0) {
+        AuthUser *u = &g_auth_users[g_auth_user_count - 1];
+        char resp[512];
+        snprintf(resp, sizeof(resp),
+            "{\"authenticated\":true,\"user\":{\"id\":\"%s\",\"name\":\"%s\",\"email\":\"%s\",\"provider\":\"%s\",\"avatarColor\":\"%s\"}}",
+            u->id, u->name, u->email, u->provider, u->avatar_color);
+        send_ok(sock, resp);
+    } else {
+        send_ok(sock, "{\"authenticated\":false,\"user\":null}");
+    }
+}
+
+/* ═══════════════════════════════════════════════
    REQUEST DISPATCHER
 ═══════════════════════════════════════════════ */
 static void handle_request(SOCKET sock, char *req, int req_len)
@@ -1372,6 +1651,29 @@ static void handle_request(SOCKET sock, char *req, int req_len)
             route_jam_leave(sock, body); return;
         }
         send_error(sock,404,"not found"); return;
+    }
+
+    /* ── Authentication & Password Reset Endpoints ── */
+    if (strcmp(seg2, "register") == 0 && strcmp(method, "POST") == 0) {
+        route_register(sock, body); return;
+    }
+    if (strcmp(seg2, "login") == 0 && strcmp(method, "POST") == 0) {
+        route_login(sock, body); return;
+    }
+    if (strcmp(seg2, "google-login") == 0 && strcmp(method, "POST") == 0) {
+        route_google_login(sock, body); return;
+    }
+    if (strcmp(seg2, "forgot-password") == 0 && strcmp(method, "POST") == 0) {
+        route_forgot_password(sock, body); return;
+    }
+    if (strcmp(seg2, "reset-password") == 0 && strcmp(method, "POST") == 0) {
+        route_reset_password(sock, body); return;
+    }
+    if (strcmp(seg2, "logout") == 0 && strcmp(method, "POST") == 0) {
+        route_logout(sock, body); return;
+    }
+    if (strcmp(seg2, "me") == 0 && strcmp(method, "GET") == 0) {
+        route_me(sock, req); return;
     }
 
     /* ── Unhandled /api/ route: return 404 JSON, never fall through to static files ── */

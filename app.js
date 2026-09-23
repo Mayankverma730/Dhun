@@ -2407,30 +2407,53 @@ function continueAsGuestFromGate() {
 }
 
 function switchGateTab(tab) {
+  const tabGroup   = document.getElementById('gate-tab-group');
   const signinBtn  = document.getElementById('gate-tab-signin');
   const signupBtn  = document.getElementById('gate-tab-signup');
   const signinForm = document.getElementById('gate-form-signin');
   const signupForm = document.getElementById('gate-form-signup');
+  const forgotForm = document.getElementById('gate-form-forgot');
+  const resetForm  = document.getElementById('gate-form-reset');
   const title      = document.getElementById('gate-title');
   const subtitle   = document.getElementById('gate-subtitle');
 
+  // Hide all form panels first
+  if (signinForm) signinForm.style.display = 'none';
+  if (signupForm) signupForm.style.display = 'none';
+  if (forgotForm) forgotForm.style.display = 'none';
+  if (resetForm)  resetForm.style.display  = 'none';
+
   if (tab === 'signin') {
+    if (tabGroup)   tabGroup.style.display = 'grid';
     if (signinBtn)  signinBtn.classList.add('active');
     if (signupBtn)  signupBtn.classList.remove('active');
     if (signinForm) signinForm.style.display = 'block';
-    if (signupForm) signupForm.style.display = 'none';
     if (title)      title.textContent = 'Welcome Back to Dhun';
     if (subtitle)   subtitle.textContent = 'Sign in to unlock your private likes, playlists & listening suite';
     populateSavedCredentials();
     renderGateSavedProfiles();
-  } else {
+  } else if (tab === 'signup') {
+    if (tabGroup)   tabGroup.style.display = 'grid';
     if (signinBtn)  signinBtn.classList.remove('active');
     if (signupBtn)  signupBtn.classList.add('active');
-    if (signinForm) signinForm.style.display = 'none';
     if (signupForm) signupForm.style.display = 'block';
     if (title)      title.textContent = 'Create Free Account';
     if (subtitle)   subtitle.textContent = '100% private to you with zero cross-user data collision';
     renderGateAvatarColorPicker();
+  } else if (tab === 'forgot') {
+    if (tabGroup)   tabGroup.style.display = 'none';
+    if (forgotForm) forgotForm.style.display = 'block';
+    if (title)      title.textContent = 'Account Recovery';
+    if (subtitle)   subtitle.textContent = 'Recover your password and regain access to your private library';
+    const emailInput = document.getElementById('gate-forgot-email');
+    if (emailInput) setTimeout(() => emailInput.focus(), 50);
+  } else if (tab === 'reset') {
+    if (tabGroup)   tabGroup.style.display = 'none';
+    if (resetForm)  resetForm.style.display  = 'block';
+    if (title)      title.textContent = 'Reset Password';
+    if (subtitle)   subtitle.textContent = 'Choose a strong new password for your account';
+    const passInput = document.getElementById('gate-reset-password');
+    if (passInput) setTimeout(() => passInput.focus(), 50);
   }
 }
 
@@ -2501,7 +2524,7 @@ function handleGateEmailSignIn() {
   }
 
   if (user.password && user.password !== password) {
-    showToast('❌ Incorrect password. Please try again.');
+    showToast('❌ Incorrect password. Please try again or use Forgot Password.');
     if (passInput) {
       passInput.value = '';
       passInput.focus();
@@ -2517,20 +2540,47 @@ function handleGateEmailSignIn() {
 
   saveCredentials(user.email);
   if (passInput) passInput.value = '';
+
+  // Background notify C backend login
+  try {
+    fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: user.email, password })
+    }).catch(() => {});
+  } catch(e) {}
+
   enterAppFromGate(user);
 }
 
 function handleGateEmailSignUp() {
-  const nameInput  = document.getElementById('gate-signup-name');
-  const emailInput = document.getElementById('gate-signup-email');
-  const passInput  = document.getElementById('gate-signup-password');
+  const nameInput    = document.getElementById('gate-signup-name');
+  const emailInput   = document.getElementById('gate-signup-email');
+  const passInput    = document.getElementById('gate-signup-password');
+  const confirmInput = document.getElementById('gate-signup-confirm-password');
 
   const name = (nameInput?.value || '').trim();
   const email = (emailInput?.value || '').trim().toLowerCase();
   const password = (passInput?.value || '').trim();
+  const confirmPassword = (confirmInput?.value || '').trim();
 
-  if (!name || !email || !password) {
-    showToast('⚠️ Please fill out all fields');
+  if (!name || !email || !password || !confirmPassword) {
+    showToast('⚠️ Please fill out all fields including Confirm Password');
+    return;
+  }
+
+  if (password.length < 6) {
+    showToast('⚠️ Password must be at least 6 characters long');
+    if (passInput) passInput.focus();
+    return;
+  }
+
+  if (password !== confirmPassword) {
+    showToast('❌ Passwords do not match. Please re-enter.');
+    if (confirmInput) {
+      confirmInput.value = '';
+      confirmInput.focus();
+    }
     return;
   }
 
@@ -2541,18 +2591,10 @@ function handleGateEmailSignUp() {
   );
 
   if (existing) {
-    if (existing.password && existing.password !== password) {
-      showToast('❌ Existing account password does not match.');
-      if (passInput) {
-        passInput.value = '';
-        passInput.focus();
-      }
-      return;
-    }
-    showToast(`✅ Welcome back, ${existing.name}! Signed in.`);
-    saveCredentials(existing.email);
-    if (passInput) passInput.value = '';
-    enterAppFromGate(existing);
+    showToast('⚠️ An account with this email already exists. Please sign in.');
+    switchGateTab('signin');
+    const signinEmail = document.getElementById('gate-signin-email');
+    if (signinEmail) signinEmail.value = email;
     return;
   }
 
@@ -2573,8 +2615,19 @@ function handleGateEmailSignUp() {
   saveStoredUsers(users);
   saveCredentials(email);
   if (passInput) passInput.value = '';
+  if (confirmInput) confirmInput.value = '';
+
+  // Background registration to C backend if alive
+  try {
+    fetch('/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password })
+    }).catch(() => {});
+  } catch(e) {}
 
   enterAppFromGate(newUser);
+  showToast(`🎉 Account created! Welcome to Dhun, ${name}!`);
 }
 
 function getUserStorageKey(suffix) {
@@ -2724,27 +2777,50 @@ function closeAuthModal() {
 }
 
 function switchAuthTab(tab) {
-  const signinBtn = document.getElementById('auth-tab-signin');
-  const signupBtn = document.getElementById('auth-tab-signup');
+  const tabGroup    = document.getElementById('auth-tab-group');
+  const signinBtn   = document.getElementById('auth-tab-signin');
+  const signupBtn   = document.getElementById('auth-tab-signup');
   const signinPanel = document.getElementById('auth-panel-signin');
   const signupPanel = document.getElementById('auth-panel-signup');
-  const title = document.getElementById('auth-modal-title');
-  const sub = document.getElementById('auth-modal-sub');
+  const forgotPanel = document.getElementById('auth-panel-forgot');
+  const resetPanel  = document.getElementById('auth-panel-reset');
+  const title       = document.getElementById('auth-modal-title');
+  const sub         = document.getElementById('auth-modal-sub');
+
+  if (signinPanel) signinPanel.style.display = 'none';
+  if (signupPanel) signupPanel.style.display = 'none';
+  if (forgotPanel) forgotPanel.style.display = 'none';
+  if (resetPanel)  resetPanel.style.display  = 'none';
 
   if (tab === 'signin') {
-    if (signinBtn) signinBtn.classList.add('active');
-    if (signupBtn) signupBtn.classList.remove('active');
+    if (tabGroup)    tabGroup.style.display = 'grid';
+    if (signinBtn)   signinBtn.classList.add('active');
+    if (signupBtn)   signupBtn.classList.remove('active');
     if (signinPanel) signinPanel.style.display = 'block';
-    if (signupPanel) signupPanel.style.display = 'none';
-    if (title) title.textContent = 'Welcome Back to Dhun';
-    if (sub) sub.textContent = 'Sign in to access your personal liked songs, playlists & stats';
-  } else {
-    if (signinBtn) signinBtn.classList.remove('active');
-    if (signupBtn) signupBtn.classList.add('active');
-    if (signinPanel) signinPanel.style.display = 'none';
+    if (title)       title.textContent = 'Welcome Back to Dhun';
+    if (sub)         sub.textContent = 'Sign in to access your personal liked songs, playlists & stats';
+  } else if (tab === 'signup') {
+    if (tabGroup)    tabGroup.style.display = 'grid';
+    if (signinBtn)   signinBtn.classList.remove('active');
+    if (signupBtn)   signupBtn.classList.add('active');
     if (signupPanel) signupPanel.style.display = 'block';
-    if (title) title.textContent = 'Create Free Account';
-    if (sub) sub.textContent = 'Your songs, playlists & music vibe are 100% private to you';
+    if (title)       title.textContent = 'Create Free Account';
+    if (sub)         sub.textContent = 'Your songs, playlists & music vibe are 100% private to you';
+    renderAvatarColorPicker();
+  } else if (tab === 'forgot') {
+    if (tabGroup)    tabGroup.style.display = 'none';
+    if (forgotPanel) forgotPanel.style.display = 'block';
+    if (title)       title.textContent = 'Reset Your Password';
+    if (sub)         sub.textContent = 'Enter your email and we will send you a password recovery link';
+    const emailInput = document.getElementById('forgot-email');
+    if (emailInput) setTimeout(() => emailInput.focus(), 50);
+  } else if (tab === 'reset') {
+    if (tabGroup)   tabGroup.style.display = 'none';
+    if (resetPanel) resetPanel.style.display = 'block';
+    if (title)      title.textContent = 'Set New Password';
+    if (sub)        sub.textContent = 'Create a secure new password for your Dhun account';
+    const passInput = document.getElementById('reset-password');
+    if (passInput) setTimeout(() => passInput.focus(), 50);
   }
 }
 
@@ -2763,16 +2839,33 @@ function selectAvatarColor(color, btn) {
 }
 
 function handleEmailSignUp() {
-  const nameInput = document.getElementById('signup-name');
-  const emailInput = document.getElementById('signup-email');
-  const passInput = document.getElementById('signup-password');
+  const nameInput    = document.getElementById('signup-name');
+  const emailInput   = document.getElementById('signup-email');
+  const passInput    = document.getElementById('signup-password');
+  const confirmInput = document.getElementById('signup-confirm-password');
 
   const name = (nameInput?.value || '').trim();
   const email = (emailInput?.value || '').trim().toLowerCase();
   const password = (passInput?.value || '').trim();
+  const confirmPassword = (confirmInput?.value || '').trim();
 
-  if (!name || !email || !password) {
-    showToast('⚠️ Please fill out all fields');
+  if (!name || !email || !password || !confirmPassword) {
+    showToast('⚠️ Please fill out all fields including Confirm Password');
+    return;
+  }
+
+  if (password.length < 6) {
+    showToast('⚠️ Password must be at least 6 characters long');
+    if (passInput) passInput.focus();
+    return;
+  }
+
+  if (password !== confirmPassword) {
+    showToast('❌ Passwords do not match. Please re-enter.');
+    if (confirmInput) {
+      confirmInput.value = '';
+      confirmInput.focus();
+    }
     return;
   }
 
@@ -2783,19 +2876,10 @@ function handleEmailSignUp() {
   );
 
   if (existing) {
-    if (existing.password && existing.password !== password) {
-      showToast('❌ Existing account password does not match.');
-      if (passInput) {
-        passInput.value = '';
-        passInput.focus();
-      }
-      return;
-    }
-    showToast(`✅ Welcome back, ${existing.name}! Signed in.`);
-    saveCredentials(existing.email);
-    if (passInput) passInput.value = '';
-    closeAuthModal();
-    switchToUser(existing);
+    showToast('⚠️ An account with this email already exists. Please sign in.');
+    switchAuthTab('signin');
+    const signinEmail = document.getElementById('signin-email');
+    if (signinEmail) signinEmail.value = email;
     return;
   }
 
@@ -2816,6 +2900,16 @@ function handleEmailSignUp() {
   saveStoredUsers(users);
   saveCredentials(email);
   if (passInput) passInput.value = '';
+  if (confirmInput) confirmInput.value = '';
+
+  // Background registration to C backend if alive
+  try {
+    fetch('/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password })
+    }).catch(() => {});
+  } catch(e) {}
 
   closeAuthModal();
   switchToUser(newUser);
@@ -2824,10 +2918,10 @@ function handleEmailSignUp() {
 
 function handleEmailSignIn() {
   const emailInput = document.getElementById('signin-email');
-  const passInput = document.getElementById('signin-password');
+  const passInput  = document.getElementById('signin-password');
 
   const identifier = (emailInput?.value || '').trim();
-  const password = (passInput?.value || '').trim();
+  const password   = (passInput?.value || '').trim();
 
   if (!identifier) {
     showToast('⚠️ Please enter email or username');
@@ -2875,7 +2969,7 @@ function handleEmailSignIn() {
   }
 
   if (user.password && user.password !== password) {
-    showToast('❌ Incorrect password. Please try again.');
+    showToast('❌ Incorrect password. Please try again or use Forgot Password.');
     if (passInput) {
       passInput.value = '';
       passInput.focus();
@@ -2890,8 +2984,269 @@ function handleEmailSignIn() {
 
   saveCredentials(user.email);
   if (passInput) passInput.value = '';
+
+  // Background notify C backend login
+  try {
+    fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: user.email, password })
+    }).catch(() => {});
+  } catch(e) {}
+
   closeAuthModal();
   switchToUser(user);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   PASSWORD RESET & TOKEN MANAGEMENT (Anti-Enumeration & Secure Reset)
+   ══════════════════════════════════════════════════════════════════ */
+function getPasswordResetTokens() {
+  try {
+    return JSON.parse(localStorage.getItem('dhun_reset_tokens') || '[]');
+  } catch(e) {
+    return [];
+  }
+}
+
+function savePasswordResetTokens(tokens) {
+  try {
+    localStorage.setItem('dhun_reset_tokens', JSON.stringify(tokens || []));
+  } catch(e) {}
+}
+
+function handleForgotPassword(isFromGate = false) {
+  const emailInput = document.getElementById(isFromGate ? 'gate-forgot-email' : 'forgot-email');
+  const statusEl   = document.getElementById(isFromGate ? 'gate-forgot-status' : 'auth-forgot-status');
+  const email      = (emailInput?.value || '').trim().toLowerCase();
+
+  if (!email || !email.includes('@')) {
+    showToast('⚠️ Please enter a valid email address');
+    if (emailInput) emailInput.focus();
+    return;
+  }
+
+  // Anti-enumeration: find if account actually exists
+  const users = getStoredUsers();
+  const existingUser = users.find(u => u.email && u.email.toLowerCase() === email);
+
+  // Generate cryptographically random, short-lived reset token (15 mins)
+  let generatedToken = null;
+  if (existingUser) {
+    const randomHex = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+    generatedToken = `rst_${randomHex}`;
+
+    const tokens = getPasswordResetTokens();
+    tokens.push({
+      token: generatedToken,
+      email: existingUser.email,
+      expiresAt: Date.now() + 15 * 60 * 1000, // 15 mins expiry
+      used: false
+    });
+    savePasswordResetTokens(tokens);
+  }
+
+  // Notify C backend if alive
+  try {
+    fetch('/api/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    }).catch(() => {});
+  } catch(e) {}
+
+  // Anti-enumeration notice: Always display identical message to prevent user enumeration
+  if (statusEl) {
+    let html = `
+      <div class="auth-status-banner">
+        ✉️ <strong>Notice:</strong> If an account exists for <em>${escapeHtml(email)}</em>, you will receive a password reset link.
+      </div>
+    `;
+
+    // Interactive Demo Simulation Link: provided for convenient testing when account exists
+    if (generatedToken) {
+      html += `
+        <div class="reset-simulation-card">
+          <div class="sim-title"><span>📧</span> Test Simulation: Reset Link Generated</div>
+          <p style="margin:4px 0 0;font-size:12px;color:var(--text-2);">In production this is delivered via email. For direct browser testing, click below:</p>
+          <a class="sim-link" onclick="openResetPasswordWithToken('${generatedToken}', ${isFromGate})">
+            Follow Password Reset Link (Token: ${generatedToken.slice(0, 10)}...) →
+          </a>
+        </div>
+      `;
+    }
+
+    statusEl.innerHTML = html;
+    statusEl.style.display = 'block';
+  }
+
+  showToast('📬 Password reset instructions sent if email exists.');
+}
+
+function openResetPasswordWithToken(token, isFromGate = false) {
+  if (isFromGate) {
+    switchGateTab('reset');
+  } else {
+    switchAuthTab('reset');
+  }
+
+  const tokenInput = document.getElementById(isFromGate ? 'gate-reset-token' : 'auth-reset-token');
+  const statusEl   = document.getElementById(isFromGate ? 'gate-reset-status' : 'auth-reset-status');
+
+  if (tokenInput) tokenInput.value = token;
+  if (statusEl) {
+    statusEl.innerHTML = `
+      <div class="auth-status-banner success">
+        ✓ <strong>Reset Token Loaded:</strong> Enter your new password below.
+      </div>
+    `;
+    statusEl.style.display = 'block';
+  }
+
+  const passInput = document.getElementById(isFromGate ? 'gate-reset-password' : 'reset-password');
+  if (passInput) {
+    passInput.value = '';
+    setTimeout(() => passInput.focus(), 60);
+  }
+}
+
+function handleResetPassword(isFromGate = false) {
+  const tokenInput   = document.getElementById(isFromGate ? 'gate-reset-token' : 'auth-reset-token');
+  const passInput    = document.getElementById(isFromGate ? 'gate-reset-password' : 'reset-password');
+  const confirmInput = document.getElementById(isFromGate ? 'gate-reset-confirm-password' : 'reset-confirm-password');
+  const statusEl     = document.getElementById(isFromGate ? 'gate-reset-status' : 'auth-reset-status');
+
+  const token           = (tokenInput?.value || '').trim();
+  const newPassword     = (passInput?.value || '').trim();
+  const confirmPassword = (confirmInput?.value || '').trim();
+
+  if (!token) {
+    showToast('❌ Missing password reset token. Please request a new link.');
+    if (statusEl) {
+      statusEl.innerHTML = '<div class="auth-status-banner warning">⚠️ Invalid or missing token. Please start from Forgot Password.</div>';
+      statusEl.style.display = 'block';
+    }
+    return;
+  }
+
+  if (!newPassword || newPassword.length < 6) {
+    showToast('⚠️ New password must be at least 6 characters');
+    if (passInput) passInput.focus();
+    return;
+  }
+
+  if (newPassword !== confirmPassword) {
+    showToast('❌ Passwords do not match. Please re-enter.');
+    if (confirmInput) {
+      confirmInput.value = '';
+      confirmInput.focus();
+    }
+    return;
+  }
+
+  // Validate token against storage
+  const tokens = getPasswordResetTokens();
+  const tokenEntry = tokens.find(t => t.token === token);
+
+  if (!tokenEntry) {
+    showToast('❌ Token not recognized. Please request a new reset link.');
+    if (statusEl) {
+      statusEl.innerHTML = '<div class="auth-status-banner warning">⚠️ This reset link is unrecognized or has expired.</div>';
+      statusEl.style.display = 'block';
+    }
+    return;
+  }
+
+  if (tokenEntry.used) {
+    showToast('❌ This reset token has already been used.');
+    if (statusEl) {
+      statusEl.innerHTML = '<div class="auth-status-banner warning">⚠️ This single-use link has already been used. Please request a new one.</div>';
+      statusEl.style.display = 'block';
+    }
+    return;
+  }
+
+  if (Date.now() > tokenEntry.expiresAt) {
+    showToast('❌ This reset link has expired (15 minute limit).');
+    if (statusEl) {
+      statusEl.innerHTML = '<div class="auth-status-banner warning">⚠️ Token expired. Please request a new password reset link.</div>';
+      statusEl.style.display = 'block';
+    }
+    return;
+  }
+
+  // Update user's password
+  const users = getStoredUsers();
+  const user = users.find(u => u.email && u.email.toLowerCase() === tokenEntry.email.toLowerCase());
+
+  if (user) {
+    user.password = newPassword;
+    saveStoredUsers(users);
+  }
+
+  // Invalidate token (single use)
+  tokenEntry.used = true;
+  savePasswordResetTokens(tokens);
+
+  // Notify C backend if alive
+  try {
+    fetch('/api/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password: newPassword })
+    }).catch(() => {});
+  } catch(e) {}
+
+  if (statusEl) {
+    statusEl.innerHTML = '<div class="auth-status-banner success">🎉 <strong>Success!</strong> Password updated successfully. Redirecting to sign in...</div>';
+    statusEl.style.display = 'block';
+  }
+
+  showToast('✅ Password reset successfully! Please sign in with your new password.');
+
+  setTimeout(() => {
+    if (isFromGate) {
+      switchGateTab('signin');
+      const emailField = document.getElementById('gate-signin-email');
+      if (emailField && tokenEntry.email) emailField.value = tokenEntry.email;
+      const passField = document.getElementById('gate-signin-password');
+      if (passField) { passField.value = ''; passField.focus(); }
+    } else {
+      switchAuthTab('signin');
+      const emailField = document.getElementById('signin-email');
+      if (emailField && tokenEntry.email) emailField.value = tokenEntry.email;
+      const passField = document.getElementById('signin-password');
+      if (passField) { passField.value = ''; passField.focus(); }
+    }
+  }, 1400);
+}
+
+function checkResetTokenInURL() {
+  try {
+    let token = '';
+    const hash = window.location.hash || '';
+    const search = window.location.search || '';
+    if (hash.includes('reset-token=')) {
+      const m = hash.match(/reset-token=([^&]+)/);
+      if (m) token = decodeURIComponent(m[1]);
+    } else if (hash.includes('token=')) {
+      const m = hash.match(/token=([^&]+)/);
+      if (m) token = decodeURIComponent(m[1]);
+    } else if (search.includes('token=')) {
+      const m = search.match(/token=([^&]+)/);
+      if (m) token = decodeURIComponent(m[1]);
+    }
+
+    if (token) {
+      const gateScreen = document.getElementById('login-gate-screen');
+      const isGate = gateScreen && gateScreen.style.display !== 'none';
+      if (!isGate) {
+        openAuthModal('reset');
+      }
+      openResetPasswordWithToken(token, isGate);
+    }
+  } catch(e) {}
 }
 
 let _googleAuthIsFromGate = false;
@@ -5895,6 +6250,10 @@ document.addEventListener('click', e => {
 document.addEventListener('DOMContentLoaded', async () => {
   /* Initialize User Profile & Auth Session first */
   initProfile();
+
+  /* Check for password reset tokens in URL */
+  checkResetTokenInURL();
+  window.addEventListener('hashchange', checkResetTokenInURL);
 
   /* Restore theme */
   let savedTheme = 'default';

@@ -14,7 +14,7 @@
     rel="stylesheet" />
   <link rel="icon" type="image/png" href="logo.png" />
   <link rel="apple-touch-icon" href="logo.png" />
-  <link rel="stylesheet" href="style.css?v=19.0" />
+  <link rel="stylesheet" href="style.css?v=20.0" />
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
     (function () {
@@ -136,7 +136,7 @@
           <div id="gate-saved-profiles" style="display:none;margin-bottom:14px;"></div>
 
           <!-- Tabs Switcher -->
-          <div class="auth-tab-group">
+          <div class="auth-tab-group" id="gate-tab-group">
             <button class="auth-tab-btn active" id="gate-tab-signin" onclick="switchGateTab('signin')">Sign In</button>
             <button class="auth-tab-btn" id="gate-tab-signup" onclick="switchGateTab('signup')">Create Account</button>
           </div>
@@ -148,15 +148,21 @@
               <input class="form-input" id="gate-signin-email" type="email" placeholder="you@example.com" required autocomplete="email" />
             </div>
             <div class="auth-form-group" style="margin-top:14px">
-              <label class="auth-input-label" for="gate-signin-password">Password</label>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <label class="auth-input-label" for="gate-signin-password" style="margin-bottom:0">Password</label>
+                <a href="javascript:void(0)" onclick="switchGateTab('forgot')" class="auth-forgot-link">Forgot Password?</a>
+              </div>
               <input class="form-input" id="gate-signin-password" type="password" placeholder="••••••••" required autocomplete="current-password" />
             </div>
             <button type="submit" class="btn-primary auth-action-btn" style="margin-top:22px">
               <span>Sign In & Enter Dhun</span>
             </button>
+            <div class="auth-switch-prompt" style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-3);">
+              Don't have an account? <a href="javascript:void(0)" onclick="switchGateTab('signup')" style="color:var(--accent);font-weight:600;text-decoration:none;">Create Account</a>
+            </div>
           </form>
 
-          <!-- Sign Up Form -->
+          <!-- Sign Up Form (Create Account) -->
           <form id="gate-form-signup" class="auth-panel" style="display:none" onsubmit="event.preventDefault();handleGateEmailSignUp()">
             <div class="auth-form-group">
               <label class="auth-input-label" for="gate-signup-name">Full Name</label>
@@ -171,6 +177,10 @@
               <input class="form-input" id="gate-signup-password" type="password" placeholder="At least 6 characters" required minlength="6" autocomplete="new-password" />
             </div>
             <div class="auth-form-group" style="margin-top:12px">
+              <label class="auth-input-label" for="gate-signup-confirm-password">Confirm Password</label>
+              <input class="form-input" id="gate-signup-confirm-password" type="password" placeholder="Confirm your password" required minlength="6" autocomplete="new-password" />
+            </div>
+            <div class="auth-form-group" style="margin-top:12px">
               <label class="auth-input-label">Avatar Color Theme</label>
               <div class="avatar-palette-picker" id="gate-signup-avatar-picker">
                 <!-- Color dots -->
@@ -179,6 +189,56 @@
             <button type="submit" class="btn-primary auth-action-btn" style="margin-top:22px">
               <span>Create Account & Enter Dhun</span>
             </button>
+            <div class="auth-switch-prompt" style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-3);">
+              Already have an account? <a href="javascript:void(0)" onclick="switchGateTab('signin')" style="color:var(--accent);font-weight:600;text-decoration:none;">Sign In</a>
+            </div>
+          </form>
+
+          <!-- Forgot Password Form -->
+          <form id="gate-form-forgot" class="auth-panel" style="display:none" onsubmit="event.preventDefault();handleForgotPassword(true)">
+            <div style="text-align:left;margin-bottom:14px;">
+              <span style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--accent);">Password Recovery</span>
+              <p style="margin:4px 0 0;font-size:13px;color:var(--text-2);">Enter your email address and we'll generate a secure password reset link.</p>
+            </div>
+            <div class="auth-form-group">
+              <label class="auth-input-label" for="gate-forgot-email">Account Email Address</label>
+              <input class="form-input" id="gate-forgot-email" type="email" placeholder="you@example.com" required autocomplete="email" />
+            </div>
+            <div id="gate-forgot-status" style="display:none;margin-top:12px;"></div>
+            <button type="submit" id="gate-forgot-btn" class="btn-primary auth-action-btn" style="margin-top:18px">
+              <span>Send Reset Link</span>
+            </button>
+            <div style="text-align:center;margin-top:16px;">
+              <button type="button" class="auth-back-link" onclick="switchGateTab('signin')">
+                ← Back to Login
+              </button>
+            </div>
+          </form>
+
+          <!-- Reset Password Form -->
+          <form id="gate-form-reset" class="auth-panel" style="display:none" onsubmit="event.preventDefault();handleResetPassword(true)">
+            <div style="text-align:left;margin-bottom:14px;">
+              <span style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--accent);">Reset Password</span>
+              <p style="margin:4px 0 0;font-size:13px;color:var(--text-2);">Create a new, strong password to regain access to your account.</p>
+            </div>
+            <input type="hidden" id="gate-reset-token" value="" />
+            <div class="auth-form-group">
+              <label class="auth-input-label" for="gate-reset-password">New Password</label>
+              <input class="form-input" id="gate-reset-password" type="password" placeholder="At least 6 characters" required minlength="6" autocomplete="new-password" />
+            </div>
+            <div class="auth-form-group" style="margin-top:12px">
+              <label class="auth-input-label" for="gate-reset-confirm-password">Confirm New Password</label>
+              <input class="form-input" id="gate-reset-confirm-password" type="password" placeholder="Repeat new password" required minlength="6" autocomplete="new-password" />
+            </div>
+            <div id="gate-reset-status" style="display:none;margin-top:12px;"></div>
+            <button type="submit" id="gate-reset-btn" class="btn-primary auth-action-btn" style="margin-top:18px">
+              <span>Update Password & Sign In</span>
+            </button>
+            <div style="text-align:center;margin-top:16px;">
+              <button type="button" class="auth-back-link" onclick="switchGateTab('signin')">
+                ← Back to Login
+              </button>
+            </div>
           </form>
 
           <!-- Guest Exploration Option -->
@@ -1524,7 +1584,7 @@
       </div>
 
       <!-- Auth Tabs: Sign In vs Sign Up -->
-      <div class="auth-tab-group">
+      <div class="auth-tab-group" id="auth-tab-group">
         <button class="auth-tab-btn active" id="auth-tab-signin" onclick="switchAuthTab('signin')">Sign In</button>
         <button class="auth-tab-btn" id="auth-tab-signup" onclick="switchAuthTab('signup')">Create Account</button>
       </div>
@@ -1536,12 +1596,18 @@
           <input class="form-input" id="signin-email" type="email" placeholder="you@example.com" required autocomplete="email" />
         </div>
         <div class="auth-form-group" style="margin-top:12px">
-          <label class="auth-input-label" for="signin-password">Password</label>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <label class="auth-input-label" for="signin-password" style="margin-bottom:0">Password</label>
+            <a href="javascript:void(0)" onclick="switchAuthTab('forgot')" class="auth-forgot-link">Forgot Password?</a>
+          </div>
           <input class="form-input" id="signin-password" type="password" placeholder="••••••••" required autocomplete="current-password" />
         </div>
         <button type="submit" class="btn-primary auth-action-btn" style="margin-top:20px">
           <span>Sign In to Dhun</span>
         </button>
+        <div class="auth-switch-prompt" style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-3);">
+          Don't have an account? <a href="javascript:void(0)" onclick="switchAuthTab('signup')" style="color:var(--accent);font-weight:600;text-decoration:none;">Create Account</a>
+        </div>
       </form>
 
       <!-- Tab Content: Sign Up (Create Account) -->
@@ -1559,6 +1625,10 @@
           <input class="form-input" id="signup-password" type="password" placeholder="At least 6 characters" required minlength="6" autocomplete="new-password" />
         </div>
         <div class="auth-form-group" style="margin-top:12px">
+          <label class="auth-input-label" for="signup-confirm-password">Confirm Password</label>
+          <input class="form-input" id="signup-confirm-password" type="password" placeholder="Repeat your password" required minlength="6" autocomplete="new-password" />
+        </div>
+        <div class="auth-form-group" style="margin-top:12px">
           <label class="auth-input-label">Avatar Color Theme</label>
           <div class="avatar-palette-picker" id="signup-avatar-picker">
             <!-- Palette generated -->
@@ -1567,6 +1637,56 @@
         <button type="submit" class="btn-primary auth-action-btn" style="margin-top:20px">
           <span>Create My Account</span>
         </button>
+        <div class="auth-switch-prompt" style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-3);">
+          Already have an account? <a href="javascript:void(0)" onclick="switchAuthTab('signin')" style="color:var(--accent);font-weight:600;text-decoration:none;">Sign In</a>
+        </div>
+      </form>
+
+      <!-- Tab Content: Forgot Password -->
+      <form id="auth-panel-forgot" class="auth-panel" style="display:none" onsubmit="event.preventDefault();handleForgotPassword(false)">
+        <div style="text-align:left;margin-bottom:14px;">
+          <span style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--accent);">Password Recovery</span>
+          <p style="margin:4px 0 0;font-size:13px;color:var(--text-2);">Enter your email address and we'll send a secure password reset link.</p>
+        </div>
+        <div class="auth-form-group">
+          <label class="auth-input-label" for="forgot-email">Account Email Address</label>
+          <input class="form-input" id="forgot-email" type="email" placeholder="you@example.com" required autocomplete="email" />
+        </div>
+        <div id="auth-forgot-status" style="display:none;margin-top:12px;"></div>
+        <button type="submit" id="auth-forgot-btn" class="btn-primary auth-action-btn" style="margin-top:18px">
+          <span>Send Reset Link</span>
+        </button>
+        <div style="text-align:center;margin-top:16px;">
+          <button type="button" class="auth-back-link" onclick="switchAuthTab('signin')">
+            ← Back to Login
+          </button>
+        </div>
+      </form>
+
+      <!-- Tab Content: Reset Password -->
+      <form id="auth-panel-reset" class="auth-panel" style="display:none" onsubmit="event.preventDefault();handleResetPassword(false)">
+        <div style="text-align:left;margin-bottom:14px;">
+          <span style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--accent);">Reset Password</span>
+          <p style="margin:4px 0 0;font-size:13px;color:var(--text-2);">Set a new, strong password for your Dhun account.</p>
+        </div>
+        <input type="hidden" id="auth-reset-token" value="" />
+        <div class="auth-form-group">
+          <label class="auth-input-label" for="reset-password">New Password</label>
+          <input class="form-input" id="reset-password" type="password" placeholder="At least 6 characters" required minlength="6" autocomplete="new-password" />
+        </div>
+        <div class="auth-form-group" style="margin-top:12px">
+          <label class="auth-input-label" for="reset-confirm-password">Confirm New Password</label>
+          <input class="form-input" id="reset-confirm-password" type="password" placeholder="Repeat new password" required minlength="6" autocomplete="new-password" />
+        </div>
+        <div id="auth-reset-status" style="display:none;margin-top:12px;"></div>
+        <button type="submit" id="auth-reset-btn" class="btn-primary auth-action-btn" style="margin-top:18px">
+          <span>Update Password & Sign In</span>
+        </button>
+        <div style="text-align:center;margin-top:16px;">
+          <button type="button" class="auth-back-link" onclick="switchAuthTab('signin')">
+            ← Back to Login
+          </button>
+        </div>
       </form>
     </div>
   </div>
@@ -1810,7 +1930,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.5/dist/mqtt.min.js"></script>
   <script src="ytmusic_api.js?v=8.0"></script>
-  <script src="app.js?v=19.0"></script>
+  <script src="app.js?v=20.0"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 
