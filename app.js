@@ -18,6 +18,62 @@ const API = (function() {
   return location.origin + '/api';
 })();
 
+/* ── HTML Sanitization & XSS Prevention (T1-02) ─────────────────── */
+function escapeHTML(str) {
+  if (str === null || str === undefined) return '';
+  return String(str).replace(/[&<>"']/g, m => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[m]));
+}
+const escapeHtmlText = escapeHTML;
+
+function escapeAttribute(str) {
+  if (str === null || str === undefined) return '';
+  return String(str).replace(/[&<>"']/g, m => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[m]));
+}
+const escapeHtmlAttr = escapeAttribute;
+
+/* ── Cryptographic Client Password Hashing (T1-01) ─────────────── */
+async function hashClientPassword(password, salt = 'dhun_salt_2026') {
+  if (!password) return '';
+  try {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password + ':' + (salt || 'dhun_salt_2026'));
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  } catch (e) {
+    let hash = 5381;
+    const combined = password + ':' + salt;
+    for (let i = 0; i < combined.length; i++) {
+      hash = ((hash << 5) + hash) + combined.charCodeAt(i);
+    }
+    return Math.abs(hash).toString(16);
+  }
+}
+
+/* ── Auth Rate Limiting & Cooldown (T1-04) ─────────────────────── */
+let _lastAuthSubmissionTime = 0;
+function checkAuthThrottle() {
+  const now = Date.now();
+  if (now - _lastAuthSubmissionTime < 1000) {
+    showToast('⚠️ Please wait a moment before trying again.');
+    return false;
+  }
+  _lastAuthSubmissionTime = now;
+  return true;
+}
+
 /* ── PC & Local Audio Persistence (IndexedDB) ─────────────────── */
 const pcSongAudioMap = new Map(); /* songId -> { url, file, durationSec } */
 const globalAudioPlayer = new Audio();
@@ -2151,7 +2207,10 @@ function getStoredUsers() {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return deduplicateUsers(parsed);
+        return deduplicateUsers(parsed).map(u => {
+          if (u && u.password) delete u.password; /* Strip legacy plaintext passwords */
+          return u;
+        });
       }
     }
   } catch(e) {}
@@ -2160,7 +2219,11 @@ function getStoredUsers() {
 
 function saveStoredUsers(users) {
   try {
-    const deduped = deduplicateUsers(users);
+    const deduped = deduplicateUsers(users).map(u => {
+      const copy = { ...u };
+      delete copy.password; /* STRICT T1-01: Never persist plaintext password to localStorage */
+      return copy;
+    });
     localStorage.setItem('dhun_auth_users', JSON.stringify(deduped));
     authState.users = deduped;
   } catch(e) {}
@@ -2193,7 +2256,10 @@ function purgeLegacyAuthData() {
     if (raw) {
       const users = JSON.parse(raw);
       if (Array.isArray(users)) {
-        const cleaned = users.filter(u => u && u.id !== 'usr_andre_chou' && u.email !== 'me@chou.design');
+        const cleaned = users.map(u => {
+          if (u && u.password) delete u.password; /* T1-01: Eradicate plaintext passwords */
+          return u;
+        }).filter(u => u && u.id !== 'usr_andre_chou' && u.email !== 'me@chou.design');
         localStorage.setItem('dhun_auth_users', JSON.stringify(cleaned));
       }
     }
@@ -2471,7 +2537,9 @@ function selectGateAvatarColor(color, btn) {
   if (btn) btn.classList.add('selected');
 }
 
-function handleGateEmailSignIn() {
+async function handleGateEmailSignIn() {
+  if (!checkAuthThrottle()) return;
+
   const emailInput = document.getElementById('gate-signin-email');
   const passInput  = document.getElementById('gate-signin-password');
 
@@ -2503,11 +2571,13 @@ function handleGateEmailSignIn() {
     const namePart = isEmail ? identifier.split('@')[0] : identifier;
     const formattedName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
     const emailVal = isEmail ? lowerId : `${lowerId}@dhun.local`;
+    const canonicalId = makeUserIdFromEmail(emailVal);
+    const passwordHash = await hashClientPassword(password, canonicalId);
     user = {
-      id: makeUserIdFromEmail(emailVal),
+      id: canonicalId,
       name: formattedName,
       email: emailVal,
-      password: password,
+      passwordHash: passwordHash,
       avatarColor: authState.selectedAvatarColor || '#7c3aed',
       provider: 'email',
       bio: '🎵 Dhun Music Listener',
@@ -2523,7 +2593,11 @@ function handleGateEmailSignIn() {
     return;
   }
 
-  if (user.password && user.password !== password) {
+  const enteredHash = await hashClientPassword(password, user.id);
+  const isValid = (user.passwordHash && user.passwordHash === enteredHash) ||
+                  (user.password && user.password === password);
+
+  if (!isValid && (user.passwordHash || user.password)) {
     showToast('❌ Incorrect password. Please try again or use Forgot Password.');
     if (passInput) {
       passInput.value = '';
@@ -2532,11 +2606,10 @@ function handleGateEmailSignIn() {
     return;
   }
 
-  // If user previously had no password set, assign it now
-  if (!user.password && password) {
-    user.password = password;
-    saveStoredUsers(users);
-  }
+  // Upgrade to hashed password and eradicate plaintext password
+  user.passwordHash = enteredHash;
+  delete user.password;
+  saveStoredUsers(users);
 
   saveCredentials(user.email);
   if (passInput) passInput.value = '';
@@ -2553,7 +2626,9 @@ function handleGateEmailSignIn() {
   enterAppFromGate(user);
 }
 
-function handleGateEmailSignUp() {
+async function handleGateEmailSignUp() {
+  if (!checkAuthThrottle()) return;
+
   const nameInput    = document.getElementById('gate-signup-name');
   const emailInput   = document.getElementById('gate-signup-email');
   const passInput    = document.getElementById('gate-signup-password');
@@ -2599,11 +2674,12 @@ function handleGateEmailSignUp() {
   }
 
   const canonicalId = makeUserIdFromEmail(email);
+  const passwordHash = await hashClientPassword(password, canonicalId);
   const newUser = {
     id: canonicalId,
     name: name,
     email: email,
-    password: password,
+    passwordHash: passwordHash,
     avatarColor: authState.selectedAvatarColor || '#7c3aed',
     provider: 'email',
     bio: '🎵 Dhun Music Listener',
@@ -2838,7 +2914,9 @@ function selectAvatarColor(color, btn) {
   if (btn) btn.classList.add('selected');
 }
 
-function handleEmailSignUp() {
+async function handleEmailSignUp() {
+  if (!checkAuthThrottle()) return;
+
   const nameInput    = document.getElementById('signup-name');
   const emailInput   = document.getElementById('signup-email');
   const passInput    = document.getElementById('signup-password');
@@ -2884,11 +2962,12 @@ function handleEmailSignUp() {
   }
 
   const canonicalId = makeUserIdFromEmail(email);
+  const passwordHash = await hashClientPassword(password, canonicalId);
   const newUser = {
     id: canonicalId,
     name: name,
     email: email,
-    password: password,
+    passwordHash: passwordHash,
     avatarColor: authState.selectedAvatarColor || '#7c3aed',
     provider: 'email',
     bio: '🎵 Dhun Music Listener',
@@ -2916,7 +2995,9 @@ function handleEmailSignUp() {
   showToast(`🎉 Welcome to Dhun, ${name}! Your private profile is active.`);
 }
 
-function handleEmailSignIn() {
+async function handleEmailSignIn() {
+  if (!checkAuthThrottle()) return;
+
   const emailInput = document.getElementById('signin-email');
   const passInput  = document.getElementById('signin-password');
 
@@ -2947,11 +3028,13 @@ function handleEmailSignIn() {
     const namePart = isEmail ? identifier.split('@')[0] : identifier;
     const formattedName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
     const emailVal = isEmail ? lowerId : `${lowerId}@dhun.local`;
+    const canonicalId = makeUserIdFromEmail(emailVal);
+    const passwordHash = await hashClientPassword(password, canonicalId);
     user = {
-      id: makeUserIdFromEmail(emailVal),
+      id: canonicalId,
       name: formattedName,
       email: emailVal,
-      password: password,
+      passwordHash: passwordHash,
       avatarColor: authState.selectedAvatarColor || '#7c3aed',
       provider: 'email',
       bio: '🎵 Dhun Music Listener',
@@ -2968,7 +3051,11 @@ function handleEmailSignIn() {
     return;
   }
 
-  if (user.password && user.password !== password) {
+  const enteredHash = await hashClientPassword(password, user.id);
+  const isValid = (user.passwordHash && user.passwordHash === enteredHash) ||
+                  (user.password && user.password === password);
+
+  if (!isValid && (user.passwordHash || user.password)) {
     showToast('❌ Incorrect password. Please try again or use Forgot Password.');
     if (passInput) {
       passInput.value = '';
@@ -2977,10 +3064,9 @@ function handleEmailSignIn() {
     return;
   }
 
-  if (!user.password && password) {
-    user.password = password;
-    saveStoredUsers(users);
-  }
+  user.passwordHash = enteredHash;
+  delete user.password;
+  saveStoredUsers(users);
 
   saveCredentials(user.email);
   if (passInput) passInput.value = '';
@@ -3016,6 +3102,8 @@ function savePasswordResetTokens(tokens) {
 }
 
 function handleForgotPassword(isFromGate = false) {
+  if (!checkAuthThrottle()) return;
+
   const emailInput = document.getElementById(isFromGate ? 'gate-forgot-email' : 'forgot-email');
   const statusEl   = document.getElementById(isFromGate ? 'gate-forgot-status' : 'auth-forgot-status');
   const email      = (emailInput?.value || '').trim().toLowerCase();
@@ -3111,7 +3199,9 @@ function openResetPasswordWithToken(token, isFromGate = false) {
   }
 }
 
-function handleResetPassword(isFromGate = false) {
+async function handleResetPassword(isFromGate = false) {
+  if (!checkAuthThrottle()) return;
+
   const tokenInput   = document.getElementById(isFromGate ? 'gate-reset-token' : 'auth-reset-token');
   const passInput    = document.getElementById(isFromGate ? 'gate-reset-password' : 'reset-password');
   const confirmInput = document.getElementById(isFromGate ? 'gate-reset-confirm-password' : 'reset-confirm-password');
@@ -3176,12 +3266,13 @@ function handleResetPassword(isFromGate = false) {
     return;
   }
 
-  // Update user's password
+  // Update user's password with cryptographic hash [T1-01]
   const users = getStoredUsers();
   const user = users.find(u => u.email && u.email.toLowerCase() === tokenEntry.email.toLowerCase());
 
   if (user) {
-    user.password = newPassword;
+    user.passwordHash = await hashClientPassword(newPassword, user.id);
+    delete user.password;
     saveStoredUsers(users);
   }
 
@@ -7002,6 +7093,7 @@ async function startJamSession() {
   const userProfileName = (authState.currentUser && authState.currentUser.name) ? authState.currentUser.name : 'You (DJ)';
   const djName = (nameInput && nameInput.value.trim()) || userProfileName;
   const allowControl = document.getElementById('jam-allow-control')?.checked ?? true;
+  const roomPassword = (document.getElementById('jam-host-password')?.value || '').trim();
 
   const randCode = 'DHUN-' + Math.floor(1000 + Math.random() * 9000);
   jamState.active = true;
@@ -7068,12 +7160,13 @@ async function startJamSession() {
     }
   }, 7000);
 
-  // Fallback to local desktop server if present
+  // Fallback to local desktop server if present [T1-06]
   try {
     await jamApi('POST', '/jam/create', {
       roomId: randCode,
       djName: djName,
       allowControl: allowControl,
+      password: roomPassword,
       song: currentSongPayload,
       progress: state.progress || 0,
       isPlaying: !!state.isPlaying
@@ -7085,6 +7178,7 @@ async function startJamSession() {
 async function joinJamSession(prefilledCode) {
   const codeInput = document.getElementById('jam-room-code-input');
   let code = (prefilledCode || (codeInput ? codeInput.value : '')).trim().toUpperCase();
+  const roomPassword = (document.getElementById('jam-join-password')?.value || '').trim();
 
   // Clean if full URL passed
   if (code.includes('JAM=')) {
@@ -7106,6 +7200,33 @@ async function joinJamSession(prefilledCode) {
   const guestColor = (authState.currentUser && authState.currentUser.avatarColor) || '#06b6d4';
 
   showToast(`🔍 Connecting to Jam Room ${code}...`);
+
+  // Local desktop server check fallback with password protection [T1-06]
+  jamApi('POST', '/jam/join', { roomId: code, name: guestName, password: roomPassword }).then(res => {
+    if (res.status === 401 || (res.data && res.data.error && res.data.error.includes('password'))) {
+      showToast('🔒 Incorrect room password. Please enter the password set by the host.');
+      leaveJamSession();
+      showJamPanel('join');
+      return;
+    }
+    if (res.status === 410 || (res.data && res.data.error && res.data.error.includes('expired'))) {
+      showToast('⚠️ This Jam room has expired. Ask the host to create a new session.');
+      leaveJamSession();
+      showJamPanel('join');
+      return;
+    }
+    if (res.ok && res.data && res.data.success) {
+      if (Array.isArray(res.data.members) && res.data.members.length > 0) {
+        jamState.members = res.data.members;
+        renderJamMembers();
+        updateJamUI();
+      }
+      if (res.data.currentSong) {
+        applyRemoteSong(res.data.currentSong, res.data.isPlaying, res.data.progress);
+      }
+      startJamPolling();
+    }
+  }).catch(() => {});
 
   jamState.active = true;
   jamState.roomId = code;
@@ -7135,21 +7256,6 @@ async function joinJamSession(prefilledCode) {
       showToast(`⚠️ Syncing room ${code}...`);
     }
   });
-
-  // Local desktop server check fallback
-  jamApi('POST', '/jam/join', { roomId: code, name: guestName }).then(res => {
-    if (res.ok && res.data && res.data.success) {
-      if (Array.isArray(res.data.members) && res.data.members.length > 0) {
-        jamState.members = res.data.members;
-        renderJamMembers();
-        updateJamUI();
-      }
-      if (res.data.currentSong) {
-        applyRemoteSong(res.data.currentSong, res.data.isPlaying, res.data.progress);
-      }
-      startJamPolling();
-    }
-  }).catch(() => {});
 }
 
 function leaveJamSession(isUnload) {
@@ -7260,8 +7366,8 @@ function renderJamMembers() {
   container.innerHTML = jamState.members.map(m => `
     <div class="jam-member-row">
       <div class="jam-member-info">
-        <div class="jam-member-avatar" style="background:${m.color || 'var(--grad-main)'}">${m.avatar || 'U'}</div>
-        <span class="jam-member-name">${m.name}</span>
+        <div class="jam-member-avatar" style="background:${escapeAttribute(m.color || 'var(--grad-main)')}">${escapeHTML(m.avatar || 'U')}</div>
+        <span class="jam-member-name">${escapeHTML(m.name)}</span>
       </div>
       <span class="jam-role-badge ${m.isHost ? 'host' : ''}">${m.isHost ? '👑 Host / DJ' : '🎧 Listening'}</span>
     </div>

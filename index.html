@@ -8,13 +8,14 @@
   <title>Dhun – Music Management</title>
   <meta name="description"
     content="Dhun – Your premium music management experience. Discover, play, and manage your music." />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.youtube.com https://accounts.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://*.googleusercontent.com; media-src 'self' blob: data:; connect-src 'self' wss://broker.emqx.io:8084 wss://broker.hivemq.com:8884 https://*; frame-src 'self' https://www.youtube.com https://accounts.google.com;" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap"
     rel="stylesheet" />
   <link rel="icon" type="image/png" href="logo.png" />
   <link rel="apple-touch-icon" href="logo.png" />
-  <link rel="stylesheet" href="style.css?v=21.0" />
+  <link rel="stylesheet" href="style.css?v=22.0" />
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
     (function () {
@@ -1462,6 +1463,10 @@
           <label class="jam-input-label" for="jam-host-name">Your DJ Name</label>
           <input class="form-input" id="jam-host-name" type="text" value="You (DJ)" placeholder="Your DJ nickname" />
         </div>
+        <div class="jam-form-group" style="margin-top:10px">
+          <label class="jam-input-label" for="jam-host-password">Room Password (Optional)</label>
+          <input class="form-input" id="jam-host-password" type="password" placeholder="Leave empty for public room" autocomplete="off" />
+        </div>
         <div class="jam-options">
           <label class="jam-checkbox-label">
             <input type="checkbox" id="jam-allow-control" checked />
@@ -1490,6 +1495,10 @@
         <div class="jam-form-group" style="margin-top:12px">
           <label class="jam-input-label" for="jam-room-code-input">Room Code or Invite Link</label>
           <input class="form-input" id="jam-room-code-input" type="text" placeholder="e.g. DHUN-4821" style="text-transform:uppercase;letter-spacing:1.5px;font-weight:700" />
+        </div>
+        <div class="jam-form-group" style="margin-top:12px">
+          <label class="jam-input-label" for="jam-join-password">Room Password (If protected)</label>
+          <input class="form-input" id="jam-join-password" type="password" placeholder="Enter room password if set" autocomplete="off" />
         </div>
         <button class="btn-primary jam-action-btn" onclick="joinJamSession()">
           <span>Join Friend's Jam</span>
@@ -1930,7 +1939,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.5/dist/mqtt.min.js"></script>
   <script src="ytmusic_api.js?v=8.0"></script>
-  <script src="app.js?v=21.0"></script>
+  <script src="app.js?v=22.0"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 

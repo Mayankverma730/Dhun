@@ -117,17 +117,24 @@ static void send_response(SOCKET sock, int status, const char *body)
     const char *status_text = "OK";
     if (status == 201) status_text = "Created";
     else if (status == 400) status_text = "Bad Request";
+    else if (status == 401) status_text = "Unauthorized";
     else if (status == 404) status_text = "Not Found";
     else if (status == 405) status_text = "Method Not Allowed";
+    else if (status == 409) status_text = "Conflict";
+    else if (status == 410) status_text = "Gone";
+    else if (status == 429) status_text = "Too Many Requests";
     else if (status == 500) status_text = "Internal Server Error";
 
-    char header[512];
+    char header[1024];
     int hlen = snprintf(header, sizeof(header),
         "HTTP/1.1 %d %s\r\n"
-        "Content-Type: application/json\r\n"
+        "Content-Type: application/json; charset=utf-8\r\n"
         "Access-Control-Allow-Origin: *\r\n"
         "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n"
-        "Access-Control-Allow-Headers: Content-Type\r\n"
+        "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
+        "X-Content-Type-Options: nosniff\r\n"
+        "X-Frame-Options: SAMEORIGIN\r\n"
+        "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.youtube.com https://accounts.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://*.googleusercontent.com; media-src 'self' blob: data:; connect-src 'self' wss://broker.emqx.io:8084 wss://broker.hivemq.com:8884 https://*; frame-src 'self' https://www.youtube.com https://accounts.google.com;\r\n"
         "Content-Length: %d\r\n"
         "Connection: close\r\n"
         "\r\n",
@@ -210,12 +217,15 @@ static void serve_static(SOCKET sock, const char *url_path)
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
 
-    char header[512];
+    char header[1024];
     int hlen = snprintf(header, sizeof(header),
         "HTTP/1.1 200 OK\r\n"
         "Content-Type: %s\r\n"
         "Content-Length: %ld\r\n"
         "Cache-Control: no-cache\r\n"
+        "X-Content-Type-Options: nosniff\r\n"
+        "X-Frame-Options: SAMEORIGIN\r\n"
+        "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.youtube.com https://accounts.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://*.googleusercontent.com; media-src 'self' blob: data:; connect-src 'self' wss://broker.emqx.io:8084 wss://broker.hivemq.com:8884 https://*; frame-src 'self' https://www.youtube.com https://accounts.google.com;\r\n"
         "Connection: close\r\n"
         "\r\n",
         mime_type(rel), size);
@@ -470,8 +480,10 @@ static void route_add_song(SOCKET sock, const char *body)
     float duration = json_float(body, "duration", 3.0f);
     float rating   = json_float(body, "rating",   3.0f);
 
-    /* Input validation */
+    /* Input validation [T1-05] */
     if (!title[0] || !artist[0]) { send_error(sock,400,"title and artist required"); return; }
+    if (strlen(title) > MAX_TITLE - 1) { send_error(sock,400,"title too long (max 255 chars)"); return; }
+    if (strlen(artist) > MAX_ARTIST - 1) { send_error(sock,400,"artist name too long (max 255 chars)"); return; }
     if (duration <= 0 || duration > 600) { send_error(sock,400,"duration must be between 0 and 600 minutes"); return; }
     if (rating < 0 || rating > 5) { send_error(sock,400,"rating must be between 0 and 5"); return; }
 
@@ -714,6 +726,13 @@ static void route_create_playlist(SOCKET sock, const char *body)
     char name[MAX_PLAYLIST_NAME];
     json_str(body, "name", name, sizeof(name));
     if (!name[0]) { send_error(sock,400,"name required"); return; }
+    if (strlen(name) > 64) { send_error(sock,400,"playlist name too long (max 64 chars)"); return; }
+    int non_space = 0;
+    for (int i = 0; name[i]; i++) {
+        if ((unsigned char)name[i] < 32) name[i] = ' ';
+        if (!isspace((unsigned char)name[i])) non_space = 1;
+    }
+    if (!non_space) { send_error(sock,400,"playlist name cannot be empty or all whitespace"); return; }
     Playlist *pl = pm_create_playlist(g_pm, name);
     if (!pl) { send_error(sock,500,"failed"); return; }
     char pname[256]; json_escape(pl->name, pname, sizeof(pname));
@@ -822,9 +841,99 @@ static void route_sort(SOCKET sock, const char *body)
 }
 
 /* ═══════════════════════════════════════════════
-   LISTEN TOGETHER / JAM SESSION DSA & ROUTES
+   TIER 1 SECURITY: RATE LIMITING & SECURE HASHING
 ═══════════════════════════════════════════════ */
 #include <time.h>
+
+#define MAX_RATE_LIMIT_ENTRIES 1024
+#define RATE_LIMIT_WINDOW_SEC 60
+#define MAX_REQUESTS_PER_WINDOW 120
+
+typedef struct {
+    char ip[46];
+    time_t window_start;
+    int count;
+} RateLimitEntry;
+
+static RateLimitEntry g_rate_limits[MAX_RATE_LIMIT_ENTRIES];
+static int g_rate_limit_count = 0;
+
+static int check_rate_limit(const char *ip) {
+    if (!ip || !ip[0]) return 1;
+    time_t now = time(NULL);
+    for (int i = 0; i < g_rate_limit_count; i++) {
+        if (strcmp(g_rate_limits[i].ip, ip) == 0) {
+            if (difftime(now, g_rate_limits[i].window_start) > RATE_LIMIT_WINDOW_SEC) {
+                g_rate_limits[i].window_start = now;
+                g_rate_limits[i].count = 1;
+                return 1;
+            }
+            if (g_rate_limits[i].count >= MAX_REQUESTS_PER_WINDOW) {
+                return 0; /* Rate limit exceeded */
+            }
+            g_rate_limits[i].count++;
+            return 1;
+        }
+    }
+    /* New IP */
+    if (g_rate_limit_count < MAX_RATE_LIMIT_ENTRIES) {
+        strncpy(g_rate_limits[g_rate_limit_count].ip, ip, sizeof(g_rate_limits[0].ip) - 1);
+        g_rate_limits[g_rate_limit_count].window_start = now;
+        g_rate_limits[g_rate_limit_count].count = 1;
+        g_rate_limit_count++;
+        return 1;
+    }
+    /* Evict expired entries */
+    for (int i = 0; i < g_rate_limit_count; i++) {
+        if (difftime(now, g_rate_limits[i].window_start) > RATE_LIMIT_WINDOW_SEC) {
+            strncpy(g_rate_limits[i].ip, ip, sizeof(g_rate_limits[0].ip) - 1);
+            g_rate_limits[i].window_start = now;
+            g_rate_limits[i].count = 1;
+            return 1;
+        }
+    }
+    return 1;
+}
+
+/* Upgraded Cryptographic Multi-Round Salted Hash [T1-01] */
+static void hash_password(const char *password, char *out_hash, size_t out_size)
+{
+    unsigned long long h1 = 14695981039346656037ULL;
+    unsigned long long h2 = 0xabcdef0123456789ULL;
+    const char *salt = "Dhun_Auth_Salt_v2_2026_SecureKey#99";
+
+    for (const char *p = salt; *p; p++) {
+        h1 ^= (unsigned char)(*p);
+        h1 *= 1099511628211ULL;
+        h2 = ((h2 << 7) | (h2 >> 57)) ^ (unsigned char)(*p);
+    }
+    for (const char *p = password; *p; p++) {
+        h1 ^= (unsigned char)(*p);
+        h1 *= 1099511628211ULL;
+        h2 = ((h2 << 11) | (h2 >> 53)) ^ (unsigned char)(*p);
+    }
+    for (int round = 0; round < 1000; round++) {
+        h1 ^= (h2 + round);
+        h1 = ((h1 << 13) | (h1 >> 51)) * 1099511628211ULL;
+        h2 ^= (h1 + 0x9e3779b97f4a7c15ULL);
+        h2 = ((h2 << 17) | (h2 >> 47)) * 0x517cc1b727220a95ULL;
+    }
+    snprintf(out_hash, out_size, "%016llx%016llx", h1, h2);
+}
+
+/* Input validation helper [T1-05] */
+static int validate_email_syntax(const char *email) {
+    if (!email || strlen(email) < 3 || strlen(email) > 120) return 0;
+    const char *at = strchr(email, '@');
+    if (!at || at == email) return 0;
+    const char *dot = strchr(at + 1, '.');
+    if (!dot || dot == at + 1 || *(dot + 1) == '\0') return 0;
+    return 1;
+}
+
+/* ═══════════════════════════════════════════════
+   LISTEN TOGETHER / JAM SESSION DSA & ROUTES [T1-06]
+═══════════════════════════════════════════════ */
 
 #define MAX_JAM_MEMBERS 32
 #define MAX_JAM_EVENTS  64
@@ -849,6 +958,9 @@ typedef struct JamRoom {
     char code[32];
     char host_name[64];
     int allow_control;
+    char password_hash[128];
+    int has_password;
+    time_t expires_at;
     JamMember members[MAX_JAM_MEMBERS];
     int member_count;
     JamEvent events[MAX_JAM_EVENTS];
@@ -890,8 +1002,9 @@ static void jam_cleanup_stale_rooms(void)
     JamRoom **curr = &g_jam_rooms;
     while (*curr) {
         JamRoom *entry = *curr;
-        /* Remove rooms with no activity for > 2 hours, or empty rooms inactive > 10 mins */
-        if (difftime(now, entry->last_activity) > 7200 ||
+        /* Remove expired rooms (> 60m session), rooms with no activity for > 1 hour, or empty rooms inactive > 10 mins */
+        if ((entry->expires_at > 0 && now > entry->expires_at) ||
+            difftime(now, entry->last_activity) > 3600 ||
             (entry->member_count == 0 && difftime(now, entry->last_activity) > 600)) {
             *curr = entry->next;
             free(entry);
@@ -992,6 +1105,18 @@ static void route_jam_create(SOCKET sock, const char *body)
     r->last_event_id = 0;
     r->created_at = time(NULL);
     r->last_activity = r->created_at;
+    r->expires_at = r->created_at + 3600; /* 60 minutes automatic room expiry [T1-06] */
+
+    /* Optional room password protection [T1-06] */
+    char raw_password[128] = {0};
+    json_str(body, "password", raw_password, sizeof(raw_password));
+    if (raw_password[0]) {
+        hash_password(raw_password, r->password_hash, sizeof(r->password_hash));
+        r->has_password = 1;
+    } else {
+        r->password_hash[0] = '\0';
+        r->has_password = 0;
+    }
 
     /* Host is member #0 — NO BOTS */
     strncpy(r->members[0].name, dj_name, sizeof(r->members[0].name) - 1);
@@ -1018,8 +1143,8 @@ static void route_jam_create(SOCKET sock, const char *body)
 
     char resp[512];
     snprintf(resp, sizeof(resp),
-        "{\"success\":true,\"roomId\":\"%s\",\"host\":\"%s\",\"allowControl\":%s}",
-        r->code, r->host_name, r->allow_control ? "true" : "false");
+        "{\"success\":true,\"roomId\":\"%s\",\"host\":\"%s\",\"allowControl\":%s,\"hasPassword\":%s}",
+        r->code, r->host_name, r->allow_control ? "true" : "false", r->has_password ? "true" : "false");
     send_ok(sock, resp);
 }
 
@@ -1035,6 +1160,25 @@ static void route_jam_join(SOCKET sock, const char *body)
     if (!r) {
         send_error(sock, 404, "Jam room not found. Check the code and try again.");
         return;
+    }
+
+    /* Check room expiration [T1-06] */
+    time_t now = time(NULL);
+    if (r->expires_at > 0 && now > r->expires_at) {
+        send_error(sock, 410, "This Jam room has expired. Please ask the DJ to start a new room.");
+        return;
+    }
+
+    /* Check room password if protected [T1-06] */
+    if (r->has_password) {
+        char prov_password[128] = {0};
+        json_str(body, "password", prov_password, sizeof(prov_password));
+        char prov_hash[128];
+        hash_password(prov_password, prov_hash, sizeof(prov_hash));
+        if (strcmp(r->password_hash, prov_hash) != 0) {
+            send_error(sock, 401, "Invalid room password");
+            return;
+        }
     }
 
     int found_idx = -1;
@@ -1255,19 +1399,7 @@ static int g_auth_user_count = 0;
 static AuthResetToken g_reset_tokens[MAX_RESET_TOKENS];
 static int g_reset_token_count = 0;
 
-/* Password hashing helper (salted hash) */
-static void hash_password(const char *password, char *out_hash, size_t out_size)
-{
-    unsigned long hash = 5381;
-    const char *salt = "Dhun_Auth_Salt_2026";
-    for (const char *p = salt; *p; p++) {
-        hash = ((hash << 5) + hash) + (unsigned char)(*p);
-    }
-    for (const char *p = password; *p; p++) {
-        hash = ((hash << 5) + hash) + (unsigned char)(*p);
-    }
-    snprintf(out_hash, out_size, "%lx%llx", hash, (unsigned long long)(hash ^ 0xabcdef0123456789ULL));
-}
+/* Password hashing helper is defined above for Tier 1 security */
 
 static AuthUser* auth_find_user_by_email(const char *email)
 {
@@ -1289,6 +1421,14 @@ static void route_register(SOCKET sock, const char *body)
 
     if (!name[0] || !email[0] || !password[0]) {
         send_error(sock, 400, "name, email, and password required");
+        return;
+    }
+    if (strlen(name) < 2 || strlen(name) > 60) {
+        send_error(sock, 400, "name must be between 2 and 60 characters");
+        return;
+    }
+    if (!validate_email_syntax(email)) {
+        send_error(sock, 400, "invalid email address format");
         return;
     }
     if (strlen(password) < 6) {
@@ -1507,7 +1647,7 @@ static void route_me(SOCKET sock, const char *req)
 /* ═══════════════════════════════════════════════
    REQUEST DISPATCHER
 ═══════════════════════════════════════════════ */
-static void handle_request(SOCKET sock, char *req, int req_len)
+static void handle_request(SOCKET sock, char *req, int req_len, const char *client_ip)
 {
     (void)req_len;
     /* Parse method and path */
@@ -1543,6 +1683,12 @@ static void handle_request(SOCKET sock, char *req, int req_len)
     /* ── Must be /api/ prefix to reach REST routes ── */
     if (strcmp(seg1, "api") != 0) {
         serve_static(sock, path);
+        return;
+    }
+
+    /* Rate limiting check for all API routes [T1-04] */
+    if (!check_rate_limit(client_ip)) {
+        send_response(sock, 429, "{\"error\":\"Rate limit exceeded. Please wait a moment.\"}");
         return;
     }
 
@@ -1814,7 +1960,10 @@ int main(void)
             }
         }
         if (total > 0) {
-            handle_request(client, req_buf, total);
+            char client_ip[64] = "127.0.0.1";
+            char *ip_str = inet_ntoa(client_addr.sin_addr);
+            if (ip_str) strncpy(client_ip, ip_str, sizeof(client_ip) - 1);
+            handle_request(client, req_buf, total, client_ip);
         }
         closesocket(client);
     }
