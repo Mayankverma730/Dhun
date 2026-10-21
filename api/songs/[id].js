@@ -17,23 +17,33 @@ if (!global._dhunSongs) {
   global._dhunNextId = 6;
 }
 
-function setCORS(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+function setCORS(req, res) {
+  const origin = req.headers.origin;
+  const allowed = process.env.ALLOWED_ORIGIN || 'http://localhost:3000';
+  if (origin && (origin === allowed || allowed === '*')) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', allowed);
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
   res.setHeader('Content-Type', 'application/json');
 }
 
 module.exports = async (req, res) => {
-  setCORS(res);
+  setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const { id, action } = req.query;
-  const songId = parseInt(id);
+  const songId = parseInt(id, 10);
+  if (isNaN(songId) || songId <= 0) {
+    return res.status(400).json({ error: 'Valid positive integer song ID required' });
+  }
+
   const songs = global._dhunSongs;
   const idx = songs.findIndex(s => s.id === songId);
 
-  if (isNaN(songId) || idx === -1) {
+  if (idx === -1) {
     return res.status(404).json({ error: 'Song not found' });
   }
 
@@ -44,7 +54,7 @@ module.exports = async (req, res) => {
 
   // PUT /api/songs/:id/play — increment play count
   if (req.method === 'PUT' && action === 'play') {
-    songs[idx].play_count = (songs[idx].play_count || 0) + 1;
+    songs[idx].play_count = Math.min((songs[idx].play_count || 0) + 1, 100000000);
     return res.status(200).json(songs[idx]);
   }
 

@@ -96,6 +96,7 @@ int lib_remove_song(Library *lib, int id)
 /* ── Find by ID — O(n) ───────────────────────── */
 Song *lib_find_by_id(Library *lib, int id)
 {
+    if (!lib) return NULL;
     LibNode *cur = lib->head;
     while (cur) {
         if (cur->song.id == id) return &cur->song;
@@ -107,6 +108,7 @@ Song *lib_find_by_id(Library *lib, int id)
 /* ── Find by title (case-insensitive) — O(n) ── */
 Song *lib_find_by_title(Library *lib, const char *title)
 {
+    if (!lib || !title) return NULL;
     LibNode *cur = lib->head;
     while (cur) {
         /* portable case-insensitive compare */

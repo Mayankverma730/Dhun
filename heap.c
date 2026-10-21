@@ -110,7 +110,11 @@ int heap_peek_max(const Heap *h, Song *out)
 /* ── Build heap from array — O(n) ────────────── */
 void heap_build(Heap *h, Song *arr, int n)
 {
-    if (!h || !arr) return;
+    if (!h) return;
+    if (!arr || n <= 0) {
+        h->size = 0;
+        return;
+    }
     int count = (n < HEAP_MAX_SIZE) ? n : HEAP_MAX_SIZE;
     for (int i = 0; i < count; i++) h->data[i] = arr[i];
     h->size = count;

@@ -20,15 +20,21 @@ if (!global._dhunSongs) {
   global._dhunNextId = 6;
 }
 
-function setCORS(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+function setCORS(req, res) {
+  const origin = req.headers.origin;
+  const allowed = process.env.ALLOWED_ORIGIN || 'http://localhost:3000';
+  if (origin && (origin === allowed || allowed === '*')) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', allowed);
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
   res.setHeader('Content-Type', 'application/json');
 }
 
 module.exports = async (req, res) => {
-  setCORS(res);
+  setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const songs = global._dhunSongs;
@@ -52,17 +58,46 @@ module.exports = async (req, res) => {
     if (typeof body === 'string') {
       try { body = JSON.parse(body); } catch { return res.status(400).json({ error: 'Invalid JSON' }); }
     }
-    if (!body || !body.title) return res.status(400).json({ error: 'title required' });
+    if (!body || !body.title || typeof body.title !== 'string') {
+      return res.status(400).json({ error: 'title required' });
+    }
+
+    const title = String(body.title).trim().substring(0, 200);
+    const artist = String(body.artist || 'Unknown').trim().substring(0, 100);
+
+    if (songs.length >= 1000) {
+      return res.status(400).json({ error: 'Song store limit reached (max 1000 songs)' });
+    }
+
+    // Fix N-M-03: Duplicate check matching C server behavior
+    const isDuplicate = songs.some(s =>
+      s.title.toLowerCase() === title.toLowerCase() &&
+      s.artist.toLowerCase() === artist.toLowerCase()
+    );
+    if (isDuplicate) {
+      return res.status(409).json({ error: 'A song with this title and artist already exists' });
+    }
+
+    // Fix N-L-02: Range validation for duration and rating
+    let duration = parseFloat(body.duration);
+    if (isNaN(duration) || duration <= 0 || duration > 600) {
+      duration = 3.5;
+    }
+
+    let rating = parseFloat(body.rating);
+    if (isNaN(rating) || rating < 0 || rating > 5.0) {
+      rating = 4.0;
+    }
 
     const song = {
       id: global._dhunNextId++,
-      title: String(body.title).substring(0, 200),
-      artist: String(body.artist || 'Unknown').substring(0, 100),
-      album: String(body.album || '').substring(0, 100),
-      genre: String(body.genre || '').substring(0, 50),
-      duration: parseFloat(body.duration) || 3.5,
+      title,
+      artist,
+      album: String(body.album || '').trim().substring(0, 100),
+      genre: String(body.genre || '').trim().substring(0, 50),
+      duration,
       play_count: 0,
-      rating: parseFloat(body.rating) || 4.0,
+      rating,
       liked: 0
     };
     songs.push(song);

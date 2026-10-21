@@ -74,6 +74,9 @@ static int add_song_all(const char *title, const char *artist,
                          const char *album,  const char *genre,
                          float duration,     float rating)
 {
+    if (!title || !title[0]) return -1;
+    if (lib_find_by_title(g_lib, title)) return -2;
+
     /* 1. Doubly Linked List (master store) */
     int id = lib_add_song(g_lib, title, artist, album, genre, duration, rating);
     if (id < 0) return -1;
@@ -93,6 +96,18 @@ static int add_song_all(const char *title, const char *artist,
 }
 
 /* ─────────────────────────────────────────────
+   Rebuild heaps from current library state
+───────────────────────────────────────────── */
+static void rebuild_heaps(void)
+{
+    Song *arr = NULL;
+    int   n   = lib_to_array(g_lib, &arr);
+    heap_build(g_heap_plays,  arr, n);
+    heap_build(g_heap_rating, arr, n);
+    free(arr);
+}
+
+/* ─────────────────────────────────────────────
    Remove song from ALL data structures
 ───────────────────────────────────────────── */
 static void remove_song_all(int id)
@@ -101,12 +116,26 @@ static void remove_song_all(int id)
     if (!s) { printf("  Song ID %d not found.\n", id); return; }
 
     char title[MAX_TITLE];
-    strncpy(title, s->title, MAX_TITLE - 1);
+    strncpy(title, s->title, sizeof(title) - 1);
+    title[sizeof(title) - 1] = '\0';
 
     lib_remove_song(g_lib, id);
     bst_delete(g_bst, title);
     hash_delete(g_hash, id);
-    printf("  Song ID %d removed from library, BST, and hash table.\n", id);
+
+    /* Purge song ID from all playlists */
+    if (g_pm) {
+        Playlist *pl = g_pm->head;
+        while (pl) {
+            pm_remove_song(g_pm, pl->id, id);
+            pl = pl->next;
+        }
+    }
+
+    /* Rebuild top charts */
+    rebuild_heaps();
+
+    printf("  Song ID %d removed from library, BST, hash table, playlists, and charts.\n", id);
 }
 
 /* ─────────────────────────────────────────────
@@ -127,25 +156,14 @@ static void play_song(int id)
     /* Update BST node */
     bst_update_song(g_bst, id, s->play_count);
 
+    /* Rebuild heaps so charts reflect new play count */
+    rebuild_heaps();
+
     /* Push to history stack */
     stack_push(g_history, *s);
 
     printf("\n  ▶  Now Playing: \"%s\" by %s\n", s->title, s->artist);
     printf("     Play count: %d\n\n", s->play_count);
-}
-
-/* ─────────────────────────────────────────────
-   Rebuild heaps from current library state
-───────────────────────────────────────────── */
-static void rebuild_heaps(void)
-{
-    Song *arr = NULL;
-    int   n   = lib_to_array(g_lib, &arr);
-    if (n > 0) {
-        heap_build(g_heap_plays,  arr, n);
-        heap_build(g_heap_rating, arr, n);
-    }
-    free(arr);
 }
 
 /* ─────────────────────────────────────────────
@@ -157,16 +175,22 @@ static void load_demo_songs(void)
     FILE *f = fopen("tujhko.mp3", "rb");
     if (f) {
         fclose(f);
+        if (lib_find_by_title(g_lib, "Tujhko Jo Paaya")) {
+            printf("  Demo song \"Tujhko Jo Paaya\" already loaded.\n\n");
+            return;
+        }
         int id = add_song_all("Tujhko Jo Paaya", "Mohit Chauhan / Pritam", "Crook",
                               "Bollywood", 5.72f, 4.9f);
-        Song *s = lib_find_by_id(g_lib, id);
-        if (s) {
-            s->play_count = 1;
-            hash_insert(g_hash, *s);
-            bst_update_song(g_bst, id, s->play_count);
+        if (id >= 0) {
+            Song *s = lib_find_by_id(g_lib, id);
+            if (s) {
+                s->play_count = 1;
+                hash_insert(g_hash, *s);
+                bst_update_song(g_bst, id, s->play_count);
+            }
+            rebuild_heaps();
+            printf("  Real track Tujhko Jo Paaya loaded!\n\n");
         }
-        rebuild_heaps();
-        printf("  Real track Tujhko Jo Paaya loaded!\n\n");
     }
 }
 
@@ -206,8 +230,14 @@ static void menu_library(void)
                 printf("  Duration (mins, e.g. 3.5): "); scanf("%f", &dur); clear_input();
                 printf("  Rating  (1-5): ");             scanf("%f", &rat); clear_input();
                 id = add_song_all(t, ar, al, g, dur, rat);
-                rebuild_heaps();
-                printf("  ✓ Added song with ID %d\n", id);
+                if (id == -2) {
+                    printf("  A song with title \"%s\" already exists in the library.\n", t);
+                } else if (id >= 0) {
+                    rebuild_heaps();
+                    printf("  ✓ Added song with ID %d\n", id);
+                } else {
+                    printf("  Failed to add song.\n");
+                }
                 break;
             case 4:
                 printf("  Song ID to remove: "); scanf("%d", &id); clear_input();
@@ -399,6 +429,10 @@ static void menu_sort(void)
         if (scanf("%d", &choice) != 1) { clear_input(); choice = -1; }
         clear_input();
 
+        if (choice == 0) break;
+        if (choice < 1 || choice > 6) { printf("  Invalid choice.\n"); continue; }
+
+        /* Fix H-06: Only allocate the array when we actually need it */
         Song *arr = NULL;
         int   n   = lib_to_array(g_lib, &arr);
         char  title[MAX_TITLE];
@@ -435,8 +469,7 @@ static void menu_sort(void)
                     else             printf("  Not found.\n");
                 }
                 break;
-            case 0: break;
-            default: printf("  Invalid choice.\n");
+            default: break;
         }
         free(arr);
         printf("\n");

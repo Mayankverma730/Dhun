@@ -56,7 +56,7 @@ $(TARGET)$(EXE_EXT): $(CLI_OBJS)
 
 # HTTP API server
 $(SERVER)$(EXE_EXT): $(SRV_OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ -lws2_32 -lm
+	$(CC) $(CFLAGS) -o $@ $^ -lws2_32 -lbcrypt -lm
 	@echo "  ✓ Server built: $(SERVER)$(EXE_EXT)"
 
 # Test DSA binary

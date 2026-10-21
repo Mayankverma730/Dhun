@@ -4,23 +4,44 @@
  * POST /api/playlists        → create playlist
  */
 
-if (!global._dhunPlaylists) {
-  global._dhunPlaylists = [];
+if (!global._dhunUserPlaylists) {
+  global._dhunUserPlaylists = {};
   global._dhunPlaylistNextId = 1;
 }
 
-function setCORS(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+function getUserId(req) {
+  const auth = req.headers.authorization || '';
+  if (auth.startsWith('Bearer ')) {
+    const token = auth.slice(7).trim();
+    if (token) return token.slice(0, 64);
+  }
+  const guest = req.headers['x-user-id'] || 'guest';
+  return String(guest).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'guest';
+}
+
+function setCORS(req, res) {
+  const origin = req.headers.origin;
+  const allowed = process.env.ALLOWED_ORIGIN || 'http://localhost:3000';
+  if (origin && (origin === allowed || allowed === '*')) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', allowed);
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-User-Id');
   res.setHeader('Content-Type', 'application/json');
 }
 
 module.exports = async (req, res) => {
-  setCORS(res);
+  setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const playlists = global._dhunPlaylists;
+  // Fix N-C-02: User isolation prevents multi-tenant data leaks
+  const userId = getUserId(req);
+  if (!global._dhunUserPlaylists[userId]) {
+    global._dhunUserPlaylists[userId] = [];
+  }
+  const playlists = global._dhunUserPlaylists[userId];
 
   if (req.method === 'GET') {
     return res.status(200).json(playlists);
@@ -31,11 +52,17 @@ module.exports = async (req, res) => {
     if (typeof body === 'string') {
       try { body = JSON.parse(body); } catch { return res.status(400).json({ error: 'Invalid JSON' }); }
     }
-    if (!body || !body.name) return res.status(400).json({ error: 'name required' });
+    if (!body || !body.name || typeof body.name !== 'string') {
+      return res.status(400).json({ error: 'Valid playlist name required' });
+    }
+
+    if (playlists.length >= 50) {
+      return res.status(400).json({ error: 'Playlist limit reached (max 50 playlists)' });
+    }
 
     const pl = {
       id: global._dhunPlaylistNextId++,
-      name: String(body.name).substring(0, 200),
+      name: String(body.name).trim().substring(0, 100),
       songs: [],
       song_count: 0,
       createdAt: Date.now()

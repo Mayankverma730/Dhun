@@ -62,24 +62,37 @@ class DhunDB {
 
     async _migrateFromLocalStorage() {
         try {
-            // Migrate legacy liked songs
+            // Fix N-M-05: Migrate legacy liked songs with type and range validation
             const legacyLikes = localStorage.getItem('vibe_likes');
             if (legacyLikes) {
                 const parsed = JSON.parse(legacyLikes);
                 if (Array.isArray(parsed)) {
                     for (const id of parsed) {
-                        await this.put('likes', { key: `guest_${id}`, userId: 'guest', songId: id });
+                        const numId = parseInt(id, 10);
+                        if (!isNaN(numId) && numId > 0 && numId < 100000000) {
+                            await this.put('likes', { key: `guest_${numId}`, userId: 'guest', songId: numId });
+                        }
                     }
                 }
             }
 
-            // Migrate legacy playlists
+            // Fix N-M-05: Migrate legacy playlists with schema validation
             const legacyPlaylists = localStorage.getItem('vibe_playlists');
             if (legacyPlaylists) {
                 const parsed = JSON.parse(legacyPlaylists);
                 if (Array.isArray(parsed)) {
                     for (const pl of parsed) {
-                        await this.put('playlists', { ...pl, userId: pl.userId || 'guest' });
+                        if (pl && typeof pl === 'object' && typeof pl.name === 'string') {
+                            const validSongs = Array.isArray(pl.songs)
+                                ? pl.songs.map(s => parseInt(s, 10)).filter(s => !isNaN(s) && s > 0)
+                                : [];
+                            await this.put('playlists', {
+                                id: pl.id || Date.now(),
+                                name: String(pl.name).slice(0, 100),
+                                songs: validSongs,
+                                userId: 'guest'
+                            });
+                        }
                     }
                 }
             }

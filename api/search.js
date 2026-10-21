@@ -3,34 +3,88 @@
  *   DHUN — Vercel Serverless YouTube Music Search API (/api/search)
  *   Directly queries YouTube's official InnerTube API from the edge.
  *   - Fast (<200ms)
- *   - Bypasses all ISP blocks (Jio/Airtel) and browser CORS restrictions
- *   - Returns 100% authentic YouTube Music tracks with genuine videoIds
+ *   - Returns authentic YouTube Music tracks with genuine videoIds
+ *   - Fix N-C-01: Restricted CORS
+ *   - Fix N-C-03: Strict query sanitization & SSRF guard
+ *   - Fix N-M-04: Per-IP rate limiting (token bucket / window)
  * ══════════════════════════════════════════════════════════════════
  */
 
-module.exports = async (req, res) => {
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
+// In-memory rate limiting map (IP -> timestamp array)
+if (!global._dhunSearchRateLimit) {
+  global._dhunSearchRateLimit = new Map();
+}
+
+function checkRateLimit(ip, limit = 30, windowMs = 60000) {
+  const now = Date.now();
+  const map = global._dhunSearchRateLimit;
+  
+  // Clean up old entries periodically
+  if (map.size > 1000) {
+    for (const [k, v] of map.entries()) {
+      const recent = v.filter(ts => now - ts < windowMs);
+      if (recent.length === 0) map.delete(k);
+      else map.set(k, recent);
+    }
+  }
+
+  const timestamps = (map.get(ip) || []).filter(ts => now - ts < windowMs);
+  if (timestamps.length >= limit) {
+    return false;
+  }
+  timestamps.push(now);
+  map.set(ip, timestamps);
+  return true;
+}
+
+function setCORS(req, res) {
+  const origin = req.headers.origin;
+  const allowed = process.env.ALLOWED_ORIGIN || 'http://localhost:3000';
+  if (origin && (origin === allowed || allowed === '*')) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', allowed);
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
+  res.setHeader('Content-Type', 'application/json');
+}
+
+module.exports = async (req, res) => {
+  setCORS(req, res);
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
-  const query = req.query.q || req.query.query || '';
-  if (!query || !query.trim()) {
+  // Rate limiting (Fix N-M-04)
+  const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
+  if (!checkRateLimit(clientIp, 30, 60000)) {
+    return res.status(429).json({ error: 'Rate limit exceeded. Please wait a moment.' });
+  }
+
+  const rawQuery = req.query.q || req.query.query || '';
+  if (!rawQuery || typeof rawQuery !== 'string' || !rawQuery.trim()) {
     return res.status(200).json([]);
   }
 
-  const q = query.trim();
+  // Fix N-C-03: Strict query sanitization against SSRF and injection
+  const q = rawQuery.replace(/[^\w\s\u0900-\u097F\u0A00-\u0A7F\-']/g, ' ').trim().slice(0, 100);
+  if (!q) {
+    return res.status(200).json([]);
+  }
+
   const isCategory = /^(pop|electronic|bollywood|punjabi|lo-?fi|rock|romantic|hip-?hop|dance|chill|ambient|classical|indie|jazz|metal)$/i.test(q);
   const musicQuery = isCategory ? `${q} hit songs music` : (q.toLowerCase().includes('song') || q.toLowerCase().includes('music') ? q : `${q} song music`);
 
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+
     const ytRes = await fetch('https://www.youtube.com/youtubei/v1/search?prettyPrint=false', {
       method: 'POST',
+      signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
@@ -47,6 +101,7 @@ module.exports = async (req, res) => {
         query: musicQuery
       })
     });
+    clearTimeout(timeout);
 
     if (!ytRes.ok) {
       return res.status(200).json([]);
@@ -134,7 +189,6 @@ module.exports = async (req, res) => {
 
     return res.status(200).json(tracks);
   } catch (err) {
-    console.error('[API/search] Error querying YouTube:', err);
     return res.status(200).json([]);
   }
 };

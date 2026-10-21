@@ -23,7 +23,12 @@ class AppStore {
 
     getState(key) {
         if (!key) return { ...this._state };
-        return this._state[key];
+        const val = this._state[key];
+        /* Fix N-L-03: Return defensive copy for reference types */
+        if (Array.isArray(val)) return [...val];
+        if (val instanceof Set) return new Set(val);
+        if (val && typeof val === 'object') return { ...val };
+        return val;
     }
 
     setState(key, value) {

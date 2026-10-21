@@ -107,6 +107,7 @@ void quick_sort(Song *arr, int lo, int hi, SongComparator cmp)
    ════════════════════════════════════════════ */
 int binary_search_title(Song *arr, int n, const char *title)
 {
+    if (!arr || n <= 0 || !title) return -1;
     int lo = 0, hi = n - 1;
     while (lo <= hi) {
         int mid = lo + (hi - lo) / 2;

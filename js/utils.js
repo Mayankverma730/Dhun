@@ -48,12 +48,17 @@ function debounce(fn, wait = 200) {
     };
 }
 
-function memoize(fn, keyFn = (...args) => JSON.stringify(args)) {
+function memoize(fn, keyFn = (...args) => JSON.stringify(args), maxSize = 256) {
     const cache = new Map();
     return function (...args) {
         const key = keyFn(...args);
         if (cache.has(key)) return cache.get(key);
         const res = fn.apply(this, args);
+        /* Fix N-H-04: Limit cache growth to prevent memory leak */
+        if (cache.size >= maxSize) {
+            const oldestKey = cache.keys().next().value;
+            cache.delete(oldestKey);
+        }
         cache.set(key, res);
         return res;
     };

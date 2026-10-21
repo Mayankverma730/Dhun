@@ -33,6 +33,7 @@
 #define _WIN32_WINNT 0x0600
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <bcrypt.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +41,7 @@
 #include <math.h>
 
 #pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "bcrypt.lib")
 
 #include "song.h"
 #include "library.h"
@@ -87,7 +89,7 @@ static void json_escape(const char *src, char *dst, int max)
     dst[j] = '\0';
 }
 
-static int song_to_json(const Song *s, char *buf, int maxlen)
+static __attribute__((unused)) int song_to_json(const Song *s, char *buf, int maxlen)
 {
     char t[256], ar[256], al[256], g[128];
     json_escape(s->title,  t,  sizeof(t));
@@ -107,15 +109,15 @@ static int g_liked[MAX_SONGS]; /* indexed by song id */
 
 static int song_to_json_liked(const Song *s, char *buf, int maxlen)
 {
-    char t[256], ar[256], al[256], g[128];
+    char t[128], ar[128], al[128], g[64];
     json_escape(s->title,  t,  sizeof(t));
     json_escape(s->artist, ar, sizeof(ar));
     json_escape(s->album,  al, sizeof(al));
     json_escape(s->genre,  g,  sizeof(g));
     int liked = (s->id >= 0 && s->id < MAX_SONGS) ? g_liked[s->id] : 0;
     return snprintf(buf, maxlen,
-        "{\"id\":%d,\"title\":\"%s\",\"artist\":\"%s\","
-        "\"album\":\"%s\",\"genre\":\"%s\","
+        "{\"id\":%d,\"title\":\"%.100s\",\"artist\":\"%.100s\","
+        "\"album\":\"%.100s\",\"genre\":\"%.50s\","
         "\"duration\":%.2f,\"play_count\":%d,\"rating\":%.1f,\"liked\":%d}",
         s->id, t, ar, al, g, s->duration, s->play_count, s->rating, liked);
 }
@@ -127,18 +129,24 @@ static void send_response(SOCKET sock, int status, const char *body)
     if (status == 201) status_text = "Created";
     else if (status == 400) status_text = "Bad Request";
     else if (status == 401) status_text = "Unauthorized";
+    else if (status == 403) status_text = "Forbidden";
     else if (status == 404) status_text = "Not Found";
     else if (status == 405) status_text = "Method Not Allowed";
     else if (status == 409) status_text = "Conflict";
     else if (status == 410) status_text = "Gone";
     else if (status == 429) status_text = "Too Many Requests";
     else if (status == 500) status_text = "Internal Server Error";
+    else if (status == 501) status_text = "Not Implemented";
 
     char header[1024];
+    /* Fix C-05: Restrict CORS to configured origin, not wildcard */
+    const char *allowed_origin = getenv("DHUN_ALLOWED_ORIGIN");
+    if (!allowed_origin || !allowed_origin[0]) allowed_origin = "http://localhost:3000";
+
     int hlen = snprintf(header, sizeof(header),
         "HTTP/1.1 %d %s\r\n"
         "Content-Type: application/json; charset=utf-8\r\n"
-        "Access-Control-Allow-Origin: *\r\n"
+        "Access-Control-Allow-Origin: %s\r\n"
         "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n"
         "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
         "X-Content-Type-Options: nosniff\r\n"
@@ -147,7 +155,7 @@ static void send_response(SOCKET sock, int status, const char *body)
         "Content-Length: %d\r\n"
         "Connection: close\r\n"
         "\r\n",
-        status, status_text, (int)strlen(body));
+        status, status_text, allowed_origin, (int)strlen(body));
 
     send(sock, header, hlen, 0);
     send(sock, body, (int)strlen(body), 0);
@@ -156,22 +164,47 @@ static void send_response(SOCKET sock, int status, const char *body)
 static void send_ok(SOCKET sock, const char *body)   { send_response(sock, 200, body); }
 static void send_created(SOCKET sock, const char *b)  { send_response(sock, 201, b); }
 static void send_error(SOCKET sock, int c, const char *m) {
-    char buf[256];
-    snprintf(buf, sizeof(buf), "{\"error\":\"%s\"}", m);
+    /* Fix H-01: JSON-escape the message to prevent JSON injection */
+    char escaped[512];
+    json_escape(m, escaped, sizeof(escaped));
+    char buf[600];
+    snprintf(buf, sizeof(buf), "{\"error\":\"%s\"}", escaped);
     send_response(sock, c, buf);
 }
 static void send_options(SOCKET sock) {
-    const char *h =
+    /* Fix M-02: Use configured origin and allow Authorization/custom headers in preflight */
+    const char *allowed_origin = getenv("DHUN_ALLOWED_ORIGIN");
+    if (!allowed_origin || !allowed_origin[0]) allowed_origin = "http://localhost:3000";
+
+    char header[512];
+    int hlen = snprintf(header, sizeof(header),
         "HTTP/1.1 204 No Content\r\n"
-        "Access-Control-Allow-Origin: *\r\n"
+        "Access-Control-Allow-Origin: %s\r\n"
         "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n"
-        "Access-Control-Allow-Headers: Content-Type\r\n"
+        "Access-Control-Allow-Headers: Content-Type, Authorization, X-User-Id, X-Host-Token\r\n"
         "Content-Length: 0\r\n"
-        "Connection: close\r\n\r\n";
-    send(sock, h, (int)strlen(h), 0);
+        "Connection: close\r\n\r\n",
+        allowed_origin);
+    send(sock, header, hlen, 0);
 }
 
 /* ── Static file server ──────────────────── */
+static int is_allowed_static_ext(const char *path)
+{
+    const char *ext = strrchr(path, '.');
+    if (!ext) return 0;
+    if (strcmp(ext, ".html") == 0 || strcmp(ext, ".css") == 0 ||
+        strcmp(ext, ".js")   == 0 || strcmp(ext, ".png") == 0 ||
+        strcmp(ext, ".jpg")  == 0 || strcmp(ext, ".jpeg")== 0 ||
+        strcmp(ext, ".svg")  == 0 || strcmp(ext, ".ico") == 0 ||
+        strcmp(ext, ".woff2")== 0 || strcmp(ext, ".mp3") == 0 ||
+        strcmp(ext, ".wav")  == 0 || strcmp(ext, ".ogg") == 0 ||
+        strcmp(ext, ".m4a")  == 0) {
+        return 1;
+    }
+    return 0;
+}
+
 static const char *mime_type(const char *path)
 {
     const char *ext = strrchr(path, '.');
@@ -193,33 +226,48 @@ static const char *mime_type(const char *path)
 
 static void serve_static(SOCKET sock, const char *url_path)
 {
-    /* Map URL path to filesystem path */
-    char file_path[512];
-    const char *rel = url_path;
-    /* / -> index.html */
-    if (strcmp(rel, "/") == 0) rel = "/index.html";
-    /* Strip leading / */
-    if (rel[0] == '/') rel++;
+    /* Fix M-01: Strip query string (?) and hash (#) from url_path */
+    char clean_path[512];
+    strncpy(clean_path, url_path, sizeof(clean_path) - 1);
+    clean_path[sizeof(clean_path) - 1] = '\0';
+    char *q = strchr(clean_path, '?');
+    if (q) *q = '\0';
+    char *hash = strchr(clean_path, '#');
+    if (hash) *hash = '\0';
 
-    /* Sanitize: reject paths with .. */
-    if (strstr(rel, "..")) {
+    const char *rel = clean_path;
+    if (strcmp(rel, "/") == 0 || rel[0] == '\0') rel = "/index.html";
+    while (rel[0] == '/' || rel[0] == '\\') rel++;
+
+    /* Fix C-01: Reject directory traversal, dotfiles (.git, .env), and non-whitelisted files */
+    if (strstr(rel, "..") || rel[0] == '.' || strstr(rel, "/.") || strstr(rel, "\\.")) {
         const char *h = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
         send(sock, h, (int)strlen(h), 0);
         return;
     }
 
+    if (!is_allowed_static_ext(rel)) {
+        const char *h = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        send(sock, h, (int)strlen(h), 0);
+        return;
+    }
+
+    char file_path[1024];
     snprintf(file_path, sizeof(file_path), "./%s", rel);
 
     FILE *f = fopen(file_path, "rb");
     if (!f) {
-        /* Try index.html as fallback */
-        f = fopen("./index.html", "rb");
+        /* Only fallback to index.html for html navigation, never for missing assets */
+        const char *ext = strrchr(rel, '.');
+        if (ext && strcmp(ext, ".html") == 0) {
+            f = fopen("./index.html", "rb");
+            rel = "index.html";
+        }
         if (!f) {
             const char *h = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
             send(sock, h, (int)strlen(h), 0);
             return;
         }
-        rel = "index.html";
     }
 
     fseek(f, 0, SEEK_END);
@@ -645,6 +693,9 @@ static void route_delete_song(SOCKET sock, int id)
     hash_delete(g_hash, id);
     lib_remove_song(g_lib, id);
 
+    /* Fix H-01: Invalidate deleted song from LRU cache */
+    cache_remove(g_cache, id);
+
     /* Rebuild heaps to remove deleted song */
     heap_rebuild_from_library(g_heap_plays, g_lib);
     heap_rebuild_from_library(g_heap_rating, g_lib);
@@ -661,6 +712,9 @@ static void route_play_song(SOCKET sock, int id)
     s->play_count++;
     hash_insert(g_hash, *s);   /* refresh hash */
     bst_update_song(g_bst, id, s->play_count);  /* refresh BST */
+
+    /* Fix H-01: Sync updated play_count to LRU cache */
+    cache_put(g_cache, id, *s);
 
     /* Push to play history stack */
     stack_push(g_history, *s);
@@ -848,7 +902,7 @@ static void route_create_playlist(SOCKET sock, const char *body)
     Playlist *pl = pm_create_playlist(g_pm, name);
     if (!pl) { send_error(sock,500,"failed"); return; }
     char pname[256]; json_escape(pl->name, pname, sizeof(pname));
-    char buf[256];
+    char buf[512];
     snprintf(buf, sizeof(buf), "{\"id\":%d,\"name\":\"%s\",\"song_count\":0}", pl->id, pname);
     send_created(sock, buf);
 }
@@ -995,7 +1049,7 @@ static int check_rate_limit(const char *ip) {
         g_rate_limit_count++;
         return 1;
     }
-    /* Evict expired entries */
+    /* Evict expired entries — if none can be evicted, deny the request */
     for (int i = 0; i < g_rate_limit_count; i++) {
         if (difftime(now, g_rate_limits[i].window_start) > RATE_LIMIT_WINDOW_SEC) {
             strncpy(g_rate_limits[i].ip, ip, sizeof(g_rate_limits[0].ip) - 1);
@@ -1004,7 +1058,8 @@ static int check_rate_limit(const char *ip) {
             return 1;
         }
     }
-    return 1;
+    /* Fix M-01: Table is full and no slot could be reclaimed — deny to be safe */
+    return 0;
 }
 
 /* Upgraded Cryptographic Multi-Round Salted Hash [T1-01] */
@@ -1043,6 +1098,8 @@ static int validate_email_syntax(const char *email) {
     return 1;
 }
 
+static void generate_secure_token(char *out, size_t out_size, const char *prefix);
+
 /* ═══════════════════════════════════════════════
    LISTEN TOGETHER / JAM SESSION DSA & ROUTES [T1-06]
 ═══════════════════════════════════════════════ */
@@ -1069,6 +1126,7 @@ typedef struct {
 typedef struct JamRoom {
     char code[32];
     char host_name[64];
+    char host_token[64];
     int allow_control;
     char password_hash[128];
     int has_password;
@@ -1209,8 +1267,8 @@ static void route_jam_create(SOCKET sock, const char *body)
     JamRoom *r = existing ? existing : (JamRoom*)calloc(1, sizeof(JamRoom));
     if (!r) { send_error(sock, 500, "out of memory"); return; }
 
-    strncpy(r->code, room_code, sizeof(r->code) - 1);
-    strncpy(r->host_name, dj_name, sizeof(r->host_name) - 1);
+    snprintf(r->code, sizeof(r->code), "%s", room_code);
+    snprintf(r->host_name, sizeof(r->host_name), "%s", dj_name);
     r->allow_control = allow_control;
     r->member_count = 1;
     r->event_count = 0;
@@ -1218,6 +1276,8 @@ static void route_jam_create(SOCKET sock, const char *body)
     r->created_at = time(NULL);
     r->last_activity = r->created_at;
     r->expires_at = r->created_at + 3600; /* 60 minutes automatic room expiry [T1-06] */
+    /* Fix C-02: Cryptographically random token for DJ/host authorization */
+    generate_secure_token(r->host_token, sizeof(r->host_token), "host_");
 
     /* Optional room password protection [T1-06] */
     char raw_password[128] = {0};
@@ -1231,7 +1291,7 @@ static void route_jam_create(SOCKET sock, const char *body)
     }
 
     /* Host is member #0 — NO BOTS */
-    strncpy(r->members[0].name, dj_name, sizeof(r->members[0].name) - 1);
+    snprintf(r->members[0].name, sizeof(r->members[0].name), "%s", dj_name);
     strcpy(r->members[0].avatar, "DJ");
     strcpy(r->members[0].color, "#7c3aed");
     r->members[0].is_host = 1;
@@ -1239,7 +1299,7 @@ static void route_jam_create(SOCKET sock, const char *body)
 
     char song_buf[2048];
     if (json_obj(body, "song", song_buf, sizeof(song_buf))) {
-        strncpy(r->current_song, song_buf, sizeof(r->current_song) - 1);
+        snprintf(r->current_song, sizeof(r->current_song), "%s", song_buf);
     } else {
         r->current_song[0] = '\0';
     }
@@ -1253,10 +1313,15 @@ static void route_jam_create(SOCKET sock, const char *body)
 
     jam_add_event(r, "ROOM_CREATED", dj_name, body);
 
+    /* Fix M-03: Escape host_name before embedding in JSON */
+    char esc_host[128], esc_code[64];
+    json_escape(r->host_name, esc_host, sizeof(esc_host));
+    json_escape(r->code,      esc_code, sizeof(esc_code));
+
     char resp[512];
     snprintf(resp, sizeof(resp),
-        "{\"success\":true,\"roomId\":\"%s\",\"host\":\"%s\",\"allowControl\":%s,\"hasPassword\":%s}",
-        r->code, r->host_name, r->allow_control ? "true" : "false", r->has_password ? "true" : "false");
+        "{\"success\":true,\"roomId\":\"%s\",\"host\":\"%s\",\"hostToken\":\"%s\",\"allowControl\":%s,\"hasPassword\":%s}",
+        esc_code, esc_host, r->host_token, r->allow_control ? "true" : "false", r->has_password ? "true" : "false");
     send_ok(sock, resp);
 }
 
@@ -1304,8 +1369,7 @@ static void route_jam_join(SOCKET sock, const char *body)
 
     if (found_idx == -1 && r->member_count < MAX_JAM_MEMBERS) {
         int idx = r->member_count++;
-        strncpy(r->members[idx].name, user_name, sizeof(r->members[idx].name) - 1);
-        r->members[idx].name[sizeof(r->members[idx].name) - 1] = '\0';
+        snprintf(r->members[idx].name, sizeof(r->members[idx].name), "%s", user_name);
 
         char av[4] = "GU";
         if (user_name[0]) {
@@ -1318,10 +1382,13 @@ static void route_jam_join(SOCKET sock, const char *body)
         r->members[idx].is_host = 0;
         r->members[idx].last_seen = time(NULL);
 
+        /* Fix H-02: Escape user_name in join payload */
+        char esc_user[128];
+        json_escape(user_name, esc_user, sizeof(esc_user));
         char jpayload[256];
         snprintf(jpayload, sizeof(jpayload),
             "{\"sender\":\"%s\",\"avatar\":\"%s\",\"color\":\"%s\"}",
-            user_name, r->members[idx].avatar, r->members[idx].color);
+            esc_user, r->members[idx].avatar, r->members[idx].color);
         jam_add_event(r, "JOIN", user_name, jpayload);
     }
 
@@ -1336,9 +1403,14 @@ static void route_jam_join(SOCKET sock, const char *body)
 
     for (int i = 0; i < r->member_count; i++) {
         if (i > 0 && pos < BUF - 2) resp[pos++] = ',';
+        /* Fix M-03: Escape member fields before embedding in JSON */
+        char esc_name[128], esc_avatar[16], esc_color[32];
+        json_escape(r->members[i].name,   esc_name,   sizeof(esc_name));
+        json_escape(r->members[i].avatar, esc_avatar, sizeof(esc_avatar));
+        json_escape(r->members[i].color,  esc_color,  sizeof(esc_color));
         pos += snprintf(resp + pos, BUF - pos,
             "{\"name\":\"%s\",\"avatar\":\"%s\",\"color\":\"%s\",\"isHost\":%s}",
-            r->members[i].name, r->members[i].avatar, r->members[i].color,
+            esc_name, esc_avatar, esc_color,
             r->members[i].is_host ? "true" : "false");
     }
     pos += snprintf(resp + pos, BUF - pos, "],\"currentSong\":%s}",
@@ -1351,15 +1423,17 @@ static void route_jam_join(SOCKET sock, const char *body)
 /* POST /api/jam/sync */
 static void route_jam_sync(SOCKET sock, const char *body)
 {
-    char room_code[32], sender[64], type[32];
+    char room_code[32], sender[64], type[32], prov_token[64] = {0};
     json_str(body, "roomId", room_code, sizeof(room_code));
     json_str(body, "sender", sender, sizeof(sender));
     json_str(body, "type", type, sizeof(type));
+    json_str(body, "hostToken", prov_token, sizeof(prov_token));
 
     JamRoom *r = jam_find_room(room_code);
     if (!r) { send_error(sock, 404, "Room not found"); return; }
 
-    int is_host = (strcmp(r->host_name, sender) == 0);
+    /* Fix C-02: Authenticate DJ/host using cryptographic host_token */
+    int is_host = (r->host_token[0] && strcmp(r->host_token, prov_token) == 0);
     if (!is_host && !r->allow_control && strcmp(type, "REACTION") != 0) {
         send_error(sock, 403, "DJ has locked controls for this room");
         return;
@@ -1417,9 +1491,14 @@ static void route_jam_poll(SOCKET sock, const char *path)
 
     for (int i = 0; i < r->member_count; i++) {
         if (i > 0 && pos < BUF - 2) resp[pos++] = ',';
+        /* Fix H-02: Escape member name and fields */
+        char esc_name[128], esc_avatar[16], esc_color[32];
+        json_escape(r->members[i].name,   esc_name,   sizeof(esc_name));
+        json_escape(r->members[i].avatar, esc_avatar, sizeof(esc_avatar));
+        json_escape(r->members[i].color,  esc_color,  sizeof(esc_color));
         pos += snprintf(resp + pos, BUF - pos,
             "{\"name\":\"%s\",\"avatar\":\"%s\",\"color\":\"%s\",\"isHost\":%s}",
-            r->members[i].name, r->members[i].avatar, r->members[i].color,
+            esc_name, esc_avatar, esc_color,
             r->members[i].is_host ? "true" : "false");
     }
 
@@ -1430,9 +1509,12 @@ static void route_jam_poll(SOCKET sock, const char *path)
         if (r->events[i].id > last_id) {
             if (!ev_first && pos < BUF - 2) resp[pos++] = ',';
             ev_first = 0;
+            /* Fix H-02: Escape event sender */
+            char esc_sender[128];
+            json_escape(r->events[i].sender, esc_sender, sizeof(esc_sender));
             pos += snprintf(resp + pos, BUF - pos,
                 "{\"id\":%d,\"type\":\"%s\",\"sender\":\"%s\",\"payload\":%s,\"timestamp\":%lld}",
-                r->events[i].id, r->events[i].type, r->events[i].sender,
+                r->events[i].id, r->events[i].type, esc_sender,
                 r->events[i].payload[0] == '{' ? r->events[i].payload : "{}",
                 r->events[i].timestamp);
         }
@@ -1468,13 +1550,16 @@ static void route_jam_leave(SOCKET sock, const char *body)
             }
             r->member_count--;
 
-            char lpayload[128];
-            snprintf(lpayload, sizeof(lpayload), "{\"sender\":\"%s\"}", user_name);
+            /* Fix H-02: Escape user_name in leave event */
+            char esc_user[128];
+            json_escape(user_name, esc_user, sizeof(esc_user));
+            char lpayload[256];
+            snprintf(lpayload, sizeof(lpayload), "{\"sender\":\"%s\"}", esc_user);
             jam_add_event(r, "LEAVE", user_name, lpayload);
 
             if (was_host && r->member_count > 0) {
                 r->members[0].is_host = 1;
-                strncpy(r->host_name, r->members[0].name, sizeof(r->host_name) - 1);
+                snprintf(r->host_name, sizeof(r->host_name), "%s", r->members[0].name);
             }
         }
     }
@@ -1524,9 +1609,12 @@ static void route_jam_chat(SOCKET sock, const char *body)
     }
 
     char payload[1024];
-    char escaped_msg[512];
-    json_escape(message, escaped_msg, sizeof(escaped_msg));
-    snprintf(payload, sizeof(payload), "{\"sender\":\"%s\",\"message\":\"%s\"}", sender, escaped_msg);
+    char escaped_msg[512], escaped_sender[128];
+    /* Fix N-M-06: Escape sender name to prevent JSON injection in chat events */
+    json_escape(message, escaped_msg,    sizeof(escaped_msg));
+    json_escape(sender,  escaped_sender, sizeof(escaped_sender));
+    snprintf(payload, sizeof(payload), "{\"sender\":\"%s\",\"message\":\"%s\"}",
+             escaped_sender, escaped_msg);
     jam_add_event(r, "CHAT_MESSAGE", sender, payload);
     send_ok(sock, "{\"success\":true}");
 }
@@ -1573,7 +1661,49 @@ static AuthUser* auth_find_user_by_email(const char *email)
     return NULL;
 }
 
-/* POST /api/register */
+/* Fix C-03: Use BCryptGenRandom (Windows) for cryptographically secure token generation */
+static void generate_secure_token(char *out, size_t out_size, const char *prefix) {
+    unsigned char raw[16];
+    if (BCryptGenRandom(NULL, raw, sizeof(raw), BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0) {
+        /* Fallback: mix time + multiple rand() calls (still weak, but better than bare rand()) */
+        srand((unsigned)time(NULL) ^ (unsigned)(uintptr_t)out);
+        for (int i = 0; i < (int)sizeof(raw); i++) raw[i] = (unsigned char)(rand() & 0xff);
+    }
+    /* Encode as hex */
+    char hex[33] = {0};
+    for (int i = 0; i < 16; i++) snprintf(hex + i * 2, 3, "%02x", raw[i]);
+    snprintf(out, out_size, "%s%s", prefix, hex);
+}
+
+/* Helper: find a user by their session token */
+static AuthUser *auth_find_user_by_token(const char *token) {
+    if (!token || !token[0]) return NULL;
+    for (int i = 0; i < g_auth_user_count; i++) {
+        if (g_auth_users[i].session_token[0] &&
+            strcmp(g_auth_users[i].session_token, token) == 0) {
+            return &g_auth_users[i];
+        }
+    }
+    return NULL;
+}
+
+/* Helper: extract Bearer token from a raw HTTP request string */
+static void extract_bearer_token(const char *req, char *out, int maxlen) {
+    out[0] = '\0';
+    if (!req) return;
+    const char *h = strstr(req, "Authorization:");
+    if (!h) h = strstr(req, "authorization:");
+    if (!h) return;
+    h += 14; /* skip "Authorization:" */
+    while (*h == ' ') h++;
+    if (strncmp(h, "Bearer ", 7) != 0) return;
+    h += 7;
+    int i = 0;
+    while (*h && *h != '\r' && *h != '\n' && *h != ' ' && i < maxlen - 1)
+        out[i++] = *h++;
+    out[i] = '\0';
+}
+
 static void route_register(SOCKET sock, const char *body)
 {
     char name[64] = {0}, email[128] = {0}, password[128] = {0};
@@ -1609,19 +1739,25 @@ static void route_register(SOCKET sock, const char *body)
     }
 
     AuthUser *u = &g_auth_users[g_auth_user_count++];
-    snprintf(u->id, sizeof(u->id), "usr_%lx%04d", (unsigned long)time(NULL), rand() % 10000);
-    strncpy(u->name, name, sizeof(u->name) - 1);
-    strncpy(u->email, email, sizeof(u->email) - 1);
+    /* Fix C-03: Use secure token generation */
+    generate_secure_token(u->id, sizeof(u->id), "usr_");
+    snprintf(u->name, sizeof(u->name), "%s", name);
+    snprintf(u->email, sizeof(u->email), "%s", email);
     hash_password(password, u->password_hash, sizeof(u->password_hash));
     strcpy(u->avatar_color, "#7c3aed");
     strcpy(u->provider, "email");
-    snprintf(u->session_token, sizeof(u->session_token), "sess_%lx%06x", (unsigned long)time(NULL), rand() & 0xffffff);
+    generate_secure_token(u->session_token, sizeof(u->session_token), "sess_");
     u->created_at = time(NULL);
+
+    /* Fix M-04: Escape user fields in JSON responses */
+    char esc_name[128], esc_email[128];
+    json_escape(u->name,  esc_name,  sizeof(esc_name));
+    json_escape(u->email, esc_email, sizeof(esc_email));
 
     char resp[512];
     snprintf(resp, sizeof(resp),
         "{\"status\":\"ok\",\"user\":{\"id\":\"%s\",\"name\":\"%s\",\"email\":\"%s\",\"provider\":\"email\",\"avatarColor\":\"%s\"},\"token\":\"%s\"}",
-        u->id, u->name, u->email, u->avatar_color, u->session_token);
+        u->id, esc_name, esc_email, u->avatar_color, u->session_token);
     send_created(sock, resp);
 }
 
@@ -1650,50 +1786,28 @@ static void route_login(SOCKET sock, const char *body)
         return;
     }
 
-    snprintf(u->session_token, sizeof(u->session_token), "sess_%lx%06x", (unsigned long)time(NULL), rand() & 0xffffff);
+    /* Fix C-03: Rotate session token using secure generator */
+    generate_secure_token(u->session_token, sizeof(u->session_token), "sess_");
+
+    /* Fix M-04: Escape user fields in JSON responses */
+    char esc_name[128], esc_email[128];
+    json_escape(u->name,  esc_name,  sizeof(esc_name));
+    json_escape(u->email, esc_email, sizeof(esc_email));
 
     char resp[512];
     snprintf(resp, sizeof(resp),
         "{\"status\":\"ok\",\"user\":{\"id\":\"%s\",\"name\":\"%s\",\"email\":\"%s\",\"provider\":\"%s\",\"avatarColor\":\"%s\"},\"token\":\"%s\"}",
-        u->id, u->name, u->email, u->provider, u->avatar_color, u->session_token);
+        u->id, esc_name, esc_email, u->provider, u->avatar_color, u->session_token);
     send_ok(sock, resp);
 }
 
 /* POST /api/google-login */
 static void route_google_login(SOCKET sock, const char *body)
 {
-    char email[128] = {0}, name[64] = {0};
-    json_str(body, "email", email, sizeof(email));
-    json_str(body, "name", name, sizeof(name));
-
-    if (!email[0]) {
-        send_error(sock, 400, "google account email required");
-        return;
-    }
-    if (!name[0]) strcpy(name, "Google User");
-
-    AuthUser *u = auth_find_user_by_email(email);
-    if (!u) {
-        if (g_auth_user_count >= MAX_AUTH_USERS) {
-            send_error(sock, 500, "User capacity exceeded");
-            return;
-        }
-        u = &g_auth_users[g_auth_user_count++];
-        snprintf(u->id, sizeof(u->id), "usr_g_%lx%04d", (unsigned long)time(NULL), rand() % 10000);
-        strncpy(u->name, name, sizeof(u->name) - 1);
-        strncpy(u->email, email, sizeof(u->email) - 1);
-        strcpy(u->password_hash, "OAUTH_MANAGED");
-        strcpy(u->avatar_color, "#4285F4");
-        strcpy(u->provider, "google");
-        u->created_at = time(NULL);
-    }
-    snprintf(u->session_token, sizeof(u->session_token), "sess_g_%lx%06x", (unsigned long)time(NULL), rand() & 0xffffff);
-
-    char resp[512];
-    snprintf(resp, sizeof(resp),
-        "{\"status\":\"ok\",\"user\":{\"id\":\"%s\",\"name\":\"%s\",\"email\":\"%s\",\"provider\":\"google\",\"avatarColor\":\"%s\"},\"token\":\"%s\"}",
-        u->id, u->name, u->email, u->avatar_color, u->session_token);
-    send_ok(sock, resp);
+    (void)body;
+    /* Fix C-04: Reject dummy Google OAuth logins until server-side ID token verification
+     * with Google's tokeninfo API is configured, preventing unauthorized account takeover. */
+    send_error(sock, 501, "Google OAuth server-side token verification is not yet configured on this server");
 }
 
 /* POST /api/forgot-password (Section 8: Anti-Enumeration Generic Notice) */
@@ -1707,31 +1821,43 @@ static void route_forgot_password(SOCKET sock, const char *body)
         return;
     }
 
-    AuthUser *u = auth_find_user_by_email(email);
-    char reset_token[64] = "";
-    if (u) {
-        snprintf(reset_token, sizeof(reset_token), "rst_%lx%08x", (unsigned long)time(NULL), rand());
-        if (g_reset_token_count < MAX_RESET_TOKENS) {
-            AuthResetToken *rt = &g_reset_tokens[g_reset_token_count++];
-            strncpy(rt->token, reset_token, sizeof(rt->token) - 1);
-            strncpy(rt->email, u->email, sizeof(rt->email) - 1);
-            rt->expires_at = time(NULL) + (15 * 60); /* 15 minutes */
-            rt->used = 0;
+    time_t now = time(NULL);
+
+    /* Fix H-03: Prune expired or already used reset tokens to prevent table exhaustion DoS */
+    int write_idx = 0;
+    for (int i = 0; i < g_reset_token_count; i++) {
+        if (!g_reset_tokens[i].used && g_reset_tokens[i].expires_at > now) {
+            if (write_idx != i) {
+                g_reset_tokens[write_idx] = g_reset_tokens[i];
+            }
+            write_idx++;
         }
     }
+    g_reset_token_count = write_idx;
 
-    /* Section 8: Always return generic message to protect against user enumeration */
-    char resp[512];
-    if (reset_token[0]) {
-        snprintf(resp, sizeof(resp),
-            "{\"status\":\"ok\",\"message\":\"If an account exists for this email, you will receive a password reset link.\",\"resetToken\":\"%s\",\"expiresIn\":900}",
-            reset_token);
-    } else {
-        snprintf(resp, sizeof(resp),
-            "{\"status\":\"ok\",\"message\":\"If an account exists for this email, you will receive a password reset link.\"}"
-        );
+    AuthUser *u = auth_find_user_by_email(email);
+    char reset_token[64] = "";
+    if (u && g_reset_token_count < MAX_RESET_TOKENS) {
+        /* Fix C-03: Use cryptographically secure token generator instead of weak rand() */
+        generate_secure_token(reset_token, sizeof(reset_token), "rst_");
+
+        AuthResetToken *rt = &g_reset_tokens[g_reset_token_count++];
+        snprintf(rt->token, sizeof(rt->token), "%s", reset_token);
+        snprintf(rt->email, sizeof(rt->email), "%s", u->email);
+        rt->expires_at = now + (15 * 60); /* 15 minutes */
+        rt->used = 0;
     }
-    send_ok(sock, resp);
+
+    /* Fix C-02: NEVER return the reset token in the HTTP response body.
+     * In production, send the token via email to the user.
+     * Log it to stderr here for developer reference only. */
+    if (reset_token[0]) {
+        fprintf(stderr, "[DEV-ONLY] Password reset token for <%s>: %s (expires in 15 min)\n",
+                email, reset_token);
+    }
+
+    /* Always return generic message (anti-enumeration) */
+    send_ok(sock, "{\"status\":\"ok\",\"message\":\"If an account exists for this email, you will receive a password reset link.\"}");
 }
 
 /* POST /api/reset-password */
@@ -1783,27 +1909,44 @@ static void route_reset_password(SOCKET sock, const char *body)
     send_ok(sock, "{\"status\":\"ok\",\"message\":\"Password updated successfully\"}");
 }
 
-/* POST /api/logout */
-static void route_logout(SOCKET sock, const char *body)
+/* POST /api/logout — receives the FULL raw HTTP request to access headers */
+static void route_logout(SOCKET sock, const char *req)
 {
-    (void)body;
+    /* Fix N-H-02 / C-07: extract Bearer token from HTTP headers (not body).
+     * The Authorization header lives in the header section, not the POST body,
+     * so we must search the full request string here. */
+    char token[128] = {0};
+    extract_bearer_token(req, token, sizeof(token));
+    AuthUser *u = auth_find_user_by_token(token);
+    if (u) {
+        /* Overwrite session token so it can never match again */
+        memset(u->session_token, 0, sizeof(u->session_token));
+    }
     send_ok(sock, "{\"status\":\"ok\",\"message\":\"Logged out successfully\"}");
 }
 
 /* GET /api/me */
 static void route_me(SOCKET sock, const char *req)
 {
-    (void)req;
-    if (g_auth_user_count > 0) {
-        AuthUser *u = &g_auth_users[g_auth_user_count - 1];
-        char resp[512];
-        snprintf(resp, sizeof(resp),
-            "{\"authenticated\":true,\"user\":{\"id\":\"%s\",\"name\":\"%s\",\"email\":\"%s\",\"provider\":\"%s\",\"avatarColor\":\"%s\"}}",
-            u->id, u->name, u->email, u->provider, u->avatar_color);
-        send_ok(sock, resp);
-    } else {
-        send_ok(sock, "{\"authenticated\":false,\"user\":null}");
+    /* Fix C-06: Validate the Authorization Bearer token before returning user info */
+    char token[128] = {0};
+    extract_bearer_token(req, token, sizeof(token));
+    AuthUser *u = auth_find_user_by_token(token);
+    if (!u) {
+        send_error(sock, 401, "Unauthorized: valid Bearer token required");
+        return;
     }
+
+    /* Fix M-04: Escape user fields in JSON responses */
+    char esc_name[128], esc_email[128];
+    json_escape(u->name,  esc_name,  sizeof(esc_name));
+    json_escape(u->email, esc_email, sizeof(esc_email));
+
+    char resp[512];
+    snprintf(resp, sizeof(resp),
+        "{\"authenticated\":true,\"user\":{\"id\":\"%s\",\"name\":\"%s\",\"email\":\"%s\",\"provider\":\"%s\",\"avatarColor\":\"%s\"}}",
+        u->id, esc_name, esc_email, u->provider, u->avatar_color);
+    send_ok(sock, resp);
 }
 
 /* ═══════════════════════════════════════════════
@@ -1848,14 +1991,34 @@ static void handle_request(SOCKET sock, char *req, int req_len, const char *clie
         return;
     }
 
+    /* Fix N-H-03: Anonymize client IP (mask last octet) for privacy compliance */
+    char masked_ip[64];
+    strncpy(masked_ip, client_ip, sizeof(masked_ip) - 1);
+    masked_ip[sizeof(masked_ip) - 1] = '\0';
+    char *last_dot = strrchr(masked_ip, '.');
+    if (last_dot) {
+        strncpy(last_dot + 1, "xxx", sizeof(masked_ip) - (last_dot + 1 - masked_ip) - 1);
+    }
+
     /* Rate limiting check for all API routes [T1-04] */
     if (!check_rate_limit(client_ip)) {
-        LOG_WARN("Rate limit exceeded for %s", client_ip);
+        LOG_WARN("Rate limit exceeded for %s", masked_ip);
         send_response(sock, 429, "{\"error\":\"Rate limit exceeded. Please wait a moment.\"}");
         return;
     }
 
-    LOG_INFO("%s %s from %s", method, path, client_ip);
+    /* Strip query string from path when logging to prevent credential/token leakage */
+    char clean_path[512];
+    strncpy(clean_path, path, sizeof(clean_path) - 1);
+    clean_path[sizeof(clean_path) - 1] = '\0';
+    char *q_param = strchr(clean_path, '?');
+    if (q_param) *q_param = '\0';
+
+    /* Avoid logging sensitive authentication endpoints at INFO */
+    if (strcmp(seg2, "login") != 0 && strcmp(seg2, "register") != 0 &&
+        strcmp(seg2, "reset-password") != 0 && strcmp(seg2, "forgot-password") != 0) {
+        LOG_INFO("%s %s from %s", method, clean_path, masked_ip);
+    }
 
     /* ── /api/songs ─────────────────────────── */
     if (strcmp(seg2,"songs")==0) {
@@ -1889,6 +2052,10 @@ static void handle_request(SOCKET sock, char *req, int req_len, const char *clie
         }
 
         int song_id = atoi(seg3);
+        /* Fix H-05: Reject invalid/out-of-range IDs before touching any array */
+        if (song_id < 0 || song_id >= MAX_SONGS) {
+            send_error(sock, 400, "invalid song id"); return;
+        }
 
         if (seg4[0]=='\0') {
             /* /api/songs/:id */
@@ -2006,7 +2173,9 @@ static void handle_request(SOCKET sock, char *req, int req_len, const char *clie
         route_reset_password(sock, body); return;
     }
     if (strcmp(seg2, "logout") == 0 && strcmp(method, "POST") == 0) {
-        route_logout(sock, body); return;
+        /* Fix N-H-02: Pass full request (not just body) so the Bearer token
+         * in the Authorization header can be found by extract_bearer_token. */
+        route_logout(sock, req); return;
     }
     if (strcmp(seg2, "me") == 0 && strcmp(method, "GET") == 0) {
         route_me(sock, req); return;
@@ -2127,7 +2296,9 @@ int main(void)
         }
     }
 
-    if (listen(server_sock, 10) == SOCKET_ERROR) {
+    /* Fix L-04: Increase backlog from 10 to 128 so concurrent connection
+     * attempts are not immediately refused under moderate load. */
+    if (listen(server_sock, 128) == SOCKET_ERROR) {
         LOG_ERROR("listen() failed");
         fprintf(stderr, "listen() failed\n");
         closesocket(server_sock); WSACleanup(); return 1;
@@ -2176,6 +2347,11 @@ int main(void)
                 if (!cl) cl = strstr(req_buf, "content-length:");
                 if (cl) {
                     int body_len = atoi(cl + 15);
+                    /* Fix L-02: Cap body_len to the space remaining in buffer
+                     * to prevent an attacker with a huge Content-Length from
+                     * keeping the recv loop running indefinitely. */
+                    int max_body = BUF - 1 - (int)(strstr(req_buf, "\r\n\r\n") - req_buf) - 4;
+                    if (body_len > max_body) body_len = max_body;
                     const char *hdr_end = strstr(req_buf, "\r\n\r\n");
                     int hdr_len = (int)(hdr_end - req_buf) + 4;
                     int body_received = total - hdr_len;

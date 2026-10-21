@@ -77,22 +77,33 @@ void graph_add_edge(SongGraph *g, int id1, int id2, float similarity) {
     GraphNode *n2 = find_node(g, id2);
     if (!n1 || !n2) return;
 
+    /* Fix L-03: Do not add duplicate edges */
+    int already1 = 0, already2 = 0;
+    for (GraphEdge *e = n1->edges; e; e = e->next)
+        if (e->target_song_id == id2) { already1 = 1; break; }
+    for (GraphEdge *e = n2->edges; e; e = e->next)
+        if (e->target_song_id == id1) { already2 = 1; break; }
+
     /* Add directed edge n1 -> n2 */
-    GraphEdge *e1 = (GraphEdge *)malloc(sizeof(GraphEdge));
-    if (e1) {
-        e1->target_song_id = id2;
-        e1->similarity = similarity;
-        e1->next = n1->edges;
-        n1->edges = e1;
+    if (!already1) {
+        GraphEdge *e1 = (GraphEdge *)malloc(sizeof(GraphEdge));
+        if (e1) {
+            e1->target_song_id = id2;
+            e1->similarity = similarity;
+            e1->next = n1->edges;
+            n1->edges = e1;
+        }
     }
 
     /* Add undirected counterpart n2 -> n1 */
-    GraphEdge *e2 = (GraphEdge *)malloc(sizeof(GraphEdge));
-    if (e2) {
-        e2->target_song_id = id1;
-        e2->similarity = similarity;
-        e2->next = n2->edges;
-        n2->edges = e2;
+    if (!already2) {
+        GraphEdge *e2 = (GraphEdge *)malloc(sizeof(GraphEdge));
+        if (e2) {
+            e2->target_song_id = id1;
+            e2->similarity = similarity;
+            e2->next = n2->edges;
+            n2->edges = e2;
+        }
     }
 }
 
@@ -111,13 +122,32 @@ int graph_get_similar(const SongGraph *g, int song_id, int out_ids[], float out_
     GraphNode *n = find_node(g, song_id);
     if (!n) return 0;
 
-    int count = 0;
-    GraphEdge *e = n->edges;
-    while (e && count < max_results) {
-        out_ids[count] = e->target_song_id;
-        if (out_scores) out_scores[count] = e->similarity;
-        count++;
-        e = e->next;
+    /* Fix L-01: Collect and rank edges descending by similarity score */
+    typedef struct { int id; float sim; } SimCandidate;
+    SimCandidate candidates[MAX_GRAPH_SONGS];
+    int total = 0;
+
+    for (GraphEdge *e = n->edges; e && total < MAX_GRAPH_SONGS; e = e->next) {
+        candidates[total].id = e->target_song_id;
+        candidates[total].sim = e->similarity;
+        total++;
+    }
+
+    /* Sort descending by similarity score */
+    for (int i = 1; i < total; i++) {
+        SimCandidate key = candidates[i];
+        int j = i - 1;
+        while (j >= 0 && candidates[j].sim < key.sim) {
+            candidates[j + 1] = candidates[j];
+            j--;
+        }
+        candidates[j + 1] = key;
+    }
+
+    int count = (total < max_results) ? total : max_results;
+    for (int i = 0; i < count; i++) {
+        out_ids[i] = candidates[i].id;
+        if (out_scores) out_scores[i] = candidates[i].sim;
     }
     return count;
 }

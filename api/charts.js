@@ -14,15 +14,21 @@ if (!global._dhunSongs) {
   ];
 }
 
-function setCORS(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+function setCORS(req, res) {
+  const origin = req.headers.origin;
+  const allowed = process.env.ALLOWED_ORIGIN || 'http://localhost:3000';
+  if (origin && (origin === allowed || allowed === '*')) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', allowed);
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
   res.setHeader('Content-Type', 'application/json');
 }
 
 module.exports = async (req, res) => {
-  setCORS(res);
+  setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const { sort } = req.query;

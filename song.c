@@ -15,18 +15,19 @@ Song song_create(int id, const char *title, const char *artist,
     Song s;
     s.id         = id;
     s.play_count = 0;
-    s.duration   = duration;
+    s.duration   = (duration < 0.0f) ? 0.0f : duration;
     s.rating     = (rating < 1.0f) ? 1.0f : (rating > 5.0f) ? 5.0f : rating;
-    strncpy(s.title,  title,  MAX_TITLE  - 1); s.title[MAX_TITLE-1]   = '\0';
-    strncpy(s.artist, artist, MAX_ARTIST - 1); s.artist[MAX_ARTIST-1] = '\0';
-    strncpy(s.album,  album,  MAX_ALBUM  - 1); s.album[MAX_ALBUM-1]   = '\0';
-    strncpy(s.genre,  genre,  MAX_GENRE  - 1); s.genre[MAX_GENRE-1]   = '\0';
+    if (title)  { snprintf(s.title,  sizeof(s.title),  "%s", title); }  else s.title[0]  = '\0';
+    if (artist) { snprintf(s.artist, sizeof(s.artist), "%s", artist); } else s.artist[0] = '\0';
+    if (album)  { snprintf(s.album,  sizeof(s.album),  "%s", album); }  else s.album[0]  = '\0';
+    if (genre)  { snprintf(s.genre,  sizeof(s.genre),  "%s", genre); }  else s.genre[0]  = '\0';
     return s;
 }
 
 /* ── Print a single song row ─────────────────── */
 void song_print(const Song *s)
 {
+    if (!s) return;
     int min = (int)s->duration;
     int sec = (int)((s->duration - min) * 60);
     printf("  [%3d] %-28s %-22s %-16s %-10s %d:%02d  x%-4d  %.1f★\n",

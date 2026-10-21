@@ -69,6 +69,19 @@ void log_message(LogLevel level, const char *file, int line, const char *fmt, ..
     vsnprintf(msg, sizeof(msg), fmt, args);
     va_end(args);
 
+    /* Fix N-H-03: Redact sensitive tokens and credentials from logs */
+    char *bearer = strstr(msg, "Bearer ");
+    if (bearer) {
+        char *end = strchr(bearer + 7, ' ');
+        if (!end) end = strchr(bearer + 7, '"');
+        if (!end) end = bearer + strlen(bearer);
+        int tok_len = (int)(end - (bearer + 7));
+        if (tok_len > 0) {
+            int mask_len = tok_len < 32 ? tok_len : 32;
+            for (int i = 0; i < mask_len; i++) bearer[7 + i] = '*';
+        }
+    }
+
     /* Format: [YYYY-MM-DD HH:MM:SS] [LEVEL] [file:line] message */
     fprintf(stdout, "[%s] [%s] [%s:%d] %s\n", time_str, level_to_string(level), base_file, line, msg);
     fflush(stdout);

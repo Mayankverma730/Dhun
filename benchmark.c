@@ -32,7 +32,9 @@ int main(void) {
             char title[32];
             int key = (i * 997) % BENCH_OPERATIONS;
             snprintf(title, sizeof(title), "Track_%05d", key);
-            Song s = {key + 1, "", "Artist", "Album", "Pop", 3.2f, 10, 4.5f};
+            Song s = { .id = key + 1, .artist = "Artist", .album = "Album",
+                       .genre = "Pop", .duration = 3.2f,
+                       .play_count = 10, .rating = 4.5f };
             strncpy(s.title, title, sizeof(s.title) - 1);
             bst_insert(bst, s);
         }
@@ -58,7 +60,9 @@ int main(void) {
             char title[32];
             int key = (i * 997) % BENCH_OPERATIONS;
             snprintf(title, sizeof(title), "Track_%05d", key);
-            Song s = {key + 1, "", "Artist", "Album", "Pop", 3.2f, 10, 4.5f};
+            Song s = { .id = key + 1, .artist = "Artist", .album = "Album",
+                       .genre = "Pop", .duration = 3.2f,
+                       .play_count = 10, .rating = 4.5f };
             strncpy(s.title, title, sizeof(s.title) - 1);
             avl_insert(avl, s);
         }
@@ -81,7 +85,9 @@ int main(void) {
         HashTable *ht = hash_create();
         double start = get_time_sec();
         for (int i = 0; i < BENCH_OPERATIONS; i++) {
-            Song s = {i + 1, "BenchSong", "Artist", "Album", "Rock", 3.0f, 15, 4.0f};
+            Song s = { .id = i + 1, .title = "BenchSong", .artist = "Artist",
+                       .album = "Album", .genre = "Rock",
+                       .duration = 3.0f, .play_count = 15, .rating = 4.0f };
             hash_insert(ht, s);
         }
         double insert_time = get_time_sec() - start;

@@ -13,8 +13,9 @@
 typedef struct CacheEntry {
     int song_id;
     Song song;
-    struct CacheEntry *prev;
-    struct CacheEntry *next;
+    struct CacheEntry *prev;      /* DLL prev (LRU order) */
+    struct CacheEntry *next;      /* DLL next (LRU order) */
+    struct CacheEntry *hash_next; /* Hash-map bucket chain — SEPARATE from DLL */
 } CacheEntry;
 
 typedef struct {
@@ -29,6 +30,7 @@ LRUCache   *cache_create(int capacity);
 void        cache_destroy(LRUCache *cache);
 Song       *cache_get(LRUCache *cache, int song_id);
 void        cache_put(LRUCache *cache, int song_id, Song song);
+void        cache_remove(LRUCache *cache, int song_id);
 int         cache_size(const LRUCache *cache);
 
 #endif /* CACHE_H */
