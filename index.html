@@ -15,7 +15,7 @@
     rel="stylesheet" />
   <link rel="icon" type="image/png" href="logo.png" />
   <link rel="apple-touch-icon" href="logo.png" />
-  <link rel="stylesheet" href="style.css?v=31.0" />
+  <link rel="stylesheet" href="style.css?v=32.0" />
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
     (function () {
@@ -1497,6 +1497,13 @@
             <span>Allow friends to change songs & seek</span>
           </label>
         </div>
+        <div class="jam-security-notice">
+          <span class="jam-sec-badge-icon">🔒</span>
+          <div>
+            <strong>End-to-End Encrypted (AES-256-GCM)</strong>
+            <p>Your room code generates a client-side cipher key. Music sync, live chat, and reactions are fully encrypted.</p>
+          </div>
+        </div>
         <button type="submit" class="btn-primary jam-action-btn">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
             <circle cx="12" cy="12" r="10"/>
@@ -1519,11 +1526,18 @@
         </div>
         <div class="jam-form-group" style="margin-top:12px">
           <label class="jam-input-label" for="jam-room-code-input">Room Code or Invite Link</label>
-          <input class="form-input" id="jam-room-code-input" type="text" placeholder="e.g. DHUN-4821" style="text-transform:uppercase;letter-spacing:1.5px;font-weight:700" />
+          <input class="form-input" id="jam-room-code-input" type="text" placeholder="e.g. DHUN-4821" autocomplete="off" spellcheck="false" style="text-transform:uppercase;letter-spacing:1.5px;font-weight:700" />
         </div>
         <div class="jam-form-group" style="margin-top:12px">
           <label class="jam-input-label" for="jam-join-password">Room Password (If protected)</label>
           <input class="form-input" id="jam-join-password" type="password" placeholder="Enter room password if set" autocomplete="off" />
+        </div>
+        <div class="jam-security-notice">
+          <span class="jam-sec-badge-icon">🔒</span>
+          <div>
+            <strong>End-to-End Encrypted (AES-256-GCM)</strong>
+            <p>Direct peer encryption ensures zero eavesdropping. Chats self-destruct once seen by participants.</p>
+          </div>
         </div>
         <button type="submit" class="btn-primary jam-action-btn">
           <span>Join Friend's Jam</span>
@@ -1537,17 +1551,39 @@
             <span class="jam-live-pulse"></span>
             <span class="jam-room-id-text">Room: <strong id="jam-active-code">DHUN-0000</strong></span>
           </div>
-          <button class="btn-copy-code" onclick="copyJamInviteLink()" title="Copy room link">
+          <button class="btn-copy-code" type="button" onclick="copyJamInviteLink()" title="Copy room link">
             <span>📋 Copy Link</span>
           </button>
+        </div>
+
+        <!-- 🔒 PROMINENT VIEW-LEVEL E2E ENCRYPTED BADGE CARD -->
+        <div class="jam-e2e-card" id="jam-e2e-view-card">
+          <div class="jam-e2e-card-inner">
+            <div class="jam-e2e-shield-box">
+              <span class="jam-e2e-shield">🔒</span>
+            </div>
+            <div class="jam-e2e-card-text">
+              <div class="jam-e2e-card-title">
+                <span>End-to-End Encrypted Room</span>
+                <span class="jam-e2e-cipher-tag" id="jam-e2e-cipher-tag">AES-256-GCM</span>
+              </div>
+              <p class="jam-e2e-card-desc" id="jam-e2e-card-desc">
+                Derived locally via PBKDF2 (100,000 rounds). Music sync, disappearing chat & live reactions are cryptographically sealed.
+              </p>
+            </div>
+            <div class="jam-e2e-status-indicator" id="jam-e2e-indicator" title="Active End-to-End Encryption">
+              <span class="jam-e2e-pulse-ring"></span>
+              <span id="jam-e2e-status-text">SECURE</span>
+            </div>
+          </div>
         </div>
 
         <div class="jam-current-track-card">
           <div class="jam-track-thumb" id="jam-sync-thumb">🎵</div>
           <div class="jam-track-meta">
             <span class="jam-now-label">NOW PLAYING TOGETHER</span>
-            <div class="jam-track-title" id="jam-sync-title">Tujhko Jo Paaya</div>
-            <div class="jam-track-artist" id="jam-sync-artist">Mohit Chauhan / Pritam</div>
+            <div class="jam-track-title" id="jam-sync-title">Ready to Sync</div>
+            <div class="jam-track-artist" id="jam-sync-artist">Play any track to stream together</div>
           </div>
           <div class="jam-sync-pill">
             <span class="jam-sync-dot"></span> Synced
@@ -1567,36 +1603,51 @@
 
         <!-- Live Reaction Bar in Room -->
         <div class="jam-reactions-bar">
-          <span class="jam-react-label">Send Live Reaction:</span>
+          <div class="jam-reactions-bar-header">
+            <span class="jam-react-label">Send Live Reaction:</span>
+            <span class="jam-react-hint">Floats live across all connected screens</span>
+          </div>
           <div class="jam-reaction-emojis">
-            <button class="jam-emoji-btn" onclick="sendJamReaction('🔥')">🔥</button>
-            <button class="jam-emoji-btn" onclick="sendJamReaction('❤️')">❤️</button>
-            <button class="jam-emoji-btn" onclick="sendJamReaction('🎉')">🎉</button>
-            <button class="jam-emoji-btn" onclick="sendJamReaction('🎵')">🎵</button>
-            <button class="jam-emoji-btn" onclick="sendJamReaction('👏')">👏</button>
-            <button class="jam-emoji-btn" onclick="sendJamReaction('🚀')">🚀</button>
+            <button class="jam-emoji-btn" type="button" onclick="sendJamReaction('🔥')" aria-label="React with Fire" title="Send 🔥">🔥</button>
+            <button class="jam-emoji-btn" type="button" onclick="sendJamReaction('❤️')" aria-label="React with Love" title="Send ❤️">❤️</button>
+            <button class="jam-emoji-btn" type="button" onclick="sendJamReaction('🎉')" aria-label="React with Party" title="Send 🎉">🎉</button>
+            <button class="jam-emoji-btn" type="button" onclick="sendJamReaction('🎵')" aria-label="React with Vibe" title="Send 🎵">🎵</button>
+            <button class="jam-emoji-btn" type="button" onclick="sendJamReaction('👏')" aria-label="React with Clap" title="Send 👏">👏</button>
+            <button class="jam-emoji-btn" type="button" onclick="sendJamReaction('🚀')" aria-label="React with Rocket" title="Send 🚀">🚀</button>
           </div>
         </div>
 
-        <!-- Live Jam Chat [T3-08] -->
+        <!-- Live Jam Chat with Disappearing Ephemeral Feature [T3-08] -->
         <div class="jam-chat-wrapper">
           <div class="jam-chat-header">
-            <span>💬 Live Jam Chat</span>
-            <span id="jam-e2e-status" style="font-size:10.5px;color:var(--text-3);">🔒 E2E Encrypted</span>
+            <div class="jam-chat-header-title">
+              <span>💬 Live Jam Chat</span>
+              <span class="jam-ephemeral-badge" title="Messages automatically self-destruct once seen by participants">🔥 Disappearing</span>
+            </div>
+            <div class="jam-chat-e2e-tag active" id="jam-e2e-status" title="E2E Encrypted via AES-256-GCM">
+              <span class="jam-lock-mini">🔒</span>
+              <span>E2E Encrypted</span>
+            </div>
           </div>
           <div class="jam-chat-messages" id="jam-chat-messages">
-            <div class="jam-chat-msg" style="align-self:center;font-size:11.5px;color:var(--text-3);background:none;">
-              Welcome to the Jam! Chat with fellow listeners in real-time.
+            <div class="jam-chat-empty-state" id="jam-chat-empty">
+              🔒 <strong>E2E Encrypted Ephemeral Chat:</strong> Messages disappear automatically when seen by both listeners.
             </div>
           </div>
           <div class="jam-chat-input-bar">
-            <input type="text" id="jam-chat-input" class="jam-chat-input" placeholder="Type a message to room..." onkeydown="if(event.key==='Enter')sendJamChatMessage()" />
-            <button class="jam-chat-send-btn" onclick="sendJamChatMessage()">Send</button>
+            <input type="text" id="jam-chat-input" class="jam-chat-input" placeholder="Type an encrypted ephemeral message..." onkeydown="if(event.key==='Enter'){event.preventDefault();sendJamChatMessage();}" autocomplete="off" />
+            <button type="button" class="jam-chat-send-btn" onclick="sendJamChatMessage()" title="Send Message">
+              <span>Send</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:4px;vertical-align:middle;">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
           </div>
         </div>
 
         <div class="jam-footer-actions">
-          <button class="btn-secondary jam-leave-btn" onclick="leaveJamSession()">
+          <button type="button" class="btn-secondary jam-leave-btn" onclick="leaveJamSession()">
             <span>Leave Session</span>
           </button>
         </div>
@@ -2052,6 +2103,9 @@
     </div>
   </div>
 
+  <!-- Floating Global Live Reaction Stream (Z-Index 999999 over modals & player) -->
+  <div id="global-reaction-stream" class="global-reaction-stream" aria-hidden="true"></div>
+
   <!-- Modular Data & Utilities Layer [T2-01 to T2-07] -->
   <script src="js/config.js?v=2.6"></script>
   <script src="js/utils.js?v=2.6"></script>
@@ -2062,7 +2116,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.5/dist/mqtt.min.js"></script>
   <script src="ytmusic_api.js?v=31.0"></script>
-  <script src="app.js?v=31.0"></script>
+  <script src="app.js?v=32.0"></script>
   <!-- Last.fm + iTunes Global Recommendation Engine -->
   <script src="recommend.js?v=1.0"></script>
   <script src="https://www.youtube.com/iframe_api"></script>

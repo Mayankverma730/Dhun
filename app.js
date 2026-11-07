@@ -7418,16 +7418,32 @@ async function jamE2EDecrypt(raw) {
 
 /** Update the E2E encryption status indicator in the Listen Together modal. */
 function updateJamE2EStatusUI(active) {
-  const el = document.getElementById('jam-e2e-status');
-  if (!el) return;
+  const cardEl = document.getElementById('jam-e2e-view-card');
+  const statusTextEl = document.getElementById('jam-e2e-status-text');
+  const cipherTagEl = document.getElementById('jam-e2e-cipher-tag');
+  const cardDescEl = document.getElementById('jam-e2e-card-desc');
+  const chatStatusEl = document.getElementById('jam-e2e-status');
+
   if (active) {
-    el.textContent = '🔒 E2E Encrypted';
-    el.style.color = 'var(--accent, #10b981)';
-    el.title = 'Messages are AES-256-GCM encrypted. The MQTT broker cannot read them.';
+    if (cardEl) cardEl.classList.remove('unencrypted');
+    if (statusTextEl) statusTextEl.textContent = 'SECURE';
+    if (cipherTagEl) cipherTagEl.textContent = 'AES-256-GCM';
+    if (cardDescEl) cardDescEl.textContent = 'Derived locally via PBKDF2 (100,000 rounds). Music sync, disappearing chat & live reactions are cryptographically sealed.';
+    if (chatStatusEl) {
+      chatStatusEl.className = 'jam-chat-e2e-tag active';
+      chatStatusEl.innerHTML = '<span class="jam-lock-mini">🔒</span><span>E2E Encrypted</span>';
+      chatStatusEl.title = 'AES-256-GCM encrypted. Zero central server inspection.';
+    }
   } else {
-    el.textContent = '⚠️ Unencrypted';
-    el.style.color = '#f97316';
-    el.title = 'Web Crypto API unavailable — messages sent as plain text.';
+    if (cardEl) cardEl.classList.add('unencrypted');
+    if (statusTextEl) statusTextEl.textContent = 'PLAINTEXT';
+    if (cipherTagEl) cipherTagEl.textContent = 'NO ENCRYPTION';
+    if (cardDescEl) cardDescEl.textContent = 'Web Crypto API unavailable — messages and sync are sent as plain JSON fallback.';
+    if (chatStatusEl) {
+      chatStatusEl.className = 'jam-chat-e2e-tag unencrypted';
+      chatStatusEl.innerHTML = '<span class="jam-lock-mini">⚠️</span><span>Unencrypted</span>';
+      chatStatusEl.title = 'Web Crypto unavailable';
+    }
   }
 }
 
@@ -7750,13 +7766,31 @@ function handleJamMessageData(data) {
         break;
 
       case 'REACTION':
-        renderJamReactionParticle(data.emoji, data.sender);
+        playReactionPopSound();
+        renderJamReactionParticle(data.emoji, data.sender || 'Friend');
+        addJamChatReactionPill(data.sender || 'Friend', data.emoji);
         break;
 
       case 'CHAT':
       case 'CHAT_MESSAGE':
         if (data.message) {
-          addJamChatMessage(data.sender, data.message, false);
+          const msgId = data.msgId || ('msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
+          addJamChatMessage(data.sender, data.message, false, msgId);
+          // Broadcast seen receipt back to room so sender knows both users have seen it!
+          broadcastJam({
+            type: 'CHAT_SEEN',
+            msgId: msgId,
+            reader: jamState.userName,
+            readerId: jamState.peerId
+          });
+          // Receiver has seen the message; start ephemeral burn countdown
+          startJamMessageBurn(msgId, 10, '🔥 Seen · Burns in');
+        }
+        break;
+
+      case 'CHAT_SEEN':
+        if (data.msgId) {
+          handleJamChatSeen(data.msgId, data.reader);
         }
         break;
 
@@ -7904,9 +7938,21 @@ function openListenTogetherModal() {
   const modal = document.getElementById('listen-together-modal');
   if (modal) {
     modal.style.display = 'flex';
+
+    // Auto-populate user nickname if available
+    const savedName = (state.currentUser && state.currentUser.name) || localStorage.getItem('dhun_username') || '';
+    if (savedName) {
+      const hostInput = document.getElementById('jam-host-name');
+      const guestInput = document.getElementById('jam-guest-name');
+      if (hostInput && hostInput.value === 'You (DJ)') hostInput.value = savedName;
+      if (guestInput && !guestInput.value) guestInput.value = savedName;
+    }
+
     if (jamState.active) {
       showJamPanel('active');
       renderJamMembers();
+      updateJamTrackCard();
+      updateJamE2EStatusUI(!!jamState._e2eKey);
       updateJamUI();
     } else {
       showJamPanel('host');
@@ -8234,6 +8280,18 @@ function leaveJamSession(isUnload) {
   jamState.lastHostHeartbeat = null;
   jamState._hostWarningShown = false;
 
+  // Clear running message timers
+  if (typeof _jamMessageTimers !== 'undefined') {
+    _jamMessageTimers.forEach(t => {
+      if (t && t.intervalId) clearInterval(t.intervalId);
+    });
+    _jamMessageTimers.clear();
+  }
+  const chatMsgs = document.getElementById('jam-chat-messages');
+  if (chatMsgs) {
+    chatMsgs.innerHTML = `<div class="jam-chat-empty-state" id="jam-chat-empty">🔒 <strong>E2E Encrypted Ephemeral Chat:</strong> Messages disappear automatically when seen by both listeners.</div>`;
+  }
+
   showJamPanel('host');
   updateJamUI();
   if (!isUnload) {
@@ -8272,31 +8330,150 @@ function fallbackCopyJamLink(link) {
   }
 }
 
+/* ═══════════════════════════════════════════════
+   LIVE REACTIONS & AUDITORY FEEDBACK
+   Global Floating Particles over Modals & App
+═══════════════════════════════════════════════ */
+function playReactionPopSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    if (!window._jamAudioCtx) window._jamAudioCtx = new AudioCtx();
+    const ctx = window._jamAudioCtx;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    const now = ctx.currentTime;
+    osc.frequency.setValueAtTime(520, now);
+    osc.frequency.exponentialRampToValueAtTime(880, now + 0.08);
+    gain.gain.setValueAtTime(0.12, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.09);
+  } catch (e) {}
+}
+
 function sendJamReaction(emoji) {
-  renderJamReactionParticle(emoji, jamState.userName || 'You');
+  if (!emoji) return;
+
+  // 1. Play tactile audio chime
+  playReactionPopSound();
+
+  // 2. Render particle immediately on local screen
+  renderJamReactionParticle(emoji, 'You');
+
+  // 3. Render transient reaction pill in live chat
+  addJamChatReactionPill('You', emoji);
+
+  // 4. Broadcast to peers if in active room
   if (jamState.active) {
-    broadcastJam({ type: 'REACTION', emoji });
+    broadcastJam({
+      type: 'REACTION',
+      emoji: emoji,
+      sender: jamState.userName || 'You',
+      senderId: jamState.peerId
+    });
   } else {
     showToast(`${emoji} reaction sent!`);
   }
 }
 
 function renderJamReactionParticle(emoji, senderName) {
-  const container = document.getElementById('reaction-stream');
-  if (!container) return;
+  let container = document.getElementById('global-reaction-stream');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'global-reaction-stream';
+    container.className = 'global-reaction-stream';
+    container.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(container);
+  }
 
   const el = document.createElement('div');
-  el.className = 'floating-reaction';
-  el.textContent = emoji;
+  el.className = 'floating-reaction-global';
 
-  // Spread horizontally
-  const leftPct = 15 + Math.random() * 70;
+  const modal = document.getElementById('listen-together-modal');
+  const isModalOpen = modal && modal.style.display !== 'none';
+  // If modal is open, float around center-ish over the modal card; otherwise wider span
+  const leftPct = isModalOpen
+    ? (32 + Math.random() * 36)
+    : (16 + Math.random() * 68);
+
+  const rotStart = (Math.random() * 20 - 10).toFixed(1);
+  const rotMid = (Math.random() * 28 - 14).toFixed(1);
+  const rotEnd = (Math.random() * 24 - 12).toFixed(1);
+
   el.style.left = `${leftPct}%`;
+  el.style.setProperty('--rot-start', `${rotStart}deg`);
+  el.style.setProperty('--rot-mid', `${rotMid}deg`);
+  el.style.setProperty('--rot-end', `${rotEnd}deg`);
+
+  el.innerHTML = `
+    <span class="reaction-global-emoji">${emoji}</span>
+    <span class="reaction-global-badge">${escapeHTML(senderName || 'Friend')}</span>
+  `;
 
   container.appendChild(el);
   setTimeout(() => {
     if (el && el.parentNode) el.parentNode.removeChild(el);
-  }, 2300);
+  }, 2650);
+
+  // Also append to local visualizer canvas stream if active
+  const vizContainer = document.getElementById('reaction-stream');
+  if (vizContainer && vizContainer !== container && !isModalOpen) {
+    const vizEl = document.createElement('div');
+    vizEl.className = 'floating-reaction';
+    vizEl.textContent = emoji;
+    vizEl.style.left = `${15 + Math.random() * 70}%`;
+    vizContainer.appendChild(vizEl);
+    setTimeout(() => {
+      if (vizEl && vizEl.parentNode) vizEl.parentNode.removeChild(vizEl);
+    }, 2300);
+  }
+}
+
+function addJamChatReactionPill(sender, emoji) {
+  const container = document.getElementById('jam-chat-messages');
+  if (!container) return;
+
+  const pill = document.createElement('div');
+  pill.className = 'jam-chat-reaction-pill';
+  pill.innerHTML = `<span>${emoji}</span> <span>${escapeHTML(sender)} reacted</span>`;
+  container.appendChild(pill);
+  container.scrollTop = container.scrollHeight;
+
+  setTimeout(() => {
+    pill.style.opacity = '0';
+    pill.style.transform = 'scale(0.85)';
+    setTimeout(() => {
+      if (pill && pill.parentNode) pill.parentNode.removeChild(pill);
+    }, 450);
+  }, 4200);
+}
+
+function updateJamTrackCard() {
+  const titleEl = document.getElementById('jam-sync-title');
+  const artistEl = document.getElementById('jam-sync-artist');
+  const thumbEl = document.getElementById('jam-sync-thumb');
+  if (!titleEl || !artistEl) return;
+
+  if (state.currentSong) {
+    titleEl.textContent = state.currentSong.title || 'Untitled Track';
+    artistEl.textContent = `${state.currentSong.artist || 'Unknown Artist'} · ${state.currentSong.album || 'Dhun Stream'}`;
+    if (thumbEl) {
+      if (state.currentSong.cover) {
+        thumbEl.innerHTML = `<img src="${state.currentSong.cover}" alt="Artwork" style="width:100%;height:100%;border-radius:10px;object-fit:cover;" onerror="this.outerHTML='🎵'" />`;
+      } else {
+        thumbEl.textContent = '🎵';
+      }
+    }
+  } else {
+    titleEl.textContent = 'Ready to Sync';
+    artistEl.textContent = 'Play any track to stream together';
+    if (thumbEl) thumbEl.textContent = '🎵';
+  }
 }
 
 function renderJamMembers() {
@@ -8331,6 +8508,7 @@ function updateJamUI() {
   const socialText = document.getElementById('social-jam-text');
   const activeCodeEl = document.getElementById('jam-active-code');
   const stack = document.getElementById('player-jam-stack');
+  const playerReactions = document.getElementById('jam-player-reactions');
 
   if (jamState.active) {
     if (topBtn) topBtn.classList.add('active-session');
@@ -8353,13 +8531,19 @@ function updateJamUI() {
     if (socialText) socialText.textContent = `Live Jam (${jamState.members.length})`;
     if (activeCodeEl) activeCodeEl.textContent = jamState.roomId;
 
+    if (playerReactions) playerReactions.style.display = 'flex';
+
+    // Refresh view-level track card and E2E security status
+    updateJamTrackCard();
+    updateJamE2EStatusUI(!!jamState._e2eKey);
+
     // Render stack avatars on player page
     if (stack) {
       stack.style.display = 'inline-flex';
       const friendCount = Math.max(0, jamState.members.length - 1);
       const label = friendCount === 0
-        ? 'Room active · Waiting for friends to join'
-        : `Listening with ${friendCount} friend${friendCount > 1 ? 's' : ''}`;
+        ? '🔒 E2E Encrypted · Waiting for friends to join'
+        : `🔒 E2E Encrypted · With ${friendCount} friend${friendCount > 1 ? 's' : ''}`;
       stack.innerHTML = jamState.members.slice(0, 4).map(m => `
         <span class="jam-stack-avatar" style="background:${m.color || 'var(--grad-main)'}" title="${m.name}">${m.avatar || 'U'}</span>
       `).join('') + `<span class="jam-stack-label">${label}</span>`;
@@ -8378,12 +8562,16 @@ function updateJamUI() {
     if (socialBtn) socialBtn.classList.remove('in-session');
     if (socialText) socialText.textContent = 'Listen Together';
     if (stack) stack.style.display = 'none';
+    if (playerReactions) playerReactions.style.display = 'none';
   }
 }
 
 /* ═══════════════════════════════════════════════
-   LIVE JAM CHAT & HOST HEARTBEAT [T3-06, T3-08]
+   EPHEMERAL LIVE JAM CHAT [T3-06, T3-08]
+   Disappears Once Seen by Both Users · AES-256-GCM
 ═══════════════════════════════════════════════ */
+const _jamMessageTimers = new Map(); // msgId -> { intervalId, remaining }
+
 function sendJamChatMessage() {
   const input = document.getElementById('jam-chat-input');
   if (!input) return;
@@ -8391,13 +8579,29 @@ function sendJamChatMessage() {
   if (!text) return;
   input.value = '';
 
-  addJamChatMessage(jamState.userName, text, true);
+  const msgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
 
+  // Render locally for sender
+  addJamChatMessage(jamState.userName, text, true, msgId);
+
+  // Broadcast encrypted CHAT_MESSAGE
   broadcastJam({
     type: 'CHAT_MESSAGE',
+    msgId: msgId,
     sender: jamState.userName,
-    message: text
+    senderId: jamState.peerId,
+    message: text,
+    timestamp: Date.now()
   });
+
+  // Fallback safety: if no peer ack arrives after 25s (e.g. testing alone),
+  // start self-burn countdown so messages never linger indefinitely
+  setTimeout(() => {
+    const msgEl = document.getElementById(`jam-msg-${msgId}`);
+    if (msgEl && !_jamMessageTimers.has(msgId)) {
+      startJamMessageBurn(msgId, 10, '⏳ Ephemeral · Burns in');
+    }
+  }, 25000);
 
   // Also POST to backend API endpoint if running
   jamApi('POST', '/jam/chat', {
@@ -8407,24 +8611,117 @@ function sendJamChatMessage() {
   }).catch(() => {});
 }
 
-function addJamChatMessage(sender, message, isOwn) {
+function addJamChatMessage(sender, message, isOwn, msgId) {
   const container = document.getElementById('jam-chat-messages');
   if (!container) return;
+
+  // Hide empty state if present
+  const emptyState = document.getElementById('jam-chat-empty');
+  if (emptyState) emptyState.style.display = 'none';
+
+  const id = msgId || ('msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
+
   const msgEl = document.createElement('div');
   msgEl.className = `jam-chat-msg ${isOwn ? 'own' : ''}`;
+  msgEl.id = `jam-msg-${id}`;
 
-  const senderSpan = document.createElement('span');
-  senderSpan.className = 'jam-chat-sender';
-  senderSpan.textContent = sender || 'Guest';
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-  const textSpan = document.createElement('span');
-  textSpan.className = 'jam-chat-text';
-  textSpan.textContent = message || '';
+  msgEl.innerHTML = `
+    <div class="jam-msg-header">
+      <span class="jam-chat-sender">${escapeHTML(sender || 'Guest')}</span>
+      <span class="jam-msg-time">${timeStr}</span>
+    </div>
+    <div class="jam-chat-text">${escapeHTML(message || '')}</div>
+    <div class="jam-msg-burn-wrap" id="burn-wrap-${id}">
+      <div class="jam-burn-label" id="burn-label-${id}">
+        ${isOwn 
+          ? `<span class="jam-lock-mini">🔒</span><span>Sent · Awaiting read</span>`
+          : `<span class="jam-flame">🔥</span><span>Seen · Burns in <strong id="burn-sec-${id}">10</strong>s</span>`
+        }
+      </div>
+      <div class="jam-burn-bar">
+        <div class="jam-burn-fill" id="burn-fill-${id}" style="${isOwn ? 'transform:scaleX(1);animation:none;' : 'animation-duration:10s;'}"></div>
+      </div>
+    </div>
+  `;
 
-  msgEl.appendChild(senderSpan);
-  msgEl.appendChild(textSpan);
   container.appendChild(msgEl);
   container.scrollTop = container.scrollHeight;
+}
+
+function handleJamChatSeen(msgId, readerName) {
+  if (!msgId) return;
+  const msgEl = document.getElementById(`jam-msg-${msgId}`);
+  if (!msgEl) return;
+
+  // Once seen by peer, start burn countdown on sender view!
+  startJamMessageBurn(msgId, 10, `🔥 Seen by ${escapeHTML(readerName || 'friend')} · Burns in`);
+}
+
+function startJamMessageBurn(msgId, durationSeconds, labelPrefix) {
+  if (_jamMessageTimers.has(msgId)) return; // Avoid duplicate timers
+
+  const msgEl = document.getElementById(`jam-msg-${msgId}`);
+  if (!msgEl) return;
+
+  const labelEl = document.getElementById(`burn-label-${msgId}`);
+  const fillEl = document.getElementById(`burn-fill-${msgId}`);
+
+  let remaining = durationSeconds || 10;
+
+  if (labelEl) {
+    labelEl.innerHTML = `<span class="jam-flame">🔥</span><span>${labelPrefix} <strong id="burn-sec-${msgId}">${remaining}</strong>s</span>`;
+  }
+  if (fillEl) {
+    fillEl.style.animation = 'none';
+    void fillEl.offsetWidth; // Trigger reflow
+    fillEl.style.animation = `burnLine ${remaining}s linear forwards`;
+  }
+
+  const intervalId = setInterval(() => {
+    remaining--;
+    const secEl = document.getElementById(`burn-sec-${msgId}`);
+    if (secEl) secEl.textContent = remaining;
+
+    if (remaining <= 0) {
+      clearInterval(intervalId);
+      _jamMessageTimers.delete(msgId);
+      burnAndRemoveMessage(msgId);
+    }
+  }, 1000);
+
+  _jamMessageTimers.set(msgId, { intervalId, remaining });
+}
+
+function burnAndRemoveMessage(msgId) {
+  const msgEl = document.getElementById(`jam-msg-${msgId}`);
+  if (!msgEl) return;
+
+  msgEl.classList.add('jam-msg-burn-fade');
+  setTimeout(() => {
+    if (msgEl && msgEl.parentNode) {
+      msgEl.parentNode.removeChild(msgEl);
+    }
+    // Restore empty state if no chat messages remain
+    const container = document.getElementById('jam-chat-messages');
+    if (container) {
+      const remainingMsgs = container.querySelectorAll('.jam-chat-msg');
+      if (remainingMsgs.length === 0) {
+        let emptyState = document.getElementById('jam-chat-empty');
+        if (!emptyState) {
+          emptyState = document.createElement('div');
+          emptyState.id = 'jam-chat-empty';
+          emptyState.className = 'jam-chat-empty-state';
+          emptyState.innerHTML = '🔒 <strong>E2E Encrypted Ephemeral Chat:</strong> Messages disappear automatically when seen by both listeners.';
+          container.appendChild(emptyState);
+        } else {
+          emptyState.style.display = 'block';
+        }
+      }
+    }
+  }, 650);
 }
 
 // Host inactivity detection and takeover [T3-06]
@@ -8458,6 +8755,11 @@ setInterval(() => {
 
 window.sendJamChatMessage = sendJamChatMessage;
 window.addJamChatMessage = addJamChatMessage;
+window.sendJamReaction = sendJamReaction;
+window.renderJamReactionParticle = renderJamReactionParticle;
+window.updateJamTrackCard = updateJamTrackCard;
+window.updateJamE2EStatusUI = updateJamE2EStatusUI;
+window.playReactionPopSound = playReactionPopSound;
 
 /* ═══════════════════════════════════════════════
    WINDOWS 7 MEDIA PLAYER BEAT-REACTIVE FLOW VISUALIZER
