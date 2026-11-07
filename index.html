@@ -15,7 +15,7 @@
     rel="stylesheet" />
   <link rel="icon" type="image/png" href="logo.png" />
   <link rel="apple-touch-icon" href="logo.png" />
-  <link rel="stylesheet" href="style.css?v=33.0" />
+  <link rel="stylesheet" href="style.css?v=34.0" />
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
     (function () {
@@ -119,7 +119,7 @@
           </div>
 
           <!-- Google Sign-In Button -->
-          <button class="google-auth-btn gate-google-btn" id="gate-google-btn" onclick="handleGoogleSignIn(true)" title="Continue with Google">
+          <button class="google-auth-btn gate-google-btn" id="gate-google-btn" onclick="DhunAuth.googleSignIn(true)" title="Continue with Google">
             <svg class="google-icon" viewBox="0 0 24 24" width="20" height="20">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
               <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -128,7 +128,6 @@
             </svg>
             <span>Continue with Google</span>
           </button>
-
 
           <div class="auth-divider">
             <span>OR CONTINUE WITH EMAIL</span>
@@ -139,33 +138,40 @@
 
           <!-- Tabs Switcher -->
           <div class="auth-tab-group" id="gate-tab-group">
-            <button class="auth-tab-btn active" id="gate-tab-signin" onclick="switchGateTab('signin')">Sign In</button>
-            <button class="auth-tab-btn" id="gate-tab-signup" onclick="switchGateTab('signup')">Create Account</button>
+            <button class="auth-tab-btn active" id="gate-tab-signin" onclick="DhunAuth.setTab('signin', false)">Sign In</button>
+            <button class="auth-tab-btn" id="gate-tab-signup" onclick="DhunAuth.setTab('signup', false)">Create Account</button>
           </div>
 
           <!-- Sign In Form -->
-          <form id="gate-form-signin" class="auth-panel" onsubmit="event.preventDefault();handleGateEmailSignIn()">
+          <form id="gate-form-signin" class="auth-panel" onsubmit="event.preventDefault();DhunAuth.signIn(false)">
             <div class="auth-form-group">
-              <label class="auth-input-label" for="gate-signin-email">Email Address</label>
-              <input class="form-input" id="gate-signin-email" type="email" placeholder="you@example.com" required autocomplete="email" />
+              <label class="auth-input-label" for="gate-signin-email">Email or Username</label>
+              <input class="form-input" id="gate-signin-email" type="text" placeholder="you@example.com" required autocomplete="username" />
             </div>
             <div class="auth-form-group" style="margin-top:14px">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
                 <label class="auth-input-label" for="gate-signin-password" style="margin-bottom:0">Password</label>
-                <a href="javascript:void(0)" onclick="switchGateTab('forgot')" class="auth-forgot-link">Forgot Password?</a>
+                <a href="javascript:void(0)" onclick="DhunAuth.setTab('forgot', false)" class="auth-forgot-link">Forgot Password?</a>
               </div>
-              <input class="form-input" id="gate-signin-password" type="password" placeholder="••••••••" required autocomplete="current-password" />
+              <div class="auth-input-wrap">
+                <input class="form-input" id="gate-signin-password" type="password" placeholder="••••••••" required autocomplete="current-password" />
+                <button type="button" class="auth-pwd-toggle" onclick="DhunAuth.togglePassword('gate-signin-password', this)" title="Show / Hide Password" aria-label="Toggle password visibility">👁️</button>
+              </div>
             </div>
-            <button type="submit" class="btn-primary auth-action-btn" style="margin-top:22px">
+
+            <!-- Inline Error / Status Banner -->
+            <div id="gate-signin-error" class="auth-inline-error"></div>
+
+            <button type="submit" id="gate-signin-submit-btn" class="btn-primary auth-action-btn" style="margin-top:20px">
               <span>Sign In & Enter Dhun</span>
             </button>
             <div class="auth-switch-prompt" style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-3);">
-              Don't have an account? <a href="javascript:void(0)" onclick="switchGateTab('signup')" style="color:var(--accent);font-weight:600;text-decoration:none;">Create Account</a>
+              Don't have an account? <a href="javascript:void(0)" onclick="DhunAuth.setTab('signup', false)" style="color:var(--accent);font-weight:600;text-decoration:none;">Create Account</a>
             </div>
           </form>
 
           <!-- Sign Up Form (Create Account) -->
-          <form id="gate-form-signup" class="auth-panel" style="display:none" onsubmit="event.preventDefault();handleGateEmailSignUp()">
+          <form id="gate-form-signup" class="auth-panel" style="display:none" onsubmit="event.preventDefault();DhunAuth.signUp(false)">
             <div class="auth-form-group">
               <label class="auth-input-label" for="gate-signup-name">Full Name</label>
               <input class="form-input" id="gate-signup-name" type="text" placeholder="e.g. Mayank Verma" required autocomplete="name" />
@@ -176,28 +182,44 @@
             </div>
             <div class="auth-form-group" style="margin-top:12px">
               <label class="auth-input-label" for="gate-signup-password">Password</label>
-              <input class="form-input" id="gate-signup-password" type="password" placeholder="At least 6 characters" required minlength="6" autocomplete="new-password" />
+              <div class="auth-input-wrap">
+                <input class="form-input" id="gate-signup-password" type="password" placeholder="At least 6 characters" required minlength="6" autocomplete="new-password" oninput="DhunAuth.onPasswordInput(this.value, 'gate')" />
+                <button type="button" class="auth-pwd-toggle" onclick="DhunAuth.togglePassword('gate-signup-password', this)" title="Show / Hide Password" aria-label="Toggle password visibility">👁️</button>
+              </div>
+              <!-- Real-time strength meter -->
+              <div id="gate-pwd-strength" class="auth-pwd-strength">
+                <div class="auth-pwd-meter"><div id="gate-pwd-meter-bar" class="auth-pwd-meter-bar"></div></div>
+                <div id="gate-pwd-label" class="auth-pwd-label"><span>Password strength</span><span>Weak</span></div>
+              </div>
             </div>
             <div class="auth-form-group" style="margin-top:12px">
               <label class="auth-input-label" for="gate-signup-confirm-password">Confirm Password</label>
-              <input class="form-input" id="gate-signup-confirm-password" type="password" placeholder="Confirm your password" required minlength="6" autocomplete="new-password" />
+              <div class="auth-input-wrap">
+                <input class="form-input" id="gate-signup-confirm-password" type="password" placeholder="Confirm your password" required minlength="6" autocomplete="new-password" oninput="DhunAuth.onConfirmPasswordInput(this.value, 'gate')" />
+                <button type="button" class="auth-pwd-toggle" onclick="DhunAuth.togglePassword('gate-signup-confirm-password', this)" title="Show / Hide Password" aria-label="Toggle password visibility">👁️</button>
+              </div>
+              <div id="gate-pwd-match-hint" class="auth-match-hint"></div>
             </div>
             <div class="auth-form-group" style="margin-top:12px">
               <label class="auth-input-label">Avatar Color Theme</label>
               <div class="avatar-palette-picker" id="gate-signup-avatar-picker">
-                <!-- Color dots -->
+                <!-- Color dots rendered by DhunAuth -->
               </div>
             </div>
-            <button type="submit" class="btn-primary auth-action-btn" style="margin-top:22px">
+
+            <!-- Inline Error / Status Banner -->
+            <div id="gate-signup-error" class="auth-inline-error"></div>
+
+            <button type="submit" id="gate-signup-submit-btn" class="btn-primary auth-action-btn" style="margin-top:20px">
               <span>Create Account & Enter Dhun</span>
             </button>
             <div class="auth-switch-prompt" style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-3);">
-              Already have an account? <a href="javascript:void(0)" onclick="switchGateTab('signin')" style="color:var(--accent);font-weight:600;text-decoration:none;">Sign In</a>
+              Already have an account? <a href="javascript:void(0)" onclick="DhunAuth.setTab('signin', false)" style="color:var(--accent);font-weight:600;text-decoration:none;">Sign In</a>
             </div>
           </form>
 
           <!-- Forgot Password Form -->
-          <form id="gate-form-forgot" class="auth-panel" style="display:none" onsubmit="event.preventDefault();handleForgotPassword(true)">
+          <form id="gate-form-forgot" class="auth-panel" style="display:none" onsubmit="event.preventDefault();DhunAuth.forgotPassword(false)">
             <div style="text-align:left;margin-bottom:14px;">
               <span style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--accent);">Password Recovery</span>
               <p style="margin:4px 0 0;font-size:13px;color:var(--text-2);">Enter your email address and we'll generate a secure password reset link.</p>
@@ -211,14 +233,14 @@
               <span>Send Reset Link</span>
             </button>
             <div style="text-align:center;margin-top:16px;">
-              <button type="button" class="auth-back-link" onclick="switchGateTab('signin')">
+              <button type="button" class="auth-back-link" onclick="DhunAuth.setTab('signin', false)">
                 ← Back to Login
               </button>
             </div>
           </form>
 
           <!-- Reset Password Form -->
-          <form id="gate-form-reset" class="auth-panel" style="display:none" onsubmit="event.preventDefault();handleResetPassword(true)">
+          <form id="gate-form-reset" class="auth-panel" style="display:none" onsubmit="event.preventDefault();DhunAuth.resetPassword(false)">
             <input type="text" name="username" autocomplete="username" style="display:none" aria-hidden="true" tabindex="-1" />
             <div style="text-align:left;margin-bottom:14px;">
               <span style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--accent);">Reset Password</span>
@@ -227,18 +249,24 @@
             <input type="hidden" id="gate-reset-token" value="" />
             <div class="auth-form-group">
               <label class="auth-input-label" for="gate-reset-password">New Password</label>
-              <input class="form-input" id="gate-reset-password" type="password" placeholder="At least 6 characters" required minlength="6" autocomplete="new-password" />
+              <div class="auth-input-wrap">
+                <input class="form-input" id="gate-reset-password" type="password" placeholder="At least 6 characters" required minlength="6" autocomplete="new-password" />
+                <button type="button" class="auth-pwd-toggle" onclick="DhunAuth.togglePassword('gate-reset-password', this)" title="Show / Hide Password" aria-label="Toggle password visibility">👁️</button>
+              </div>
             </div>
             <div class="auth-form-group" style="margin-top:12px">
               <label class="auth-input-label" for="gate-reset-confirm-password">Confirm New Password</label>
-              <input class="form-input" id="gate-reset-confirm-password" type="password" placeholder="Repeat new password" required minlength="6" autocomplete="new-password" />
+              <div class="auth-input-wrap">
+                <input class="form-input" id="gate-reset-confirm-password" type="password" placeholder="Repeat new password" required minlength="6" autocomplete="new-password" />
+                <button type="button" class="auth-pwd-toggle" onclick="DhunAuth.togglePassword('gate-reset-confirm-password', this)" title="Show / Hide Password" aria-label="Toggle password visibility">👁️</button>
+              </div>
             </div>
             <div id="gate-reset-status" style="display:none;margin-top:12px;"></div>
             <button type="submit" id="gate-reset-btn" class="btn-primary auth-action-btn" style="margin-top:18px">
               <span>Update Password & Sign In</span>
             </button>
             <div style="text-align:center;margin-top:16px;">
-              <button type="button" class="auth-back-link" onclick="switchGateTab('signin')">
+              <button type="button" class="auth-back-link" onclick="DhunAuth.setTab('signin', false)">
                 ← Back to Login
               </button>
             </div>
@@ -246,7 +274,7 @@
 
           <!-- Guest Exploration Option -->
           <div class="gate-guest-wrap">
-            <button type="button" class="gate-guest-btn" onclick="continueAsGuestFromGate()">
+            <button type="button" class="gate-guest-btn" onclick="DhunAuth.guestLogin()">
               <span>Or explore preview as Guest →</span>
             </button>
           </div>
@@ -1656,10 +1684,10 @@
     </div>
   </div>
 
-  <!-- ══ AUTHENTICATION MODAL (Google & Email Sign In / Sign Up) ══ -->
-  <div id="auth-modal" class="auth-modal-backdrop" style="display:none">
+  <!-- ══ AUTHENTICATION MODAL (In-App Switch Account & Sign In / Sign Up) ══ -->
+  <div id="auth-modal" class="auth-modal-backdrop" style="display:none" onclick="if(event.target===this)DhunAuth.closeModal()">
     <div class="glass-card auth-modal-card">
-      <button class="auth-modal-close" onclick="closeAuthModal()" aria-label="Close authentication modal">✕</button>
+      <button class="auth-modal-close" onclick="DhunAuth.closeModal()" aria-label="Close authentication modal">✕</button>
 
       <!-- Auth Header -->
       <div class="auth-modal-header">
@@ -1671,7 +1699,7 @@
       </div>
 
       <!-- Google Sign In Button -->
-      <button class="google-auth-btn" id="google-auth-btn" onclick="handleGoogleSignIn()" title="Continue with Google">
+      <button class="google-auth-btn" id="google-auth-btn" onclick="DhunAuth.googleSignIn(false)" title="Continue with Google">
         <svg class="google-icon" viewBox="0 0 24 24" width="20" height="20">
           <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
           <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -1687,33 +1715,39 @@
 
       <!-- Auth Tabs: Sign In vs Sign Up -->
       <div class="auth-tab-group" id="auth-tab-group">
-        <button class="auth-tab-btn active" id="auth-tab-signin" onclick="switchAuthTab('signin')">Sign In</button>
-        <button class="auth-tab-btn" id="auth-tab-signup" onclick="switchAuthTab('signup')">Create Account</button>
+        <button class="auth-tab-btn active" id="auth-tab-signin" onclick="DhunAuth.setTab('signin', true)">Sign In</button>
+        <button class="auth-tab-btn" id="auth-tab-signup" onclick="DhunAuth.setTab('signup', true)">Create Account</button>
       </div>
 
       <!-- Tab Content: Sign In -->
-      <form id="auth-panel-signin" class="auth-panel" onsubmit="event.preventDefault();handleEmailSignIn()">
+      <form id="auth-panel-signin" class="auth-panel" onsubmit="event.preventDefault();DhunAuth.signIn(true)">
         <div class="auth-form-group">
-          <label class="auth-input-label" for="signin-email">Email Address</label>
-          <input class="form-input" id="signin-email" type="email" placeholder="you@example.com" required autocomplete="email" />
+          <label class="auth-input-label" for="signin-email">Email or Username</label>
+          <input class="form-input" id="signin-email" type="text" placeholder="you@example.com" required autocomplete="username" />
         </div>
         <div class="auth-form-group" style="margin-top:12px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
             <label class="auth-input-label" for="signin-password" style="margin-bottom:0">Password</label>
-            <a href="javascript:void(0)" onclick="switchAuthTab('forgot')" class="auth-forgot-link">Forgot Password?</a>
+            <a href="javascript:void(0)" onclick="DhunAuth.setTab('forgot', true)" class="auth-forgot-link">Forgot Password?</a>
           </div>
-          <input class="form-input" id="signin-password" type="password" placeholder="••••••••" required autocomplete="current-password" />
+          <div class="auth-input-wrap">
+            <input class="form-input" id="signin-password" type="password" placeholder="••••••••" required autocomplete="current-password" />
+            <button type="button" class="auth-pwd-toggle" onclick="DhunAuth.togglePassword('signin-password', this)" title="Show / Hide Password" aria-label="Toggle password visibility">👁️</button>
+          </div>
         </div>
-        <button type="submit" class="btn-primary auth-action-btn" style="margin-top:20px">
+
+        <div id="auth-signin-error" class="auth-inline-error"></div>
+
+        <button type="submit" id="auth-signin-submit-btn" class="btn-primary auth-action-btn" style="margin-top:20px">
           <span>Sign In to Dhun</span>
         </button>
         <div class="auth-switch-prompt" style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-3);">
-          Don't have an account? <a href="javascript:void(0)" onclick="switchAuthTab('signup')" style="color:var(--accent);font-weight:600;text-decoration:none;">Create Account</a>
+          Don't have an account? <a href="javascript:void(0)" onclick="DhunAuth.setTab('signup', true)" style="color:var(--accent);font-weight:600;text-decoration:none;">Create Account</a>
         </div>
       </form>
 
       <!-- Tab Content: Sign Up (Create Account) -->
-      <form id="auth-panel-signup" class="auth-panel" style="display:none" onsubmit="event.preventDefault();handleEmailSignUp()">
+      <form id="auth-panel-signup" class="auth-panel" style="display:none" onsubmit="event.preventDefault();DhunAuth.signUp(true)">
         <div class="auth-form-group">
           <label class="auth-input-label" for="signup-name">Full Name</label>
           <input class="form-input" id="signup-name" type="text" placeholder="e.g. Mayank Verma" required autocomplete="name" />
@@ -1724,28 +1758,42 @@
         </div>
         <div class="auth-form-group" style="margin-top:12px">
           <label class="auth-input-label" for="signup-password">Password</label>
-          <input class="form-input" id="signup-password" type="password" placeholder="At least 6 characters" required minlength="6" autocomplete="new-password" />
+          <div class="auth-input-wrap">
+            <input class="form-input" id="signup-password" type="password" placeholder="At least 6 characters" required minlength="6" autocomplete="new-password" oninput="DhunAuth.onPasswordInput(this.value, 'modal')" />
+            <button type="button" class="auth-pwd-toggle" onclick="DhunAuth.togglePassword('signup-password', this)" title="Show / Hide Password" aria-label="Toggle password visibility">👁️</button>
+          </div>
+          <div id="modal-pwd-strength" class="auth-pwd-strength">
+            <div class="auth-pwd-meter"><div id="modal-pwd-meter-bar" class="auth-pwd-meter-bar"></div></div>
+            <div id="modal-pwd-label" class="auth-pwd-label"><span>Password strength</span><span>Weak</span></div>
+          </div>
         </div>
         <div class="auth-form-group" style="margin-top:12px">
           <label class="auth-input-label" for="signup-confirm-password">Confirm Password</label>
-          <input class="form-input" id="signup-confirm-password" type="password" placeholder="Repeat your password" required minlength="6" autocomplete="new-password" />
+          <div class="auth-input-wrap">
+            <input class="form-input" id="signup-confirm-password" type="password" placeholder="Repeat your password" required minlength="6" autocomplete="new-password" oninput="DhunAuth.onConfirmPasswordInput(this.value, 'modal')" />
+            <button type="button" class="auth-pwd-toggle" onclick="DhunAuth.togglePassword('signup-confirm-password', this)" title="Show / Hide Password" aria-label="Toggle password visibility">👁️</button>
+          </div>
+          <div id="modal-pwd-match-hint" class="auth-match-hint"></div>
         </div>
         <div class="auth-form-group" style="margin-top:12px">
           <label class="auth-input-label">Avatar Color Theme</label>
           <div class="avatar-palette-picker" id="signup-avatar-picker">
-            <!-- Palette generated -->
+            <!-- Palette generated by DhunAuth -->
           </div>
         </div>
-        <button type="submit" class="btn-primary auth-action-btn" style="margin-top:20px">
+
+        <div id="auth-signup-error" class="auth-inline-error"></div>
+
+        <button type="submit" id="auth-signup-submit-btn" class="btn-primary auth-action-btn" style="margin-top:20px">
           <span>Create My Account</span>
         </button>
         <div class="auth-switch-prompt" style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-3);">
-          Already have an account? <a href="javascript:void(0)" onclick="switchAuthTab('signin')" style="color:var(--accent);font-weight:600;text-decoration:none;">Sign In</a>
+          Already have an account? <a href="javascript:void(0)" onclick="DhunAuth.setTab('signin', true)" style="color:var(--accent);font-weight:600;text-decoration:none;">Sign In</a>
         </div>
       </form>
 
       <!-- Tab Content: Forgot Password -->
-      <form id="auth-panel-forgot" class="auth-panel" style="display:none" onsubmit="event.preventDefault();handleForgotPassword(false)">
+      <form id="auth-panel-forgot" class="auth-panel" style="display:none" onsubmit="event.preventDefault();DhunAuth.forgotPassword(true)">
         <div style="text-align:left;margin-bottom:14px;">
           <span style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--accent);">Password Recovery</span>
           <p style="margin:4px 0 0;font-size:13px;color:var(--text-2);">Enter your email address and we'll send a secure password reset link.</p>
@@ -1759,14 +1807,14 @@
           <span>Send Reset Link</span>
         </button>
         <div style="text-align:center;margin-top:16px;">
-          <button type="button" class="auth-back-link" onclick="switchAuthTab('signin')">
+          <button type="button" class="auth-back-link" onclick="DhunAuth.setTab('signin', true)">
             ← Back to Login
           </button>
         </div>
       </form>
 
       <!-- Tab Content: Reset Password -->
-      <form id="auth-panel-reset" class="auth-panel" style="display:none" onsubmit="event.preventDefault();handleResetPassword(false)">
+      <form id="auth-panel-reset" class="auth-panel" style="display:none" onsubmit="event.preventDefault();DhunAuth.resetPassword(true)">
         <input type="text" name="username" autocomplete="username" style="display:none" aria-hidden="true" tabindex="-1" />
         <div style="text-align:left;margin-bottom:14px;">
           <span style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--accent);">Reset Password</span>
@@ -1775,18 +1823,24 @@
         <input type="hidden" id="auth-reset-token" value="" />
         <div class="auth-form-group">
           <label class="auth-input-label" for="reset-password">New Password</label>
-          <input class="form-input" id="reset-password" type="password" placeholder="At least 6 characters" required minlength="6" autocomplete="new-password" />
+          <div class="auth-input-wrap">
+            <input class="form-input" id="reset-password" type="password" placeholder="At least 6 characters" required minlength="6" autocomplete="new-password" />
+            <button type="button" class="auth-pwd-toggle" onclick="DhunAuth.togglePassword('reset-password', this)" title="Show / Hide Password" aria-label="Toggle password visibility">👁️</button>
+          </div>
         </div>
         <div class="auth-form-group" style="margin-top:12px">
           <label class="auth-input-label" for="reset-confirm-password">Confirm New Password</label>
-          <input class="form-input" id="reset-confirm-password" type="password" placeholder="Repeat new password" required minlength="6" autocomplete="new-password" />
+          <div class="auth-input-wrap">
+            <input class="form-input" id="reset-confirm-password" type="password" placeholder="Repeat new password" required minlength="6" autocomplete="new-password" />
+            <button type="button" class="auth-pwd-toggle" onclick="DhunAuth.togglePassword('reset-confirm-password', this)" title="Show / Hide Password" aria-label="Toggle password visibility">👁️</button>
+          </div>
         </div>
         <div id="auth-reset-status" style="display:none;margin-top:12px;"></div>
         <button type="submit" id="auth-reset-btn" class="btn-primary auth-action-btn" style="margin-top:18px">
           <span>Update Password & Sign In</span>
         </button>
         <div style="text-align:center;margin-top:16px;">
-          <button type="button" class="auth-back-link" onclick="switchAuthTab('signin')">
+          <button type="button" class="auth-back-link" onclick="DhunAuth.setTab('signin', true)">
             ← Back to Login
           </button>
         </div>
@@ -1794,175 +1848,59 @@
     </div>
   </div>
 
-  <!-- ══ IN-APP GOOGLE SIGN-IN INTERFACE MODAL (AUTHENTIC GOOGLE "CHOOSE AN ACCOUNT" TEMPLATE) ══════════════ -->
-  <div id="google-auth-modal" class="auth-modal-backdrop" style="display:none" onclick="if(event.target===this)closeGoogleAuthModal()">
-    <div class="google-dialog-container">
+  <!-- ══ GOOGLE OAUTH 2.0 CONNECT & SETUP SHEET ══════════════ -->
+  <div id="google-auth-modal" class="auth-modal-backdrop" style="display:none" onclick="if(event.target===this)DhunAuth.closeGoogleSetup()">
+    <div class="google-setup-card">
+      <button class="auth-modal-close" onclick="DhunAuth.closeGoogleSetup()" aria-label="Close" title="Close">✕</button>
       
-      <!-- Top Google Bar -->
-      <div class="google-dialog-header">
-        <div class="google-header-brand">
-          <svg viewBox="0 0 24 24" width="18" height="18" class="google-g-logo">
+      <div class="google-setup-header">
+        <div class="google-setup-icon">
+          <svg viewBox="0 0 24 24" width="24" height="24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
             <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
             <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
             <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
           </svg>
-          <span class="google-header-text">Sign in with Google</span>
         </div>
-        <button class="google-dialog-close" onclick="closeGoogleAuthModal()" aria-label="Close" title="Close">✕</button>
-      </div>
-
-      <!-- Main Body: Screen 1 - Choose An Account -->
-      <div id="google-screen-chooser" class="google-dialog-body">
-        <!-- Left Column -->
-        <div class="google-body-left">
-          <h1 class="google-choose-title">Choose an account</h1>
-          <p class="google-choose-sub">to continue to <a href="javascript:void(0)" class="google-dest-link" id="google-dest-site">Dhun Music</a></p>
-        </div>
-
-        <!-- Right Column -->
-        <div class="google-body-right">
-          <div class="google-accounts-list" id="google-accounts-list">
-            <!-- Dynamic or pre-rendered accounts -->
-          </div>
-
-          <!-- Launch Real Google OAuth Row -->
-          <div class="google-account-row google-add-account-row" onclick="launchGoogleOAuth(_googleAuthIsFromGate)" role="button" tabindex="0" title="Launch official Google sign-in popup">
-            <div class="google-avatar-circle" style="background:#4285F4">
-              <svg viewBox="0 0 24 24" width="18" height="18">
-                <path fill="#ffffff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#ffffff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#ffffff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                <path fill="#ffffff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-              </svg>
-            </div>
-            <div class="google-account-meta">
-              <div class="google-account-name" style="color:#0b57d0;font-weight:600;">Sign in with Google OAuth</div>
-              <div class="google-account-email">Opens official Google authentication popup</div>
-            </div>
-          </div>
-
-          <!-- Configure Google OAuth Client ID Row -->
-          <div class="google-account-row google-add-account-row" onclick="showGoogleOAuthSetupScreen()" role="button" tabindex="0" title="Configure or update your Google Cloud OAuth Client ID">
-            <div class="google-avatar-circle google-avatar-user-icon">
-              <span style="font-size:16px;">🔑</span>
-            </div>
-            <div class="google-account-meta">
-              <div class="google-account-name">Google OAuth 2.0 Setup</div>
-              <div class="google-account-email">Set or view Google Cloud Web Client ID</div>
-            </div>
-          </div>
-
-          <!-- Use Local Account Row -->
-          <div class="google-account-row google-add-account-row" onclick="showGoogleAddAccountScreen()" role="button" tabindex="0">
-            <div class="google-avatar-circle google-avatar-user-icon">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="#444746">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 4c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm0 14c-2.03 0-4.43-.82-6.14-2.88C7.55 15.8 9.68 15 12 15s4.45.8 6.14 2.12C16.43 19.18 14.03 20 12 20z"/>
-              </svg>
-            </div>
-            <div class="google-account-meta">
-              <div class="google-account-name">Use Sandbox / Local account</div>
-              <div class="google-account-email">For offline testing without cloud credentials</div>
-            </div>
-          </div>
-
-          <!-- Consent disclaimer -->
-          <p class="google-consent-disclaimer">
-            To continue, Google will share your name, email address, language preference, and profile picture with <span class="google-consent-host">Dhun Music</span>. Before using this app, you can review <span class="google-consent-host-2">Dhun Music</span>'s <a href="javascript:void(0)" class="google-inline-link">privacy policy</a> and <a href="javascript:void(0)" class="google-inline-link">terms of service</a>.
-          </p>
+        <div>
+          <h3 class="google-setup-title">Google OAuth 2.0</h3>
+          <p class="google-setup-subtitle">Connect Google Cloud Client ID for real 1-click Google Sign-In</p>
         </div>
       </div>
 
-      <!-- Main Body: Screen 2 - Google OAuth 2.0 Setup Screen -->
-      <div id="google-screen-oauth" class="google-dialog-body" style="display:none;">
-        <div class="google-body-left">
-          <div class="google-oauth-shield-badge">🔐</div>
-          <h1 class="google-choose-title">Google OAuth 2.0</h1>
-          <p class="google-choose-sub">Connect your Google Cloud Client ID for 1-click real Google Sign-In</p>
-          <div class="google-oauth-tips">
-            <div class="google-tip-item">
-              <span class="tip-num">1</span>
-              <span>Open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener" class="google-inline-link">Google Cloud Console</a></span>
-            </div>
-            <div class="google-tip-item">
-              <span class="tip-num">2</span>
-              <span>Create an <strong>OAuth 2.0 Web Client ID</strong></span>
-            </div>
-            <div class="google-tip-item">
-              <span class="tip-num">3</span>
-              <span>Add to <em>Authorized JavaScript origins</em>:</span>
-            </div>
-            <div class="google-origin-pill" onclick="copyOriginToClipboard('https://mayankverma730.github.io')" title="Click to copy origin">
-              <code>https://mayankverma730.github.io</code>
-              <span class="copy-icon">📋</span>
-            </div>
-            <div class="google-origin-pill" onclick="copyOriginToClipboard('http://localhost:3000')" title="Click to copy origin">
-              <code>http://localhost:3000</code>
-              <span class="copy-icon">📋</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="google-body-right">
-          <form id="google-oauth-connect-form" onsubmit="event.preventDefault();saveAndLaunchGoogleOAuth()">
-            <label class="google-input-label" for="google-client-id-input" style="font-size:12px;font-weight:600;color:#1f1f1f;display:block;margin-bottom:6px;">Google Web Client ID</label>
-            <div class="google-input-group">
-              <input type="text" id="google-client-id-input" class="google-styled-input" placeholder="123456789-xxx.apps.googleusercontent.com" autocomplete="off" spellcheck="false" />
-            </div>
-            <p class="google-input-help">
-              Stored locally on your device. Only you control your Google OAuth credentials.
-            </p>
-            <div class="google-form-actions" style="margin-top:20px;">
-              <button type="button" class="google-btn-text" onclick="showGoogleAccountChooser()">Back</button>
-              <button type="submit" class="google-btn-blue">Connect & Launch</button>
-            </div>
-            <div style="margin-top:14px;border-top:1px solid #e0e0e0;padding-top:12px;text-align:center;">
-              <button type="button" class="google-btn-demo" onclick="showGoogleAddAccountScreen(true)">
-                Don't have a Client ID yet? Use Sandbox Profile Mode
-              </button>
-            </div>
-          </form>
-        </div>
+      <div style="font-size:12.5px;color:var(--text-2);line-height:1.5;margin-bottom:14px;">
+        To sign in with Google on your site, add these origins under <strong>Authorized JavaScript origins</strong> in <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener" style="color:#93c5fd;text-decoration:underline;">Google Cloud Console</a>:
       </div>
 
-      <!-- Main Body: Screen 3 - Manual / Sandbox Add Account Form -->
-      <div id="google-screen-signin" class="google-dialog-body" style="display:none;">
-        <div class="google-body-left">
-          <h1 class="google-choose-title">Sandbox Account</h1>
-          <p class="google-choose-sub">Create or select a local test profile without Google Cloud credentials</p>
-        </div>
-        <div class="google-body-right">
-          <form id="google-custom-signin-form" onsubmit="event.preventDefault();submitGoogleNewAccount()">
-            <div class="google-input-group">
-              <input type="email" id="google-new-email" class="google-styled-input" placeholder="Email or phone" required autocomplete="email" />
-            </div>
-            <div class="google-input-group" style="margin-top:14px;">
-              <input type="text" id="google-new-name" class="google-styled-input" placeholder="Display Name (optional)" autocomplete="name" />
-            </div>
-            <div style="font-size:12px;color:#5f6368;margin-top:12px;line-height:1.4;">
-              Not your computer? Use Guest mode to sign in privately. <a href="javascript:void(0)" onclick="closeGoogleAuthModal();enterGuestMode();" style="color:#0b57d0;text-decoration:none;">Learn more</a>
-            </div>
-            <div class="google-form-actions">
-              <button type="button" class="google-btn-text" id="google-back-to-chooser-btn" onclick="showGoogleAccountChooser()">Back</button>
-              <button type="submit" class="google-btn-blue">Continue</button>
-            </div>
-          </form>
-        </div>
+      <div class="google-origin-chip" onclick="DhunAuth.copyOrigin('https://mayankverma730.github.io')" title="Click to copy origin">
+        <code>https://mayankverma730.github.io</code>
+        <span style="font-size:13px;opacity:0.8;">📋</span>
+      </div>
+      <div class="google-origin-chip" onclick="DhunAuth.copyOrigin('http://localhost:3000')" title="Click to copy origin">
+        <code>http://localhost:3000</code>
+        <span style="font-size:13px;opacity:0.8;">📋</span>
       </div>
 
-      <!-- Footer Bar -->
-      <div class="google-dialog-footer">
-        <div class="google-footer-lang">
-          <span>English (United States)</span>
-          <span style="font-size:9px;margin-left:4px;">▼</span>
+      <form onsubmit="event.preventDefault();DhunAuth.saveGoogleClientIdAndLaunch()" style="margin-top:16px;">
+        <div class="auth-form-group">
+          <label class="auth-input-label" for="google-client-id-input">Google Web Client ID</label>
+          <input type="text" id="google-client-id-input" class="form-input" placeholder="123456789-xxx.apps.googleusercontent.com" autocomplete="off" spellcheck="false" style="margin-bottom:0 !important" />
         </div>
-        <div class="google-footer-links">
-          <a href="javascript:void(0)">Help</a>
-          <a href="javascript:void(0)">Privacy</a>
-          <a href="javascript:void(0)">Terms</a>
-        </div>
-      </div>
+        <p style="font-size:11.5px;color:var(--text-3);margin:6px 0 0;line-height:1.4">
+          Saved locally on this device. Only you control your Google OAuth credentials.
+        </p>
 
+        <div id="google-setup-status" class="auth-inline-error"></div>
+
+        <div class="google-setup-actions">
+          <button type="submit" class="btn-google-launch">
+            <span>Connect & Launch Google Sign-In</span>
+          </button>
+          <button type="button" class="btn-google-instant-demo" onclick="DhunAuth.demoGoogleSignIn()">
+            <span>⚡ Try Instant Demo Google Account (No Setup Needed)</span>
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -2196,7 +2134,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.5/dist/mqtt.min.js"></script>
   <script src="ytmusic_api.js?v=31.0"></script>
-  <script src="app.js?v=33.0"></script>
+  <script src="app.js?v=34.0"></script>
   <!-- Last.fm + iTunes Global Recommendation Engine -->
   <script src="recommend.js?v=1.0"></script>
   <script src="https://www.youtube.com/iframe_api"></script>

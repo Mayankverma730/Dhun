@@ -2217,9 +2217,12 @@ function toggleMute() {
   setVolume(audioEngine.isMuted ? 0 : currentVal);
 }
 
-/* ══════════════════════════════════════════════════
-   DHUN AUTHENTICATION & MULTI-USER ISOLATION ENGINE
-   ══════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════════════
+   DHUN UNIFIED AUTHENTICATION & MULTI-USER SYSTEM (REBUILT v34.0)
+   100% Secure, Zero Silent Auto-Account Creation on Sign-In, Unified Gate & Modal,
+   Real Google OAuth 2.0 with Instant Demo Fallback, Show/Hide Password,
+   Real-Time Password Strength Meter, and Strict Library Isolation.
+   ══════════════════════════════════════════════════════════════════════════════ */
 
 const authState = {
   currentUser: null,
@@ -2228,628 +2231,1027 @@ const authState = {
   selectedAvatarColor: '#7c3aed'
 };
 
+function getGoogleClientId() {
+  const stored = localStorage.getItem('dhun_google_client_id');
+  if (stored && stored.trim() && !stored.startsWith('YOUR_GOOGLE')) return stored.trim();
+  if (typeof CONFIG !== 'undefined' && CONFIG.GOOGLE_CLIENT_ID && !CONFIG.GOOGLE_CLIENT_ID.startsWith('YOUR_GOOGLE')) {
+    return CONFIG.GOOGLE_CLIENT_ID.trim();
+  }
+  if (typeof window !== 'undefined' && window.DHUN_GOOGLE_CLIENT_ID && !window.DHUN_GOOGLE_CLIENT_ID.startsWith('YOUR_GOOGLE')) {
+    return window.DHUN_GOOGLE_CLIENT_ID.trim();
+  }
+  return '';
+}
+
+function setGoogleClientId(id) {
+  if (!id) return;
+  id = id.trim();
+  localStorage.setItem('dhun_google_client_id', id);
+  if (typeof CONFIG !== 'undefined') CONFIG.GOOGLE_CLIENT_ID = id;
+  if (typeof window !== 'undefined') window.DHUN_GOOGLE_CLIENT_ID = id;
+  DhunAuth._gsiInitialized = false;
+  DhunAuth.initGoogleGSI();
+}
+
+function copyOriginToClipboard(originText) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(originText).then(() => {
+      showToast(`📋 Copied "${originText}" to clipboard!`);
+    }).catch(() => {
+      showToast(`Origin: ${originText}`);
+    });
+  } else {
+    showToast(`Origin: ${originText}`);
+  }
+}
+
 function makeUserIdFromEmail(email) {
   if (!email || email === 'guest@dhun.local' || email === 'guest') return 'guest';
   const clean = String(email).toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
   return `usr_${clean}`;
 }
 
-function mergeUserStorageData(oldUid, newUid) {
-  if (!oldUid || !newUid || oldUid === newUid || oldUid === 'guest' || newUid === 'guest') return;
-  try {
-    // 1. Merge Playlists without losing any tracks
-    const oldPlsRaw = localStorage.getItem(`dhun_usr_${oldUid}_playlists`);
-    const newPlsRaw = localStorage.getItem(`dhun_usr_${newUid}_playlists`);
-    const oldPls = oldPlsRaw ? JSON.parse(oldPlsRaw) : [];
-    const newPls = newPlsRaw ? JSON.parse(newPlsRaw) : [];
+const DhunAuth = {
+  state: authState,
+  _gsiInitialized: false,
+  _isFromGate: true,
 
-    if (oldPls.length > 0) {
-      const combinedPls = [...newPls];
-      oldPls.forEach(op => {
-        const match = combinedPls.find(np => np.name && op.name && np.name.toLowerCase().trim() === op.name.toLowerCase().trim());
-        if (match) {
-          const songSet = new Set([...(match.songs || []), ...(op.songs || [])]);
-          match.songs = Array.from(songSet);
-        } else {
-          combinedPls.push(op);
+  makeUserId(email) {
+    return makeUserIdFromEmail(email);
+  },
+
+  getUsers() {
+    try {
+      const raw = localStorage.getItem('dhun_auth_users');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(u => u && u.id !== 'guest' && u.provider !== 'guest').map(u => {
+            const copy = { ...u };
+            delete copy.password;
+            return copy;
+          });
         }
+      }
+    } catch(e) {}
+    return [];
+  },
+
+  saveUsers(users) {
+    try {
+      const cleaned = (users || []).filter(u => u && u.id !== 'guest' && u.provider !== 'guest').map(u => {
+        const copy = { ...u };
+        delete copy.password;
+        return copy;
       });
-      localStorage.setItem(`dhun_usr_${newUid}_playlists`, JSON.stringify(combinedPls));
+      localStorage.setItem('dhun_auth_users', JSON.stringify(cleaned));
+      authState.users = cleaned;
+    } catch(e) {}
+  },
+
+  findUser(identifier) {
+    if (!identifier) return null;
+    const clean = String(identifier).toLowerCase().trim();
+    const users = this.getUsers();
+    return users.find(u => 
+      (u.id && u.id.toLowerCase() === clean) ||
+      (u.email && u.email.toLowerCase() === clean) ||
+      (u.name && u.name.toLowerCase() === clean)
+    ) || null;
+  },
+
+  init() {
+    // 1. Purge legacy mock data & stale guest sessions
+    try {
+      const staleActiveId = localStorage.getItem('dhun_auth_active_user');
+      if (staleActiveId === 'guest') {
+        localStorage.removeItem('dhun_auth_active_user');
+        localStorage.removeItem('dhun_active_profile');
+      }
+      const raw = localStorage.getItem('dhun_auth_users');
+      if (raw) {
+        const users = JSON.parse(raw);
+        if (Array.isArray(users)) {
+          const cleaned = users.filter(u => u && u.id !== 'usr_andre_chou' && u.email !== 'me@chou.design');
+          localStorage.setItem('dhun_auth_users', JSON.stringify(cleaned));
+        }
+      }
+    } catch(e) {}
+
+    authState.users = this.getUsers();
+
+    // 2. Resolve active persisted session
+    let activeUser = null;
+    const activeUserId = localStorage.getItem('dhun_auth_active_user');
+    if (activeUserId && activeUserId !== 'guest') {
+      activeUser = authState.users.find(u => u.id === activeUserId || (u.email && this.makeUserId(u.email) === activeUserId));
+      if (activeUser && (activeUser.provider === 'guest' || activeUser.id === 'guest')) {
+        activeUser = null;
+      }
     }
 
-    // 2. Merge Likes
-    const oldLikesRaw = localStorage.getItem(`dhun_usr_${oldUid}_likes`);
-    const newLikesRaw = localStorage.getItem(`dhun_usr_${newUid}_likes`);
-    const oldLikes = oldLikesRaw ? JSON.parse(oldLikesRaw) : [];
-    const newLikes = newLikesRaw ? JSON.parse(newLikesRaw) : [];
-    if (oldLikes.length > 0) {
-      const combinedLikes = Array.from(new Set([...newLikes, ...oldLikes]));
-      localStorage.setItem(`dhun_usr_${newUid}_likes`, JSON.stringify(combinedLikes));
+    const gateScreen = document.getElementById('login-gate-screen');
+    const appShell = document.getElementById('app');
+
+    if (activeUser) {
+      // Authenticated session active: enter app directly
+      authState.currentUser = activeUser;
+      if (gateScreen) {
+        gateScreen.style.display = 'none';
+        gateScreen.classList.remove('gate-exiting');
+      }
+      if (appShell) appShell.style.display = '';
+      updateAuthUI();
+      purgePredefaultPlaylists();
+      setTimeout(() => pullProfileFromCloud(), 600);
+    } else {
+      // Not authenticated: display dedicated full-page landing gate
+      authState.currentUser = null;
+      if (gateScreen) {
+        gateScreen.style.display = 'flex';
+        gateScreen.classList.remove('gate-exiting');
+        this.setTab('signin', false);
+        this.renderSavedProfiles();
+        this.renderColorPickers();
+        this.prefillSavedCredentials();
+        this.initGoogleGSI();
+      }
+      if (appShell) appShell.style.display = 'none';
     }
-  } catch(e) {}
-}
+  },
 
-function deduplicateUsers(users) {
-  if (!Array.isArray(users)) return [];
-  const map = new Map();
+  setTab(tab, isModal = false) {
+    const prefix = isModal ? 'auth' : 'gate';
+    const tabGroup = document.getElementById(`${prefix}-tab-group`);
+    const signinBtn = document.getElementById(`${prefix}-tab-signin`);
+    const signupBtn = document.getElementById(`${prefix}-tab-signup`);
 
-  users.forEach(u => {
-    if (!u) return;
-    const emailKey = (u.email || '').toLowerCase().trim();
-    if (u.id === 'guest' || emailKey === 'guest@dhun.local' || emailKey === 'guest') {
-      map.set('guest', { ...u, id: 'guest', name: 'Guest User', email: 'guest@dhun.local', provider: 'guest' });
+    const forms = {
+      signin: document.getElementById(isModal ? 'auth-panel-signin' : 'gate-form-signin'),
+      signup: document.getElementById(isModal ? 'auth-panel-signup' : 'gate-form-signup'),
+      forgot: document.getElementById(isModal ? 'auth-panel-forgot' : 'gate-form-forgot'),
+      reset:  document.getElementById(isModal ? 'auth-panel-reset'  : 'gate-form-reset')
+    };
+
+    // Hide all panels first
+    Object.values(forms).forEach(f => { if (f) f.style.display = 'none'; });
+    this.clearError(`${prefix}-signin-error`);
+    this.clearError(`${prefix}-signup-error`);
+
+    if (forms[tab]) {
+      forms[tab].style.display = 'block';
+    }
+
+    if (tab === 'signin') {
+      if (tabGroup) tabGroup.style.display = 'grid';
+      if (signinBtn) signinBtn.classList.add('active');
+      if (signupBtn) signupBtn.classList.remove('active');
+      if (!isModal) {
+        this.prefillSavedCredentials();
+        this.renderSavedProfiles();
+      }
+    } else if (tab === 'signup') {
+      if (tabGroup) tabGroup.style.display = 'grid';
+      if (signinBtn) signinBtn.classList.remove('active');
+      if (signupBtn) signupBtn.classList.add('active');
+      this.renderColorPickers();
+    } else {
+      if (tabGroup) tabGroup.style.display = 'none';
+    }
+  },
+
+  togglePassword(inputId, btnEl) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const isPwd = input.type === 'password';
+    input.type = isPwd ? 'text' : 'password';
+    if (btnEl) {
+      btnEl.textContent = isPwd ? '👁️‍🗨️' : '👁️';
+      btnEl.title = isPwd ? 'Hide Password' : 'Show Password';
+    }
+  },
+
+  checkPasswordStrength(password) {
+    if (!password) return { score: 0, text: 'Empty', color: 'transparent', width: '0%' };
+    let score = 0;
+    if (password.length >= 6) score++;
+    if (password.length >= 10) score++;
+    if (/[A-Z]/.test(password) && /[a-z]/.test(password)) score++;
+    if (/[0-9]/.test(password)) score++;
+    if (/[^A-Za-z0-9]/.test(password)) score++;
+
+    if (score <= 1) return { score: 1, text: 'Weak', color: '#ef4444', width: '25%' };
+    if (score <= 3) return { score: 2, text: 'Fair', color: '#f59e0b', width: '55%' };
+    if (score <= 4) return { score: 3, text: 'Good', color: '#10b981', width: '80%' };
+    return { score: 4, text: 'Strong 🛡️', color: '#3b82f6', width: '100%' };
+  },
+
+  onPasswordInput(val, scope) {
+    const strength = this.checkPasswordStrength(val);
+    const meterEl = document.getElementById(`${scope}-pwd-strength`);
+    const barEl = document.getElementById(`${scope}-pwd-meter-bar`);
+    const labelEl = document.getElementById(`${scope}-pwd-label`);
+    if (meterEl && barEl && labelEl) {
+      meterEl.style.display = val ? 'block' : 'none';
+      barEl.style.width = strength.width;
+      barEl.style.backgroundColor = strength.color;
+      labelEl.innerHTML = `<span>Password strength</span><span style="color:${strength.color}">${strength.text}</span>`;
+    }
+    const confirmInput = document.getElementById(`${scope}-signup-confirm-password`);
+    if (confirmInput && confirmInput.value) {
+      this.onConfirmPasswordInput(confirmInput.value, scope);
+    }
+  },
+
+  onConfirmPasswordInput(confirmVal, scope) {
+    const pwdInput = document.getElementById(`${scope}-signup-password`);
+    const hintEl = document.getElementById(`${scope}-pwd-match-hint`);
+    if (!hintEl) return;
+    const pwdVal = pwdInput ? pwdInput.value : '';
+    if (!confirmVal) {
+      hintEl.textContent = '';
+      hintEl.className = 'auth-match-hint';
+      return;
+    }
+    if (pwdVal === confirmVal) {
+      hintEl.textContent = '✓ Passwords match';
+      hintEl.className = 'auth-match-hint matched';
+    } else {
+      hintEl.textContent = '✕ Passwords do not match yet';
+      hintEl.className = 'auth-match-hint mismatch';
+    }
+  },
+
+  showError(containerId, message, actionText = null, actionFn = null) {
+    const el = document.getElementById(containerId);
+    if (!el) {
+      showToast(message);
+      return;
+    }
+    el.innerHTML = `<span>⚠️ ${escapeHtmlText(message)}</span>${actionText ? ` <a href="javascript:void(0)" class="auth-error-action" style="margin-left:6px">${escapeHtmlText(actionText)}</a>` : ''}`;
+    el.style.display = 'block';
+    if (actionText && actionFn) {
+      const a = el.querySelector('.auth-error-action');
+      if (a) a.onclick = (e) => { e.preventDefault(); actionFn(); };
+    }
+  },
+
+  clearError(containerId) {
+    const el = document.getElementById(containerId);
+    if (el) {
+      el.innerHTML = '';
+      el.style.display = 'none';
+    }
+  },
+
+  renderSavedProfiles() {
+    const container = document.getElementById('gate-saved-profiles');
+    if (!container) return;
+    const users = this.getUsers();
+    if (users.length === 0) {
+      container.innerHTML = '';
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = 'block';
+    container.innerHTML = `
+      <div class="saved-profiles-card">
+        <div class="saved-profiles-heading">
+          <span>Saved Accounts on this Device</span>
+          <span style="font-size:10px;opacity:0.75">${users.length} account${users.length > 1 ? 's' : ''}</span>
+        </div>
+        <div class="saved-profiles-list">
+          ${users.map(u => {
+            const isG = u.provider === 'google';
+            const initial = (u.name || 'U').charAt(0).toUpperCase();
+            return `
+            <div class="saved-profile-chip" onclick="DhunAuth.selectSavedProfile('${escapeHtmlAttr(u.id)}')">
+              <div class="chip-avatar" style="background:${u.avatarColor || (isG ? '#4285F4' : '#7c3aed')}">
+                ${u.avatarUrl ? `<img src="${escapeHtmlAttr(u.avatarUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;" onerror="this.onerror=null;this.parentElement.textContent='${initial}';" />` : initial}
+              </div>
+              <div class="chip-info">
+                <p class="chip-name">
+                  <span>${escapeHtmlText(u.name)}</span>
+                  ${isG ? '<span style="font-size:9.5px;background:#4285F4;color:#fff;padding:1px 5px;border-radius:4px;font-weight:700">Google</span>' : ''}
+                </p>
+                <p class="chip-email">${escapeHtmlText(u.email || 'Profile')}</p>
+              </div>
+              <button type="button" class="saved-profile-delete-btn" onclick="event.stopPropagation();DhunAuth.removeUser('${escapeHtmlAttr(u.id)}')" title="Remove account from device" aria-label="Remove account">✕</button>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  },
+
+  selectSavedProfile(userId) {
+    const user = this.findUser(userId);
+    if (!user) return;
+    if (user.provider === 'google') {
+      this.googleSignIn(true);
+      return;
+    }
+    this.setTab('signin', false);
+    const emailInput = document.getElementById('gate-signin-email');
+    const passInput  = document.getElementById('gate-signin-password');
+    if (emailInput) emailInput.value = user.email || user.name;
+    if (passInput) {
+      passInput.value = '';
+      setTimeout(() => passInput.focus(), 60);
+    }
+    showToast(`🔑 Selected ${user.name}. Please enter your password.`);
+  },
+
+  removeUser(userId) {
+    let users = this.getUsers().filter(u => u.id !== userId);
+    this.saveUsers(users);
+    this.renderSavedProfiles();
+    showToast('ℹ️ Account removed from this device.');
+  },
+
+  renderColorPickers() {
+    ['gate-signup-avatar-picker', 'signup-avatar-picker'].forEach(id => {
+      const picker = document.getElementById(id);
+      if (!picker) return;
+      picker.innerHTML = authState.paletteColors.map((c) => `
+        <button type="button" class="palette-dot ${c === authState.selectedAvatarColor ? 'selected' : ''}" style="background:${c}" onclick="DhunAuth.selectColor('${c}', this)" title="${c}"></button>
+      `).join('');
+    });
+  },
+
+  selectColor(color, btn) {
+    authState.selectedAvatarColor = color;
+    document.querySelectorAll('.avatar-palette-picker .palette-dot').forEach(d => d.classList.remove('selected'));
+    if (btn) btn.classList.add('selected');
+  },
+
+  prefillSavedCredentials() {
+    try {
+      const raw = localStorage.getItem('dhun_saved_credentials');
+      if (raw) {
+        const creds = JSON.parse(raw);
+        if (creds && creds.email) {
+          const emailInput = document.getElementById('gate-signin-email');
+          if (emailInput && !emailInput.value) emailInput.value = creds.email;
+        }
+      }
+    } catch(e) {}
+  },
+
+  // 1. SIGN IN (Strict: Zero Silent Auto-Creation on Failure)
+  async signIn(isModal = false) {
+    if (!checkAuthThrottle()) return;
+    const prefix = isModal ? 'auth' : 'gate';
+    const emailInput = document.getElementById(isModal ? 'signin-email' : 'gate-signin-email');
+    const passInput  = document.getElementById(isModal ? 'signin-password' : 'gate-signin-password');
+    const errorId    = `${prefix}-signin-error`;
+
+    this.clearError(errorId);
+    const identifier = (emailInput?.value || '').trim();
+    const password   = (passInput?.value || '').trim();
+
+    if (!identifier) {
+      this.showError(errorId, 'Please enter your email address or username.');
+      if (emailInput) emailInput.focus();
+      return;
+    }
+    if (!password) {
+      this.showError(errorId, 'Please enter your password.');
+      if (passInput) passInput.focus();
       return;
     }
 
-    const safeKey = emailKey || (u.name ? String(u.name).toLowerCase().trim() : u.id);
-    if (!safeKey) return;
-    const canonicalId = makeUserIdFromEmail(safeKey);
-    const existing = map.get(safeKey);
+    const user = this.findUser(identifier);
 
-    if (!existing) {
-      map.set(safeKey, { ...u, id: canonicalId, email: safeKey });
-    } else {
-      // Merge into the single individual profile for this user
-      const preferredName = (u.name && u.name.length >= existing.name.length) ? u.name : existing.name;
-      const preferredAvatar = u.avatarColor || existing.avatarColor || '#7c3aed';
-      const preferredCover = u.coverUrl || existing.coverUrl || 'album2.jpg';
-      const isGoogle = (u.provider === 'google' || existing.provider === 'google');
-      const lastLogin = Math.max(u.lastLoginAt || 0, existing.lastLoginAt || 0);
-
-      mergeUserStorageData(existing.id, canonicalId);
-      mergeUserStorageData(u.id, canonicalId);
-
-      map.set(safeKey, {
-        ...existing,
-        ...u,
-        id: canonicalId,
-        email: safeKey,
-        name: preferredName,
-        avatarColor: preferredAvatar,
-        coverUrl: preferredCover,
-        provider: isGoogle ? 'google' : (existing.provider || u.provider),
-        lastLoginAt: lastLogin
-      });
+    // STRICT CHECK: User does NOT exist in registry. Show error & prompt to sign up.
+    if (!user) {
+      this.showError(
+        errorId,
+        `No account found for "${identifier}".`,
+        'Create Account →',
+        () => {
+          this.setTab('signup', isModal);
+          const signupEmail = document.getElementById(isModal ? 'signup-email' : 'gate-signup-email');
+          if (signupEmail) signupEmail.value = identifier;
+          const signupName = document.getElementById(isModal ? 'signup-name' : 'gate-signup-name');
+          if (signupName) signupName.focus();
+        }
+      );
+      return;
     }
 
-    if (u.id && u.id !== canonicalId) {
-      mergeUserStorageData(u.id, canonicalId);
-    }
-  });
+    // Verify Password Hash
+    const enteredHash = await hashClientPassword(password, user.id);
+    const isValid = (user.passwordHash && user.passwordHash === enteredHash) ||
+                    (user.password && user.password === password);
 
-  return Array.from(map.values());
-}
-
-function getStoredUsers() {
-  try {
-    const raw = localStorage.getItem('dhun_auth_users');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return deduplicateUsers(parsed).map(u => {
-          if (u && u.password) delete u.password; /* Strip legacy plaintext passwords */
-          return u;
-        });
+    if (!isValid) {
+      this.showError(
+        errorId,
+        'Incorrect password. Please check your credentials.',
+        'Forgot password?',
+        () => this.setTab('forgot', isModal)
+      );
+      if (passInput) {
+        passInput.value = '';
+        passInput.focus();
       }
+      return;
     }
-  } catch(e) {}
-  return [];
-}
 
-function saveStoredUsers(users) {
-  try {
-    const deduped = deduplicateUsers(users).map(u => {
-      const copy = { ...u };
-      delete copy.password; /* STRICT T1-01: Never persist plaintext password to localStorage */
-      return copy;
-    });
-    localStorage.setItem('dhun_auth_users', JSON.stringify(deduped));
-    authState.users = deduped;
-  } catch(e) {}
-}
+    // Upgrade legacy plaintext password to secure cryptographic hash
+    user.passwordHash = enteredHash;
+    delete user.password;
+    const users = this.getUsers();
+    const idx = users.findIndex(u => u.id === user.id);
+    if (idx !== -1) users[idx] = user;
+    this.saveUsers(users);
 
-function saveCredentials(email) {
-  if (!email) return;
-  try {
-    localStorage.setItem('dhun_saved_credentials', JSON.stringify({ email: String(email).toLowerCase().trim() }));
-  } catch(e) {}
-}
+    if (passInput) passInput.value = '';
+    this.enterApp(user, isModal);
+  },
 
-function getSavedCredentials() {
-  try {
-    const raw = localStorage.getItem('dhun_saved_credentials');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed) {
-        delete parsed.password; // Strict security: never return or save passwords
-        return parsed;
+  // 2. SIGN UP (Full Validation & Conflict Detection)
+  async signUp(isModal = false) {
+    if (!checkAuthThrottle()) return;
+    const prefix = isModal ? 'auth' : 'gate';
+    const nameInput    = document.getElementById(isModal ? 'signup-name' : 'gate-signup-name');
+    const emailInput   = document.getElementById(isModal ? 'signup-email' : 'gate-signup-email');
+    const passInput    = document.getElementById(isModal ? 'signup-password' : 'gate-signup-password');
+    const confirmInput = document.getElementById(isModal ? 'signup-confirm-password' : 'gate-signup-confirm-password');
+    const errorId      = `${prefix}-signup-error`;
+
+    this.clearError(errorId);
+    const name            = (nameInput?.value || '').trim();
+    const email           = (emailInput?.value || '').trim().toLowerCase();
+    const password        = (passInput?.value || '').trim();
+    const confirmPassword = (confirmInput?.value || '').trim();
+
+    if (!name) {
+      this.showError(errorId, 'Please enter your full name.');
+      if (nameInput) nameInput.focus();
+      return;
+    }
+    if (!email || !email.includes('@')) {
+      this.showError(errorId, 'Please enter a valid email address.');
+      if (emailInput) emailInput.focus();
+      return;
+    }
+    if (password.length < 6) {
+      this.showError(errorId, 'Password must be at least 6 characters long.');
+      if (passInput) passInput.focus();
+      return;
+    }
+    if (password !== confirmPassword) {
+      this.showError(errorId, 'Passwords do not match. Please verify your confirm password.');
+      if (confirmInput) {
+        confirmInput.value = '';
+        confirmInput.focus();
       }
+      return;
     }
-  } catch(e) {}
-  return null;
-}
 
-function purgeLegacyAuthData() {
-  try {
-    const raw = localStorage.getItem('dhun_auth_users');
-    if (raw) {
-      const users = JSON.parse(raw);
-      if (Array.isArray(users)) {
-        const cleaned = users.map(u => {
-          if (u && u.password) delete u.password; /* T1-01: Eradicate plaintext passwords */
-          return u;
-        }).filter(u => u && u.id !== 'usr_andre_chou' && u.email !== 'me@chou.design');
-        localStorage.setItem('dhun_auth_users', JSON.stringify(cleaned));
-      }
+    // Check if account already exists
+    const existing = this.findUser(email);
+    if (existing) {
+      this.showError(
+        errorId,
+        `An account with email "${email}" already exists.`,
+        'Sign In →',
+        () => {
+          this.setTab('signin', isModal);
+          const signinEmail = document.getElementById(isModal ? 'signin-email' : 'gate-signin-email');
+          if (signinEmail) signinEmail.value = email;
+          const signinPass = document.getElementById(isModal ? 'signin-password' : 'gate-signin-password');
+          if (signinPass) signinPass.focus();
+        }
+      );
+      return;
     }
-    const active = localStorage.getItem('dhun_auth_active_user');
-    if (active === 'usr_andre_chou') {
-      localStorage.removeItem('dhun_auth_active_user');
-      localStorage.removeItem('dhun_active_profile');
-    }
-  } catch(e) {}
-}
 
-function initAuth() {
-  purgeLegacyAuthData();
-
-  // FIX (Guest Isolation): If a stale guest session was saved, erase it so the
-  // login gate is always shown fresh on reload — guest sessions are memory-only.
-  try {
-    const staleActiveId = localStorage.getItem('dhun_auth_active_user');
-    if (staleActiveId === 'guest') {
-      localStorage.removeItem('dhun_auth_active_user');
-      localStorage.removeItem('dhun_active_profile');
-    }
-  } catch(e) {}
-
-  // Purge any previously stored passwords from localStorage
-  try {
-    const rawCreds = localStorage.getItem('dhun_saved_credentials');
-    if (rawCreds) {
-      const parsed = JSON.parse(rawCreds);
-      if (parsed && parsed.password) {
-        delete parsed.password;
-        localStorage.setItem('dhun_saved_credentials', JSON.stringify(parsed));
-      }
-    }
-  } catch(e) {}
-
-  authState.users = getStoredUsers();
-  // FIX (Guest Isolation): Remove guest from the persisted user list — guest is ephemeral
-  authState.users = authState.users.filter(u => u && u.id !== 'guest' && u.provider !== 'guest');
-  saveStoredUsers(authState.users);
-
-  // 1. Check for actively authenticated session
-  let activeUser = null;
-  const activeUserId = localStorage.getItem('dhun_auth_active_user');
-
-  if (activeUserId && activeUserId !== 'guest') {
-    activeUser = authState.users.find(u => u.id === activeUserId || (u.email && makeUserIdFromEmail(u.email) === activeUserId));
-    // Extra guard: never treat guest-provider as a persisted session
-    if (activeUser && (activeUser.provider === 'guest' || activeUser.id === 'guest')) {
-      activeUser = null;
-    }
-  }
-
-  // 2. Normalise active user's canonical ID
-  if (activeUser && activeUser.email) {
-    activeUser.id = makeUserIdFromEmail(activeUser.email);
-    localStorage.setItem('dhun_auth_active_user', activeUser.id);
-    localStorage.setItem('dhun_active_profile', JSON.stringify(activeUser));
-  }
-
-  const gateScreen = document.getElementById('login-gate-screen');
-  const appShell   = document.getElementById('app');
-
-  if (activeUser) {
-    // Already authenticated: bypass gatekeeper, load private library immediately
-    authState.currentUser = activeUser;
-    if (gateScreen) {
-      gateScreen.style.display = 'none';
-      gateScreen.classList.remove('gate-exiting');
-    }
-    if (appShell) appShell.style.display = '';
-    renderAvatarColorPicker();
-    updateAuthUI();
-    purgePredefaultPlaylists();
-
-    // Pull any remote cloud playlists and sync in background
-    setTimeout(() => {
-      pullProfileFromCloud();
-    }, 600);
-  } else {
-    // Not authenticated: hold at dedicated full-page Login Gatekeeper screen
-    authState.currentUser = null;
-    if (gateScreen) {
-      gateScreen.style.display = 'flex';
-      gateScreen.classList.remove('gate-exiting');
-      renderGateAvatarColorPicker();
-      renderGateSavedProfiles();
-      populateSavedCredentials();
-      // FIX (Google OAuth): Initialize Google Identity Services if available
-      initGoogleOneTap();
-    }
-    if (appShell) {
-      appShell.style.display = 'none';
-    }
-  }
-}
-
-function populateSavedCredentials() {
-  const creds = getSavedCredentials();
-  const emailInput = document.getElementById('gate-signin-email');
-  const passInput  = document.getElementById('gate-signin-password');
-  if (emailInput && creds && creds.email && !emailInput.value) {
-    emailInput.value = creds.email;
-  }
-  // User must input password each time - never prefill password
-  if (passInput) {
-    passInput.value = '';
-  }
-}
-
-function renderGateSavedProfiles() {
-  const container = document.getElementById('gate-saved-profiles');
-  if (!container) return;
-  const users = getStoredUsers().filter(u => u && u.id !== 'guest');
-  if (users.length === 0) {
-    container.innerHTML = '';
-    container.style.display = 'none';
-    return;
-  }
-  container.style.display = 'block';
-  container.innerHTML = `
-    <div style="background:rgba(255,255,255,0.04);border:1px solid var(--glass-border);border-radius:14px;padding:12px 14px;margin-bottom:14px;">
-      <p style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Saved Profiles (Select to Sign In)</p>
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        ${users.map(u => {
-          const isG = u.provider === 'google';
-          return `
-          <button type="button" onclick="selectSavedProfileForSignIn('${u.id}')" style="display:flex;align-items:center;gap:10px;width:100%;padding:8px 12px;background:rgba(255,255,255,0.05);border:1px solid ${isG ? 'rgba(66,133,244,0.3)' : 'rgba(255,255,255,0.1)'};border-radius:10px;color:var(--text-1);cursor:pointer;text-align:left;transition:all 0.2s;" onmouseover="this.style.background='${isG ? 'rgba(66,133,244,0.15)' : 'rgba(168,85,247,0.18)'}'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
-            <span style="width:28px;height:28px;border-radius:50%;background:${u.avatarColor || (isG ? '#4285F4' : '#7c3aed')};display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:12px;color:#fff;flex-shrink:0;">${(u.name || 'U').charAt(0).toUpperCase()}</span>
-            <div style="flex:1;min-width:0;">
-              <p style="font-size:13px;font-weight:600;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px;">
-                <span>${escapeHtmlText(u.name)}</span>
-                ${isG ? '<span style="font-size:10px;background:#4285F4;color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;">Google</span>' : ''}
-              </p>
-              <p style="font-size:11px;color:var(--text-3);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtmlText(u.email || 'Profile')}</p>
-            </div>
-            <span style="font-size:12px;color:${isG ? '#4285F4' : 'var(--purple)'};font-weight:600;">${isG ? 'Google ⚡' : 'Select 🔑'}</span>
-          </button>`;
-        }).join('')}
-      </div>
-    </div>
-  `;
-}
-
-function selectSavedProfileForSignIn(userId) {
-  const users = getStoredUsers();
-  const user = users.find(u => u.id === userId);
-  if (!user) return;
-  if (user.provider === 'google') {
-    // Open Google auth modal for confirmation instead of auto-login
-    handleGoogleSignIn(true);
-    return;
-  }
-  switchGateTab('signin');
-  const emailInput = document.getElementById('gate-signin-email');
-  const passInput  = document.getElementById('gate-signin-password');
-  if (emailInput) {
-    emailInput.value = user.email || user.name;
-  }
-  if (passInput) {
-    passInput.value = '';
-    passInput.focus();
-  }
-  showToast(`🔑 Profile selected: ${user.name}. Please enter your password.`);
-}
-
-function enterAppFromGate(user) {
-  if (!user) return;
-  user.lastLoginAt = Date.now();
-  authState.currentUser = user;
-
-  const isGuest = (user.provider === 'guest' || user.id === 'guest');
-
-  if (!isGuest) {
-    // Real user: persist session to localStorage
-    try {
-      localStorage.setItem('dhun_auth_active_user', user.id);
-      localStorage.setItem('dhun_active_profile', JSON.stringify(user));
-
-      const users = getStoredUsers().filter(u => u && u.id !== 'guest' && u.provider !== 'guest');
-      const idx = users.findIndex(u => u.id === user.id);
-      if (idx !== -1) {
-        users[idx] = { ...users[idx], ...user };
-      } else {
-        users.push(user);
-      }
-      saveStoredUsers(users);
-
-      if (user.email) {
-        saveCredentials(user.email);
-      }
-    } catch(e) {}
-  } else {
-    // Guest: session is in-memory ONLY — never persisted to localStorage
-    // This ensures no stale guest session auto-loads on refresh
-    try {
-      localStorage.removeItem('dhun_auth_active_user');
-      localStorage.removeItem('dhun_active_profile');
-    } catch(e) {}
-  }
-
-  const gateScreen = document.getElementById('login-gate-screen');
-  const appShell   = document.getElementById('app');
-
-  if (appShell) appShell.style.display = '';
-
-  if (gateScreen) {
-    gateScreen.classList.add('gate-exiting');
-    setTimeout(() => {
-      gateScreen.style.display = 'none';
-      gateScreen.classList.remove('gate-exiting');
-    }, 300);
-  }
-
-  loadUserProfileLibrary(user);
-  updateAuthUI();
-  refreshPlaylists();
-  syncAllSongsLikedState();
-  renderProfileStats();
-
-  showToast(`🎉 Welcome to Dhun, ${user.name}!`);
-}
-
-function continueAsGuestFromGate() {
-  // Guest is strictly in-memory: never stored to dhun_auth_users or dhun_auth_active_user
-  const guestUser = {
-    id: 'guest',
-    name: 'Guest',
-    email: 'guest@dhun.local',
-    avatarColor: '#7c3aed',
-    provider: 'guest',
-    bio: '🎵 Exploring Dhun Music',
-    joinedAt: Date.now(),
-    lastLoginAt: Date.now()
-  };
-  enterAppFromGate(guestUser);
-  showToast('👤 Exploring as Guest — data resets on page reload.');
-}
-
-function switchGateTab(tab) {
-  const tabGroup   = document.getElementById('gate-tab-group');
-  const signinBtn  = document.getElementById('gate-tab-signin');
-  const signupBtn  = document.getElementById('gate-tab-signup');
-  const signinForm = document.getElementById('gate-form-signin');
-  const signupForm = document.getElementById('gate-form-signup');
-  const forgotForm = document.getElementById('gate-form-forgot');
-  const resetForm  = document.getElementById('gate-form-reset');
-  const title      = document.getElementById('gate-title');
-  const subtitle   = document.getElementById('gate-subtitle');
-
-  // Hide all form panels first
-  if (signinForm) signinForm.style.display = 'none';
-  if (signupForm) signupForm.style.display = 'none';
-  if (forgotForm) forgotForm.style.display = 'none';
-  if (resetForm)  resetForm.style.display  = 'none';
-
-  if (tab === 'signin') {
-    if (tabGroup)   tabGroup.style.display = 'grid';
-    if (signinBtn)  signinBtn.classList.add('active');
-    if (signupBtn)  signupBtn.classList.remove('active');
-    if (signinForm) signinForm.style.display = 'block';
-    if (title)      title.textContent = 'Welcome Back to Dhun';
-    if (subtitle)   subtitle.textContent = 'Sign in to unlock your private likes, playlists & listening suite';
-    populateSavedCredentials();
-    renderGateSavedProfiles();
-  } else if (tab === 'signup') {
-    if (tabGroup)   tabGroup.style.display = 'grid';
-    if (signinBtn)  signinBtn.classList.remove('active');
-    if (signupBtn)  signupBtn.classList.add('active');
-    if (signupForm) signupForm.style.display = 'block';
-    if (title)      title.textContent = 'Create Free Account';
-    if (subtitle)   subtitle.textContent = '100% private to you with zero cross-user data collision';
-    renderGateAvatarColorPicker();
-  } else if (tab === 'forgot') {
-    if (tabGroup)   tabGroup.style.display = 'none';
-    if (forgotForm) forgotForm.style.display = 'block';
-    if (title)      title.textContent = 'Account Recovery';
-    if (subtitle)   subtitle.textContent = 'Recover your password and regain access to your private library';
-    const emailInput = document.getElementById('gate-forgot-email');
-    if (emailInput) setTimeout(() => emailInput.focus(), 50);
-  } else if (tab === 'reset') {
-    if (tabGroup)   tabGroup.style.display = 'none';
-    if (resetForm)  resetForm.style.display  = 'block';
-    if (title)      title.textContent = 'Reset Password';
-    if (subtitle)   subtitle.textContent = 'Choose a strong new password for your account';
-    const passInput = document.getElementById('gate-reset-password');
-    if (passInput) setTimeout(() => passInput.focus(), 50);
-  }
-}
-
-function renderGateAvatarColorPicker() {
-  const picker = document.getElementById('gate-signup-avatar-picker');
-  if (!picker || picker.children.length > 0) return;
-  picker.innerHTML = authState.paletteColors.map((c, i) => `
-    <button type="button" class="palette-dot ${i === 0 ? 'selected' : ''}" style="background:${c}" onclick="selectGateAvatarColor('${c}', this)" title="${c}"></button>
-  `).join('');
-}
-
-function selectGateAvatarColor(color, btn) {
-  authState.selectedAvatarColor = color;
-  document.querySelectorAll('#gate-signup-avatar-picker .palette-dot').forEach(d => d.classList.remove('selected'));
-  if (btn) btn.classList.add('selected');
-}
-
-async function handleGateEmailSignIn() {
-  if (!checkAuthThrottle()) return;
-
-  const emailInput = document.getElementById('gate-signin-email');
-  const passInput  = document.getElementById('gate-signin-password');
-
-  const identifier = (emailInput?.value || '').trim();
-  const password   = (passInput?.value || '').trim();
-
-  if (!identifier) {
-    showToast('⚠️ Please enter your email address or username');
-    if (emailInput) emailInput.focus();
-    return;
-  }
-
-  if (!password) {
-    showToast('⚠️ Please enter your password');
-    if (passInput) passInput.focus();
-    return;
-  }
-
-  const users = getStoredUsers();
-  const lowerId = identifier.toLowerCase();
-  let user = users.find(u => 
-    (u.email && u.email.toLowerCase() === lowerId) || 
-    (u.name && u.name.toLowerCase() === lowerId)
-  );
-
-  // If user is not yet in registry, auto-create their account seamlessly!
-  if (!user) {
-    const isEmail = identifier.includes('@');
-    const namePart = isEmail ? identifier.split('@')[0] : identifier;
-    const formattedName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
-    const emailVal = isEmail ? lowerId : `${lowerId}@dhun.local`;
-    const canonicalId = makeUserIdFromEmail(emailVal);
+    const canonicalId = this.makeUserId(email);
     const passwordHash = await hashClientPassword(password, canonicalId);
-    user = {
+    const newUser = {
       id: canonicalId,
-      name: formattedName,
-      email: emailVal,
+      name: name,
+      email: email,
       passwordHash: passwordHash,
       avatarColor: authState.selectedAvatarColor || '#7c3aed',
+      avatarUrl: null,
       provider: 'email',
-      bio: '🎵 Dhun Music Listener',
+      bio: '🎵 High-fidelity music listener & collector',
       joinedAt: Date.now(),
       lastLoginAt: Date.now()
     };
-    users.push(user);
-    saveStoredUsers(users);
-    saveCredentials(user.email);
+
+    const users = this.getUsers();
+    users.push(newUser);
+    this.saveUsers(users);
+
     if (passInput) passInput.value = '';
-    enterAppFromGate(user);
-    showToast(`🎉 Account created & signed in! Welcome, ${user.name}!`);
-    return;
-  }
+    if (confirmInput) confirmInput.value = '';
 
-  const enteredHash = await hashClientPassword(password, user.id);
-  const isValid = (user.passwordHash && user.passwordHash === enteredHash) ||
-                  (user.password && user.password === password);
+    try {
+      fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password })
+      }).catch(() => {});
+    } catch(e) {}
 
-  if (!isValid && (user.passwordHash || user.password)) {
-    showToast('❌ Incorrect password. Please try again or use Forgot Password.');
+    this.enterApp(newUser, isModal);
+    showToast(`🎉 Welcome to Dhun, ${name}!`);
+  },
+
+  // 3. GUEST MODE
+  guestLogin() {
+    const guestUser = {
+      id: 'guest',
+      name: 'Guest User',
+      email: 'guest@dhun.local',
+      avatarColor: '#7c3aed',
+      avatarUrl: null,
+      provider: 'guest',
+      bio: '🎵 Exploring Dhun Music Preview',
+      joinedAt: Date.now(),
+      lastLoginAt: Date.now()
+    };
+    this.enterApp(guestUser, false);
+    showToast('👤 Exploring as Guest — sessions reset on page refresh.');
+  },
+
+  // 4. SIGN OUT
+  signOut() {
+    showAppConfirm('Sign Out?', 'Are you sure you want to sign out of your account?', 'Sign Out', true, () => {
+      localStorage.removeItem('dhun_auth_active_user');
+      localStorage.removeItem('dhun_active_profile');
+      authState.currentUser = null;
+
+      state.playlists = [];
+      if (Array.isArray(state.songs)) {
+        state.songs.forEach(s => { s.liked = false; });
+      }
+      if (Array.isArray(_libAllSongs)) {
+        _libAllSongs.forEach(s => { s.liked = false; });
+      }
+      if (state.currentSong) {
+        state.currentSong.liked = false;
+      }
+
+      const ph = document.getElementById('player-heart');
+      if (ph) { ph.textContent = '♡'; ph.classList.remove('liked'); }
+      const pbLike = document.getElementById('pb-like');
+      if (pbLike) { pbLike.textContent = '♡'; pbLike.classList.remove('liked'); }
+
+      try {
+        if (typeof pauseSong === 'function') pauseSong();
+      } catch(e) {}
+
+      const gateScreen = document.getElementById('login-gate-screen');
+      const appShell = document.getElementById('app');
+      if (appShell) appShell.style.display = 'none';
+      if (gateScreen) {
+        gateScreen.style.display = 'flex';
+        gateScreen.classList.remove('gate-exiting');
+        this.setTab('signin', false);
+        this.renderSavedProfiles();
+        this.renderColorPickers();
+        this.prefillSavedCredentials();
+      }
+      showToast('👋 Signed out. Please sign in to enter Dhun.');
+    });
+  },
+
+  // 5. ENTER APP
+  enterApp(user, isModal = false) {
+    if (!user) return;
+    user.lastLoginAt = Date.now();
+    authState.currentUser = user;
+    const isGuest = (user.provider === 'guest' || user.id === 'guest');
+
+    if (!isGuest) {
+      try {
+        localStorage.setItem('dhun_auth_active_user', user.id);
+        localStorage.setItem('dhun_active_profile', JSON.stringify(user));
+        if (user.email) {
+          localStorage.setItem('dhun_saved_credentials', JSON.stringify({ email: user.email }));
+        }
+      } catch(e) {}
+    } else {
+      try {
+        localStorage.removeItem('dhun_auth_active_user');
+        localStorage.removeItem('dhun_active_profile');
+      } catch(e) {}
+    }
+
+    const gateScreen = document.getElementById('login-gate-screen');
+    const appShell = document.getElementById('app');
+
+    if (appShell) appShell.style.display = '';
+
+    if (gateScreen) {
+      gateScreen.classList.add('gate-exiting');
+      setTimeout(() => {
+        gateScreen.style.display = 'none';
+        gateScreen.classList.remove('gate-exiting');
+      }, 300);
+    }
+
+    if (isModal) {
+      this.closeModal();
+    }
+
+    loadUserProfileLibrary(user);
+    updateAuthUI();
+    refreshPlaylists();
+    syncAllSongsLikedState();
+    renderProfileStats();
+
+    if (state.currentPage === 'profile') {
+      refreshLikedSongs();
+      renderProfilePlaylists();
+    } else if (state.currentPage === 'home') {
+      renderRecommended();
+      renderTrending();
+    } else if (state.currentPage === 'library') {
+      renderLibrary(state.songs);
+    }
+  },
+
+  // 6. PASSWORD RECOVERY & RESET
+  async forgotPassword(isModal = false) {
+    if (!checkAuthThrottle()) return;
+    const emailInput = document.getElementById(isModal ? 'forgot-email' : 'gate-forgot-email');
+    const statusEl   = document.getElementById(isModal ? 'auth-forgot-status' : 'gate-forgot-status');
+    const email      = (emailInput?.value || '').trim().toLowerCase();
+
+    if (!email || !email.includes('@')) {
+      showToast('⚠️ Please enter a valid email address');
+      if (emailInput) emailInput.focus();
+      return;
+    }
+
+    const user = this.findUser(email);
+    let resetToken = null;
+
+    if (user) {
+      const randomHex = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+        .map(b => b.toString(16).padStart(2, '0')).join('');
+      resetToken = `rst_${randomHex}`;
+      const tokens = getPasswordResetTokens();
+      tokens.push({
+        token: resetToken,
+        email: user.email,
+        expiresAt: Date.now() + 15 * 60 * 1000,
+        used: false
+      });
+      savePasswordResetTokens(tokens);
+    }
+
+    if (statusEl) {
+      let html = `<div class="auth-status-banner">✉️ <strong>Notice:</strong> If an account exists for <em>${escapeHtml(email)}</em>, a password reset link has been dispatched.</div>`;
+      if (resetToken) {
+        html += `
+          <div class="reset-simulation-card">
+            <div class="sim-title"><span>📧</span> Quick Test Simulation: Reset Link Generated</div>
+            <p style="margin:4px 0 0;font-size:12px;color:var(--text-2);">For immediate testing without email delivery, click below:</p>
+            <a class="sim-link" onclick="DhunAuth.openResetWithToken('${resetToken}', ${isModal})">
+              Click to Open Password Reset Screen →
+            </a>
+          </div>
+        `;
+      }
+      statusEl.innerHTML = html;
+      statusEl.style.display = 'block';
+    }
+  },
+
+  openResetWithToken(token, isModal = false) {
+    this.setTab('reset', isModal);
+    const tokenInput = document.getElementById(isModal ? 'auth-reset-token' : 'gate-reset-token');
+    const statusEl   = document.getElementById(isModal ? 'auth-reset-status' : 'gate-reset-status');
+    if (tokenInput) tokenInput.value = token;
+    if (statusEl) {
+      statusEl.innerHTML = '<div class="auth-status-banner success">✓ <strong>Token loaded!</strong> Enter your new password below.</div>';
+      statusEl.style.display = 'block';
+    }
+    const passInput = document.getElementById(isModal ? 'reset-password' : 'gate-reset-password');
     if (passInput) {
       passInput.value = '';
-      passInput.focus();
+      setTimeout(() => passInput.focus(), 60);
     }
-    return;
-  }
+  },
 
-  // Upgrade to hashed password and eradicate plaintext password
-  user.passwordHash = enteredHash;
-  delete user.password;
-  saveStoredUsers(users);
+  async resetPassword(isModal = false) {
+    if (!checkAuthThrottle()) return;
+    const tokenInput   = document.getElementById(isModal ? 'auth-reset-token' : 'gate-reset-token');
+    const passInput    = document.getElementById(isModal ? 'reset-password' : 'gate-reset-password');
+    const confirmInput = document.getElementById(isModal ? 'reset-confirm-password' : 'gate-reset-confirm-password');
+    const statusEl     = document.getElementById(isModal ? 'auth-reset-status' : 'gate-reset-status');
 
-  saveCredentials(user.email);
-  if (passInput) passInput.value = '';
+    const token = (tokenInput?.value || '').trim();
+    const newPassword = (passInput?.value || '').trim();
+    const confirmPass = (confirmInput?.value || '').trim();
 
-  // Background notify C backend login
-  try {
-    fetch('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: user.email, password })
-    }).catch(() => {});
-  } catch(e) {}
-
-  enterAppFromGate(user);
-}
-
-async function handleGateEmailSignUp() {
-  if (!checkAuthThrottle()) return;
-
-  const nameInput    = document.getElementById('gate-signup-name');
-  const emailInput   = document.getElementById('gate-signup-email');
-  const passInput    = document.getElementById('gate-signup-password');
-  const confirmInput = document.getElementById('gate-signup-confirm-password');
-
-  const name = (nameInput?.value || '').trim();
-  const email = (emailInput?.value || '').trim().toLowerCase();
-  const password = (passInput?.value || '').trim();
-  const confirmPassword = (confirmInput?.value || '').trim();
-
-  if (!name || !email || !password || !confirmPassword) {
-    showToast('⚠️ Please fill out all fields including Confirm Password');
-    return;
-  }
-
-  if (password.length < 6) {
-    showToast('⚠️ Password must be at least 6 characters long');
-    if (passInput) passInput.focus();
-    return;
-  }
-
-  if (password !== confirmPassword) {
-    showToast('❌ Passwords do not match. Please re-enter.');
-    if (confirmInput) {
-      confirmInput.value = '';
-      confirmInput.focus();
+    if (!token) {
+      showToast('❌ Invalid or missing reset token.');
+      return;
     }
-    return;
+    if (newPassword.length < 6) {
+      showToast('⚠️ New password must be at least 6 characters.');
+      if (passInput) passInput.focus();
+      return;
+    }
+    if (newPassword !== confirmPass) {
+      showToast('❌ Passwords do not match.');
+      if (confirmInput) confirmInput.focus();
+      return;
+    }
+
+    const tokens = getPasswordResetTokens();
+    const entry = tokens.find(t => t.token === token && !t.used);
+    if (!entry || Date.now() > entry.expiresAt) {
+      showToast('❌ Reset link has expired or was already used.');
+      return;
+    }
+
+    const users = this.getUsers();
+    const user = users.find(u => u.email && u.email.toLowerCase() === entry.email.toLowerCase());
+    if (user) {
+      user.passwordHash = await hashClientPassword(newPassword, user.id);
+      delete user.password;
+      this.saveUsers(users);
+    }
+
+    entry.used = true;
+    savePasswordResetTokens(tokens);
+
+    if (statusEl) {
+      statusEl.innerHTML = '<div class="auth-status-banner success">🎉 <strong>Password updated!</strong> Switching to sign in...</div>';
+      statusEl.style.display = 'block';
+    }
+    showToast('✅ Password reset successfully! Please sign in with your new password.');
+
+    setTimeout(() => {
+      this.setTab('signin', isModal);
+      const emailField = document.getElementById(isModal ? 'signin-email' : 'gate-signin-email');
+      if (emailField && entry.email) emailField.value = entry.email;
+      const passField = document.getElementById(isModal ? 'signin-password' : 'gate-signin-password');
+      if (passField) { passField.value = ''; passField.focus(); }
+    }, 1200);
+  },
+
+  // 7. GOOGLE OAUTH 2.0 INTEGRATION
+  initGoogleGSI() {
+    if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) return;
+    if (this._gsiInitialized) return;
+    const clientId = getGoogleClientId();
+    if (!clientId || clientId.startsWith('YOUR_GOOGLE')) return;
+    this._gsiInitialized = true;
+    try {
+      google.accounts.id.initialize({
+        client_id: clientId,
+        callback: (resp) => this.handleGSICredential(resp),
+        auto_select: false,
+        cancel_on_tap_outside: true,
+        context: 'signin',
+        ux_mode: 'popup'
+      });
+    } catch(e) {}
+  },
+
+  handleGSICredential(response) {
+    try {
+      const token = response && response.credential;
+      if (!token) return;
+      const parts = token.split('.');
+      if (parts.length < 2) return;
+      const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+      this.applyGoogleProfile(payload);
+    } catch(e) {
+      showToast('⚠️ Google sign-in failed. Please try again.');
+    }
+  },
+
+  googleSignIn(isFromGate = false) {
+    this._isFromGate = isFromGate;
+    const clientId = getGoogleClientId();
+
+    if (!clientId || clientId.startsWith('YOUR_GOOGLE')) {
+      this.openGoogleSetup(isFromGate);
+      return;
+    }
+
+    // Google Identity Services (GIS) Token Client (Popup)
+    if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
+      try {
+        showToast('🔄 Connecting to Google Sign-In...');
+        const tokenClient = google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: 'openid email profile',
+          callback: async (res) => {
+            if (res && res.access_token) {
+              try {
+                showToast('⏳ Loading Google account profile...');
+                const resp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                  headers: { Authorization: `Bearer ${res.access_token}` }
+                });
+                if (!resp.ok) throw new Error('userinfo error: ' + resp.status);
+                const profile = await resp.json();
+                this.applyGoogleProfile(profile);
+              } catch(err) {
+                showToast('⚠️ Failed to load Google profile.');
+              }
+            } else if (res && res.error) {
+              showToast(`⚠️ Google sign-in: ${res.error}`);
+            }
+          },
+          error_callback: (err) => {
+            if (err && err.message) showToast(`⚠️ Google OAuth error: ${err.message}`);
+          }
+        });
+        tokenClient.requestAccessToken({ prompt: 'consent' });
+        return;
+      } catch(e) {}
+    }
+
+    // Fallback: Direct OAuth Popup Window
+    const width = 500, height = 620;
+    const left = window.screenX + (window.outerWidth - width) / 2;
+    const top = window.screenY + (window.outerHeight - height) / 2;
+    const redirectUri = window.location.origin + window.location.pathname;
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=openid%20email%20profile&prompt=select_account`;
+    const popup = window.open(authUrl, 'GoogleSignIn', `width=${width},height=${height},left=${left},top=${top}`);
+    if (!popup || popup.closed) {
+      this.openGoogleSetup(isFromGate);
+    }
+  },
+
+  applyGoogleProfile(profile) {
+    if (!profile) return;
+    const email = (profile.email || '').toLowerCase().trim();
+    if (!email) {
+      showToast('⚠️ No email returned from Google.');
+      return;
+    }
+
+    const name = profile.name || profile.given_name || email.split('@')[0];
+    const pic = profile.picture || null;
+    const sub = profile.sub || null;
+    const canonicalId = this.makeUserId(email);
+
+    const users = this.getUsers();
+    let existing = users.find(u => u.email && u.email.toLowerCase() === email);
+
+    if (!existing) {
+      existing = {
+        id: canonicalId,
+        name: name,
+        email: email,
+        avatarUrl: pic,
+        avatarColor: '#1a73e8',
+        provider: 'google',
+        googleSub: sub,
+        bio: 'Verified Google Listener 🎧',
+        joinedAt: Date.now(),
+        lastLoginAt: Date.now()
+      };
+      users.push(existing);
+    } else {
+      existing.name = name || existing.name;
+      existing.avatarUrl = pic || existing.avatarUrl;
+      existing.provider = 'google';
+      existing.googleSub = sub || existing.googleSub;
+      existing.lastLoginAt = Date.now();
+    }
+
+    this.saveUsers(users);
+    this.closeGoogleSetup();
+    this.enterApp(existing, !this._isFromGate);
+    showToast(`✅ Welcome, ${existing.name}! Signed in with Google.`);
+  },
+
+  openGoogleSetup(isFromGate = false) {
+    this._isFromGate = isFromGate;
+    const modal = document.getElementById('google-auth-modal');
+    if (!modal) return;
+    const input = document.getElementById('google-client-id-input');
+    if (input) {
+      input.value = getGoogleClientId();
+      setTimeout(() => input.focus(), 60);
+    }
+    this.clearError('google-setup-status');
+    modal.style.display = 'flex';
+  },
+
+  closeGoogleSetup() {
+    const modal = document.getElementById('google-auth-modal');
+    if (modal) modal.style.display = 'none';
+  },
+
+  saveGoogleClientIdAndLaunch() {
+    const input = document.getElementById('google-client-id-input');
+    const val = (input?.value || '').trim();
+    if (!val) {
+      this.showError('google-setup-status', 'Please enter your Google Web Client ID.');
+      if (input) input.focus();
+      return;
+    }
+    setGoogleClientId(val);
+    this.closeGoogleSetup();
+    showToast('✅ Google OAuth Client ID saved!');
+    this.googleSignIn(this._isFromGate);
+  },
+
+  demoGoogleSignIn() {
+    this.closeGoogleSetup();
+    const demoProfile = {
+      name: 'Mayank Verma',
+      email: 'mayank.verma@gmail.com',
+      picture: 'logo.png',
+      sub: 'demo_google_998877'
+    };
+    this.applyGoogleProfile(demoProfile);
+    showToast('⚡ Signed in with Demo Google Verified Account!');
+  },
+
+  copyOrigin(text) {
+    copyOriginToClipboard(text);
+  },
+
+  openModal(tab = 'signin') {
+    const modal = document.getElementById('auth-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    this.setTab(tab, true);
+    this.renderColorPickers();
+  },
+
+  closeModal() {
+    const modal = document.getElementById('auth-modal');
+    if (modal) modal.style.display = 'none';
   }
+};
 
-  const users = getStoredUsers();
-  const existing = users.find(u => 
-    (u.email && u.email.toLowerCase() === email) || 
-    (u.name && u.name.toLowerCase() === name.toLowerCase())
-  );
+// Aliases for legacy global callers
+function getStoredUsers() { return DhunAuth.getUsers(); }
+function saveStoredUsers(users) { DhunAuth.saveUsers(users); }
+function initAuth() { DhunAuth.init(); }
+function switchGateTab(tab) { DhunAuth.setTab(tab, false); }
+function switchAuthTab(tab) { DhunAuth.setTab(tab, true); }
+function handleGateEmailSignIn() { DhunAuth.signIn(false); }
+function handleGateEmailSignUp() { DhunAuth.signUp(false); }
+function handleEmailSignIn() { DhunAuth.signIn(true); }
+function handleEmailSignUp() { DhunAuth.signUp(true); }
+function continueAsGuestFromGate() { DhunAuth.guestLogin(); }
+function enterGuestMode() { DhunAuth.guestLogin(); }
+function signOutUser() { DhunAuth.signOut(); }
+function handleGoogleSignIn(isGate = false) { DhunAuth.googleSignIn(isGate); }
+function launchGoogleOAuth(isGate = false) { DhunAuth.googleSignIn(isGate); }
+function openAuthModal(mode = 'signin') { DhunAuth.openModal(mode); }
+function closeAuthModal() { DhunAuth.closeModal(); }
+function openGoogleAuthModal(isGate = false) { DhunAuth.openGoogleSetup(isGate); }
+function closeGoogleAuthModal() { DhunAuth.closeGoogleSetup(); }
+function showGoogleOAuthSetupScreen() { DhunAuth.openGoogleSetup(true); }
+function saveAndLaunchGoogleOAuth() { DhunAuth.saveGoogleClientIdAndLaunch(); }
+function submitGoogleNewAccount() { DhunAuth.demoGoogleSignIn(); }
+function selectSavedProfileForSignIn(id) { DhunAuth.selectSavedProfile(id); }
+function handleForgotPassword(isGate = true) { DhunAuth.forgotPassword(!isGate); }
+function handleResetPassword(isGate = true) { DhunAuth.resetPassword(!isGate); }
+function openResetPasswordWithToken(t, isGate) { DhunAuth.openResetWithToken(t, !isGate); }
+function enterAppFromGate(u) { DhunAuth.enterApp(u, false); }
+function switchToUser(u) { DhunAuth.enterApp(u, true); }
 
-  if (existing) {
-    showToast('⚠️ An account with this email already exists. Please sign in.');
-    switchGateTab('signin');
-    const signinEmail = document.getElementById('gate-signin-email');
-    if (signinEmail) signinEmail.value = email;
-    return;
-  }
-
-  const canonicalId = makeUserIdFromEmail(email);
-  const passwordHash = await hashClientPassword(password, canonicalId);
-  const newUser = {
-    id: canonicalId,
-    name: name,
-    email: email,
-    passwordHash: passwordHash,
-    avatarColor: authState.selectedAvatarColor || '#7c3aed',
-    provider: 'email',
-    bio: '🎵 Dhun Music Listener',
-    joinedAt: Date.now(),
-    lastLoginAt: Date.now()
-  };
-
-  users.push(newUser);
-  saveStoredUsers(users);
-  saveCredentials(email);
-  if (passInput) passInput.value = '';
-  if (confirmInput) confirmInput.value = '';
-
-  // Background registration to C backend if alive
-  try {
-    fetch('/api/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password })
-    }).catch(() => {});
-  } catch(e) {}
-
-  enterAppFromGate(newUser);
-  showToast(`🎉 Account created! Welcome to Dhun, ${name}!`);
+// Export to window
+if (typeof window !== 'undefined') {
+  window.DhunAuth = DhunAuth;
+  window.getGoogleClientId = getGoogleClientId;
+  window.setGoogleClientId = setGoogleClientId;
+  window.copyOriginToClipboard = copyOriginToClipboard;
+  window.initAuth = initAuth;
+  window.switchGateTab = switchGateTab;
+  window.switchAuthTab = switchAuthTab;
+  window.handleGateEmailSignIn = handleGateEmailSignIn;
+  window.handleGateEmailSignUp = handleGateEmailSignUp;
+  window.handleEmailSignIn = handleEmailSignIn;
+  window.handleEmailSignUp = handleEmailSignUp;
+  window.continueAsGuestFromGate = continueAsGuestFromGate;
+  window.enterGuestMode = enterGuestMode;
+  window.signOutUser = signOutUser;
+  window.handleGoogleSignIn = handleGoogleSignIn;
+  window.launchGoogleOAuth = launchGoogleOAuth;
+  window.openAuthModal = openAuthModal;
+  window.closeAuthModal = closeAuthModal;
+  window.openGoogleAuthModal = openGoogleAuthModal;
+  window.closeGoogleAuthModal = closeGoogleAuthModal;
+  window.showGoogleOAuthSetupScreen = showGoogleOAuthSetupScreen;
+  window.saveAndLaunchGoogleOAuth = saveAndLaunchGoogleOAuth;
+  window.selectSavedProfileForSignIn = selectSavedProfileForSignIn;
+  window.handleForgotPassword = handleForgotPassword;
+  window.handleResetPassword = handleResetPassword;
+  window.openResetPasswordWithToken = openResetPasswordWithToken;
+  window.enterAppFromGate = enterAppFromGate;
+  window.switchToUser = switchToUser;
 }
 
 function getUserStorageKey(suffix) {
@@ -3194,237 +3596,8 @@ window.openShortcutsModal = openShortcutsModal;
 window.closeShortcutsModal = closeShortcutsModal;
 window.closeAllActiveModals = closeAllActiveModals;
 
-function switchAuthTab(tab) {
-  const tabGroup    = document.getElementById('auth-tab-group');
-  const signinBtn   = document.getElementById('auth-tab-signin');
-  const signupBtn   = document.getElementById('auth-tab-signup');
-  const signinPanel = document.getElementById('auth-panel-signin');
-  const signupPanel = document.getElementById('auth-panel-signup');
-  const forgotPanel = document.getElementById('auth-panel-forgot');
-  const resetPanel  = document.getElementById('auth-panel-reset');
-  const title       = document.getElementById('auth-modal-title');
-  const sub         = document.getElementById('auth-modal-sub');
+// In-app modal tabs and auth actions are now managed by DhunAuth (v34.0)
 
-  if (signinPanel) signinPanel.style.display = 'none';
-  if (signupPanel) signupPanel.style.display = 'none';
-  if (forgotPanel) forgotPanel.style.display = 'none';
-  if (resetPanel)  resetPanel.style.display  = 'none';
-
-  if (tab === 'signin') {
-    if (tabGroup)    tabGroup.style.display = 'grid';
-    if (signinBtn)   signinBtn.classList.add('active');
-    if (signupBtn)   signupBtn.classList.remove('active');
-    if (signinPanel) signinPanel.style.display = 'block';
-    if (title)       title.textContent = 'Welcome Back to Dhun';
-    if (sub)         sub.textContent = 'Sign in to access your personal liked songs, playlists & stats';
-  } else if (tab === 'signup') {
-    if (tabGroup)    tabGroup.style.display = 'grid';
-    if (signinBtn)   signinBtn.classList.remove('active');
-    if (signupBtn)   signupBtn.classList.add('active');
-    if (signupPanel) signupPanel.style.display = 'block';
-    if (title)       title.textContent = 'Create Free Account';
-    if (sub)         sub.textContent = 'Your songs, playlists & music vibe are 100% private to you';
-    renderAvatarColorPicker();
-  } else if (tab === 'forgot') {
-    if (tabGroup)    tabGroup.style.display = 'none';
-    if (forgotPanel) forgotPanel.style.display = 'block';
-    if (title)       title.textContent = 'Reset Your Password';
-    if (sub)         sub.textContent = 'Enter your email and we will send you a password recovery link';
-    const emailInput = document.getElementById('forgot-email');
-    if (emailInput) setTimeout(() => emailInput.focus(), 50);
-  } else if (tab === 'reset') {
-    if (tabGroup)   tabGroup.style.display = 'none';
-    if (resetPanel) resetPanel.style.display = 'block';
-    if (title)      title.textContent = 'Set New Password';
-    if (sub)        sub.textContent = 'Create a secure new password for your Dhun account';
-    const passInput = document.getElementById('reset-password');
-    if (passInput) setTimeout(() => passInput.focus(), 50);
-  }
-}
-
-function renderAvatarColorPicker() {
-  const picker = document.getElementById('signup-avatar-picker');
-  if (!picker || picker.children.length > 0) return;
-  picker.innerHTML = authState.paletteColors.map((c, i) => `
-    <button type="button" class="palette-dot ${i === 0 ? 'selected' : ''}" style="background:${c}" onclick="selectAvatarColor('${c}', this)" title="${c}"></button>
-  `).join('');
-}
-
-function selectAvatarColor(color, btn) {
-  authState.selectedAvatarColor = color;
-  document.querySelectorAll('#signup-avatar-picker .palette-dot').forEach(d => d.classList.remove('selected'));
-  if (btn) btn.classList.add('selected');
-}
-
-async function handleEmailSignUp() {
-  if (!checkAuthThrottle()) return;
-
-  const nameInput    = document.getElementById('signup-name');
-  const emailInput   = document.getElementById('signup-email');
-  const passInput    = document.getElementById('signup-password');
-  const confirmInput = document.getElementById('signup-confirm-password');
-
-  const name = (nameInput?.value || '').trim();
-  const email = (emailInput?.value || '').trim().toLowerCase();
-  const password = (passInput?.value || '').trim();
-  const confirmPassword = (confirmInput?.value || '').trim();
-
-  if (!name || !email || !password || !confirmPassword) {
-    showToast('⚠️ Please fill out all fields including Confirm Password');
-    return;
-  }
-
-  if (password.length < 6) {
-    showToast('⚠️ Password must be at least 6 characters long');
-    if (passInput) passInput.focus();
-    return;
-  }
-
-  if (password !== confirmPassword) {
-    showToast('❌ Passwords do not match. Please re-enter.');
-    if (confirmInput) {
-      confirmInput.value = '';
-      confirmInput.focus();
-    }
-    return;
-  }
-
-  const users = getStoredUsers();
-  const existing = users.find(u => 
-    (u.email && u.email.toLowerCase() === email) || 
-    (u.name && u.name.toLowerCase() === name.toLowerCase())
-  );
-
-  if (existing) {
-    showToast('⚠️ An account with this email already exists. Please sign in.');
-    switchAuthTab('signin');
-    const signinEmail = document.getElementById('signin-email');
-    if (signinEmail) signinEmail.value = email;
-    return;
-  }
-
-  const canonicalId = makeUserIdFromEmail(email);
-  const passwordHash = await hashClientPassword(password, canonicalId);
-  const newUser = {
-    id: canonicalId,
-    name: name,
-    email: email,
-    passwordHash: passwordHash,
-    avatarColor: authState.selectedAvatarColor || '#7c3aed',
-    provider: 'email',
-    bio: '🎵 Dhun Music Listener',
-    joinedAt: Date.now(),
-    lastLoginAt: Date.now()
-  };
-
-  users.push(newUser);
-  saveStoredUsers(users);
-  saveCredentials(email);
-  if (passInput) passInput.value = '';
-  if (confirmInput) confirmInput.value = '';
-
-  // Background registration to C backend if alive
-  try {
-    fetch('/api/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password })
-    }).catch(() => {});
-  } catch(e) {}
-
-  closeAuthModal();
-  switchToUser(newUser);
-  showToast(`🎉 Welcome to Dhun, ${name}! Your private profile is active.`);
-}
-
-async function handleEmailSignIn() {
-  if (!checkAuthThrottle()) return;
-
-  const emailInput = document.getElementById('signin-email');
-  const passInput  = document.getElementById('signin-password');
-
-  const identifier = (emailInput?.value || '').trim();
-  const password   = (passInput?.value || '').trim();
-
-  if (!identifier) {
-    showToast('⚠️ Please enter email or username');
-    if (emailInput) emailInput.focus();
-    return;
-  }
-
-  if (!password) {
-    showToast('⚠️ Please enter your password');
-    if (passInput) passInput.focus();
-    return;
-  }
-
-  const users = getStoredUsers();
-  const lowerId = identifier.toLowerCase();
-  let user = users.find(u => 
-    (u.email && u.email.toLowerCase() === lowerId) || 
-    (u.name && u.name.toLowerCase() === lowerId)
-  );
-
-  if (!user) {
-    const isEmail = identifier.includes('@');
-    const namePart = isEmail ? identifier.split('@')[0] : identifier;
-    const formattedName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
-    const emailVal = isEmail ? lowerId : `${lowerId}@dhun.local`;
-    const canonicalId = makeUserIdFromEmail(emailVal);
-    const passwordHash = await hashClientPassword(password, canonicalId);
-    user = {
-      id: canonicalId,
-      name: formattedName,
-      email: emailVal,
-      passwordHash: passwordHash,
-      avatarColor: authState.selectedAvatarColor || '#7c3aed',
-      provider: 'email',
-      bio: '🎵 Dhun Music Listener',
-      joinedAt: Date.now(),
-      lastLoginAt: Date.now()
-    };
-    users.push(user);
-    saveStoredUsers(users);
-    saveCredentials(user.email);
-    if (passInput) passInput.value = '';
-    closeAuthModal();
-    switchToUser(user);
-    showToast(`🎉 Account created & signed in! Welcome, ${user.name}!`);
-    return;
-  }
-
-  const enteredHash = await hashClientPassword(password, user.id);
-  const isValid = (user.passwordHash && user.passwordHash === enteredHash) ||
-                  (user.password && user.password === password);
-
-  if (!isValid && (user.passwordHash || user.password)) {
-    showToast('❌ Incorrect password. Please try again or use Forgot Password.');
-    if (passInput) {
-      passInput.value = '';
-      passInput.focus();
-    }
-    return;
-  }
-
-  user.passwordHash = enteredHash;
-  delete user.password;
-  saveStoredUsers(users);
-
-  saveCredentials(user.email);
-  if (passInput) passInput.value = '';
-
-  // Background notify C backend login
-  try {
-    fetch('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: user.email, password })
-    }).catch(() => {});
-  } catch(e) {}
-
-  closeAuthModal();
-  switchToUser(user);
-}
 
 /* ══════════════════════════════════════════════════════════════════
    PASSWORD RESET & TOKEN MANAGEMENT (Anti-Enumeration & Secure Reset)
@@ -3682,280 +3855,6 @@ function checkResetTokenInURL() {
   } catch(e) {}
 }
 
-let _googleAuthIsFromGate = false;
-
-/* ── Google Identity Services (Real OAuth) Integration ─────────────────────
-   Uses Google's official GSI library (accounts.google.com/gsi/client).
-   On first-time: triggers One Tap or Popup flow for real Google auth.
-   On returning: shows the existing Google account chooser (local profiles).
-   SETUP: Replace DHUN_GOOGLE_CLIENT_ID with your real Google Cloud Client ID.
-   Get one at: console.cloud.google.com → APIs & Services → Credentials
-   Add http://localhost:3000 as an Authorized JavaScript origin.
-─────────────────────────────────────────────────────────────────────────── */
-function getGoogleClientId() {
-  const stored = localStorage.getItem('dhun_google_client_id');
-  if (stored && stored.trim() && !stored.startsWith('YOUR_GOOGLE')) return stored.trim();
-  if (typeof CONFIG !== 'undefined' && CONFIG.GOOGLE_CLIENT_ID && !CONFIG.GOOGLE_CLIENT_ID.startsWith('YOUR_GOOGLE')) {
-    return CONFIG.GOOGLE_CLIENT_ID.trim();
-  }
-  if (typeof window !== 'undefined' && window.DHUN_GOOGLE_CLIENT_ID && !window.DHUN_GOOGLE_CLIENT_ID.startsWith('YOUR_GOOGLE')) {
-    return window.DHUN_GOOGLE_CLIENT_ID.trim();
-  }
-  return '';
-}
-
-function setGoogleClientId(id) {
-  if (!id) return;
-  id = id.trim();
-  localStorage.setItem('dhun_google_client_id', id);
-  if (typeof CONFIG !== 'undefined') CONFIG.GOOGLE_CLIENT_ID = id;
-  window.DHUN_GOOGLE_CLIENT_ID = id;
-  _gsiInitialized = false;
-  initGoogleOneTap();
-}
-
-const DHUN_GOOGLE_CLIENT_ID = getGoogleClientId() || 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
-let _gsiInitialized = false;
-let _gsiOneTapShown = false;
-
-function initGoogleOneTap() {
-  if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) return;
-  if (_gsiInitialized) return;
-
-  const clientId = getGoogleClientId();
-  if (!clientId || clientId.startsWith('YOUR_GOOGLE')) return;
-  _gsiInitialized = true;
-
-  try {
-    google.accounts.id.initialize({
-      client_id: clientId,
-      callback: handleGSICredentialResponse,
-      auto_select: false,
-      cancel_on_tap_outside: true,
-      context: 'signin',
-      ux_mode: 'popup'
-    });
-  } catch(e) {
-    console.warn('[Dhun] Google GSI init failed:', e);
-  }
-}
-
-function copyOriginToClipboard(originText) {
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(originText).then(() => {
-      showToast(`📋 Copied "${originText}" to clipboard!`);
-    }).catch(() => {
-      showToast(`Origin: ${originText}`);
-    });
-  } else {
-    showToast(`Origin: ${originText}`);
-  }
-}
-
-function showGoogleOAuthSetupScreen() {
-  const chooser = document.getElementById('google-screen-chooser');
-  const signin = document.getElementById('google-screen-signin');
-  const oauthScreen = document.getElementById('google-screen-oauth');
-
-  if (chooser) chooser.style.display = 'none';
-  if (signin) signin.style.display = 'none';
-  if (oauthScreen) oauthScreen.style.display = 'grid';
-
-  const input = document.getElementById('google-client-id-input');
-  if (input) {
-    input.value = getGoogleClientId();
-    setTimeout(() => { if (typeof input.focus === 'function') input.focus(); }, 80);
-  }
-}
-
-function saveAndLaunchGoogleOAuth() {
-  const input = document.getElementById('google-client-id-input');
-  const val = (input && input.value ? input.value : '').trim();
-
-  if (!val) {
-    showToast('⚠️ Please paste your Google OAuth Web Client ID.');
-    if (input) input.focus();
-    return;
-  }
-
-  setGoogleClientId(val);
-  showToast('✅ Google OAuth Client ID saved!');
-  launchGoogleOAuth(_googleAuthIsFromGate);
-}
-
-function applyGoogleProfile(profile) {
-  if (!profile) return;
-  const email = (profile.email || '').toLowerCase().trim();
-  if (!email) {
-    showToast('⚠️ No email returned from Google.');
-    return;
-  }
-
-  const name = profile.name || profile.given_name || email.split('@')[0];
-  const pic = profile.picture || null;
-  const sub = profile.sub || null;
-
-  const canonicalId = makeUserIdFromEmail(email);
-  const users = getStoredUsers().filter(u => u && u.id !== 'guest' && u.provider !== 'guest');
-  let existing = users.find(u => u.email && u.email.toLowerCase().trim() === email);
-
-  if (!existing) {
-    existing = {
-      id: canonicalId,
-      name: name,
-      email: email,
-      avatarUrl: pic || null,
-      avatarColor: '#1a73e8',
-      provider: 'google',
-      googleSub: sub,
-      bio: 'Verified Google Listener 🎧',
-      joinedAt: Date.now(),
-      lastLoginAt: Date.now()
-    };
-    users.push(existing);
-  } else {
-    existing.name = name || existing.name;
-    existing.avatarUrl = pic || existing.avatarUrl;
-    existing.provider = 'google';
-    existing.googleSub = sub || existing.googleSub;
-    existing.lastLoginAt = Date.now();
-  }
-
-  saveStoredUsers(users);
-  saveCredentials(email);
-
-  // Close modals
-  closeGoogleAuthModal();
-  closeAuthModal();
-
-  if (_googleAuthIsFromGate) {
-    enterAppFromGate(existing);
-  } else {
-    switchToUser(existing);
-  }
-
-  showToast(`✅ Welcome, ${existing.name}! Signed in with Google.`);
-  pushProfileToCloud();
-}
-
-function handleGSICredentialResponse(response) {
-  try {
-    const token = response && response.credential;
-    if (!token) throw new Error('No credential');
-
-    const parts = token.split('.');
-    if (parts.length < 2) throw new Error('Invalid JWT');
-    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-
-    applyGoogleProfile(payload);
-  } catch(err) {
-    console.error('[Dhun] GSI credential decode failed:', err);
-    showToast('⚠️ Google sign-in failed. Please try again.');
-    openGoogleOAuthSetupModal(_googleAuthIsFromGate);
-  }
-}
-
-function launchGoogleOAuth(isFromGate = false) {
-  _googleAuthIsFromGate = isFromGate;
-  const clientId = getGoogleClientId();
-
-  // If no Client ID is configured yet, open the setup screen
-  if (!clientId || clientId.startsWith('YOUR_GOOGLE')) {
-    openGoogleOAuthSetupModal(isFromGate);
-    return;
-  }
-
-  // 1. Primary: Google Identity Services (GIS) OAuth 2.0 Token Client (Popup)
-  if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
-    try {
-      showToast('🔄 Opening Google Sign-In...');
-      const tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: 'openid email profile',
-        callback: async (tokenResponse) => {
-          if (tokenResponse && tokenResponse.access_token) {
-            try {
-              showToast('⏳ Connecting your Google account...');
-              const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
-              });
-              if (!res.ok) throw new Error('userinfo fetch failed: ' + res.status);
-              const googleProfile = await res.json();
-              applyGoogleProfile(googleProfile);
-            } catch (err) {
-              console.error('[Google OAuth] Userinfo fetch failed:', err);
-              showToast('⚠️ Failed to load Google profile data.');
-            }
-          } else if (tokenResponse && tokenResponse.error) {
-            console.warn('[Google OAuth] Error response:', tokenResponse.error);
-            showToast(`⚠️ Google sign-in: ${tokenResponse.error}`);
-          }
-        },
-        error_callback: (err) => {
-          console.warn('[Google OAuth] Client error:', err);
-          if (err && err.message) showToast(`⚠️ Google OAuth error: ${err.message}`);
-        }
-      });
-
-      tokenClient.requestAccessToken({ prompt: 'consent' });
-      return;
-    } catch (e) {
-      console.warn('[Google OAuth] Token Client init error, falling back to popup:', e);
-    }
-  }
-
-  // 2. Secondary: Google One Tap / GSI Prompt
-  if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
-    try {
-      if (!_gsiInitialized) initGoogleOneTap();
-      google.accounts.id.prompt((notification) => {
-        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-          launchGoogleOAuthPopupFallback(clientId);
-        }
-      });
-      return;
-    } catch (e) {
-      // Fall through
-    }
-  }
-
-  // 3. Fallback: Direct OAuth 2.0 Popup Window
-  launchGoogleOAuthPopupFallback(clientId);
-}
-
-function launchGoogleOAuthPopupFallback(clientId) {
-  const width = 500, height = 620;
-  const left = window.screenX + (window.outerWidth - width) / 2;
-  const top = window.screenY + (window.outerHeight - height) / 2;
-  const redirectUri = window.location.origin + window.location.pathname;
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=openid%20email%20profile&prompt=select_account`;
-
-  const popup = window.open(authUrl, 'GoogleSignInPopup', `width=${width},height=${height},left=${left},top=${top}`);
-  if (!popup || popup.closed || typeof popup.closed === 'undefined') {
-    showToast('⚠️ Popup blocked! Please allow popups or use in-app setup.');
-    openGoogleOAuthSetupModal(_googleAuthIsFromGate);
-  }
-}
-
-function openGoogleOAuthSetupModal(isFromGate = false) {
-  _googleAuthIsFromGate = isFromGate;
-  const modal = document.getElementById('google-auth-modal');
-  if (!modal) return;
-
-  if (!isFromGate) {
-    const mainAuthModal = document.getElementById('auth-modal');
-    if (mainAuthModal) mainAuthModal.style.display = 'none';
-  }
-
-  showGoogleOAuthSetupScreen();
-  modal.style.display = 'flex';
-}
-
-function handleGoogleSignIn(isFromGate = false) {
-  _googleAuthIsFromGate = isFromGate;
-  launchGoogleOAuth(isFromGate);
-}
-
 // Check for OAuth hash parameters on load (from popup or redirect return)
 (function checkGoogleOAuthHash() {
   if (typeof window === 'undefined') return;
@@ -3971,7 +3870,7 @@ function handleGoogleSignIn(isFromGate = false) {
           .then(res => res.json())
           .then(profile => {
             if (profile && profile.email) {
-              applyGoogleProfile(profile);
+              DhunAuth.applyGoogleProfile(profile);
             }
           })
           .catch(e => console.warn('[Google OAuth] Token hash exchange failed:', e));
@@ -3980,408 +3879,6 @@ function handleGoogleSignIn(isFromGate = false) {
   } catch (e) {}
 })();
 
-if (typeof window !== 'undefined') {
-  window.getGoogleClientId = getGoogleClientId;
-  window.setGoogleClientId = setGoogleClientId;
-  window.copyOriginToClipboard = copyOriginToClipboard;
-  window.showGoogleOAuthSetupScreen = showGoogleOAuthSetupScreen;
-  window.saveAndLaunchGoogleOAuth = saveAndLaunchGoogleOAuth;
-  window.applyGoogleProfile = applyGoogleProfile;
-  window.handleGSICredentialResponse = handleGSICredentialResponse;
-  window.launchGoogleOAuth = launchGoogleOAuth;
-  window.openGoogleOAuthSetupModal = openGoogleOAuthSetupModal;
-  window.handleGoogleSignIn = handleGoogleSignIn;
-}
-
-function openGoogleAuthModal(isFromGate = false) {
-  _googleAuthIsFromGate = isFromGate;
-  const modal = document.getElementById('google-auth-modal');
-  if (!modal) return;
-
-  if (!isFromGate) {
-    const mainAuthModal = document.getElementById('auth-modal');
-    if (mainAuthModal) mainAuthModal.style.display = 'none';
-  }
-
-  // Update domain in template
-  const currentHost = (window.location && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
-    ? window.location.hostname
-    : 'dhun.live';
-
-  const siteLink1 = document.getElementById('google-dest-site');
-  if (siteLink1) siteLink1.textContent = currentHost;
-  const siteLink2 = document.getElementById('google-dest-site-2');
-  if (siteLink2) siteLink2.textContent = currentHost;
-  document.querySelectorAll('.google-consent-host, .google-consent-host-2').forEach(el => {
-    el.textContent = currentHost;
-  });
-
-  // Real stored Google users ONLY — no mock data, no guest
-  const googleUsers = (getStoredUsers() || []).filter(u => u && u.provider === 'google');
-
-  if (googleUsers.length === 0) {
-    showGoogleAddAccountScreen(false);
-  } else {
-    renderGoogleAccountsChooserList();
-    showGoogleAccountChooser();
-  }
-
-  modal.style.display = 'flex';
-}
-
-function renderGoogleAccountsChooserList() {
-  const container = document.getElementById('google-accounts-list');
-  if (!container) return;
-
-  // Real stored Google users ONLY
-  const googleUsers = (getStoredUsers() || []).filter(u => u && u.provider === 'google');
-
-  if (googleUsers.length === 0) {
-    container.innerHTML = '';
-    return;
-  }
-
-  container.innerHTML = googleUsers.map(gu => {
-    const letter = (gu.name || 'G').charAt(0).toUpperCase();
-    const avatarContent = gu.avatarUrl
-      ? `<img src="${escapeHtmlAttr(gu.avatarUrl)}" alt="${escapeHtmlAttr(gu.name)}" onerror="this.onerror=null;this.parentElement.textContent='${escapeHtmlAttr(letter)}';" />`
-      : letter;
-    const bg = gu.avatarColor || '#1a73e8';
-
-    return `
-      <div class="google-account-row" onclick="handleGoogleSelectAccount('${escapeHtmlAttr(gu.id)}')" role="button" tabindex="0">
-        <div class="google-avatar-circle" style="background:${bg}">
-          ${avatarContent}
-        </div>
-        <div class="google-account-meta">
-          <div class="google-account-name">${escapeHtmlText(gu.name)}</div>
-          <div class="google-account-email">${escapeHtmlText(gu.email)}</div>
-        </div>
-        <button type="button" class="google-acc-remove-btn" onclick="event.stopPropagation();handleRemoveGoogleAccount('${escapeHtmlAttr(gu.id)}')" title="Remove account from device" aria-label="Remove account">✕</button>
-      </div>
-    `;
-  }).join('');
-}
-
-function handleRemoveGoogleAccount(userId) {
-  let users = getStoredUsers();
-  users = users.filter(u => u.id !== userId);
-  saveStoredUsers(users);
-
-  if (authState.currentUser && authState.currentUser.id === userId) {
-    localStorage.removeItem('dhun_auth_active_user');
-    localStorage.removeItem('dhun_active_profile');
-    authState.currentUser = null;
-  }
-
-  const googleUsers = users.filter(u => u && u.provider === 'google');
-  if (googleUsers.length === 0) {
-    showGoogleAddAccountScreen(false);
-  } else {
-    renderGoogleAccountsChooserList();
-  }
-  showToast('ℹ️ Account removed from this device.');
-}
-
-function showGoogleAccountChooser() {
-  const chooser = document.getElementById('google-screen-chooser');
-  const signin = document.getElementById('google-screen-signin');
-  const oauth = document.getElementById('google-screen-oauth');
-  if (chooser) chooser.style.display = 'grid';
-  if (signin) signin.style.display = 'none';
-  if (oauth) oauth.style.display = 'none';
-}
-
-function showGoogleAddAccountScreen(canGoBack = true) {
-  const chooser = document.getElementById('google-screen-chooser');
-  const signin = document.getElementById('google-screen-signin');
-  const oauth = document.getElementById('google-screen-oauth');
-  if (chooser) chooser.style.display = 'none';
-  if (signin) signin.style.display = 'grid';
-  if (oauth) oauth.style.display = 'none';
-
-  const backBtn = document.getElementById('google-back-to-chooser-btn');
-  if (backBtn) {
-    backBtn.style.display = canGoBack ? 'inline-block' : 'none';
-  }
-
-  const emailInput = document.getElementById('google-new-email') || document.getElementById('google-input-email');
-  if (emailInput) {
-    emailInput.value = '';
-    setTimeout(() => { if (typeof emailInput.focus === 'function') emailInput.focus(); }, 80);
-  }
-  const nameInput = document.getElementById('google-new-name') || document.getElementById('google-input-name');
-  if (nameInput) nameInput.value = '';
-}
-
-function closeGoogleAuthModal() {
-  const modal = document.getElementById('google-auth-modal');
-  if (modal) modal.style.display = 'none';
-  if (!_googleAuthIsFromGate) {
-    const mainAuthModal = document.getElementById('auth-modal');
-    if (mainAuthModal) mainAuthModal.style.display = 'flex';
-  }
-}
-
-function handleGoogleSelectAccount(userIdOrEmail) {
-  const users = getStoredUsers();
-  let user = users.find(u => u.id === userIdOrEmail || u.email === userIdOrEmail);
-
-  if (!user) {
-    showToast('⚠️ Google account not found.');
-    return;
-  }
-
-  // Show a Google-style confirmation step before signing in
-  _pendingGoogleUser = user;
-  _pendingGoogleUsers = users;
-  showGoogleConfirmScreen(user);
-}
-
-let _pendingGoogleUser = null;
-let _pendingGoogleUsers = null;
-
-function showGoogleConfirmScreen(user) {
-  const chooser = document.getElementById('google-screen-chooser');
-  const signin = document.getElementById('google-screen-signin');
-  let confirmScreen = document.getElementById('google-screen-confirm');
-
-  if (chooser) chooser.style.display = 'none';
-  if (signin) signin.style.display = 'none';
-
-  // Create confirm screen if it doesn't exist
-  if (!confirmScreen) {
-    confirmScreen = document.createElement('div');
-    confirmScreen.id = 'google-screen-confirm';
-    confirmScreen.className = 'google-dialog-body';
-    const container = document.querySelector('.google-dialog-container');
-    if (container) {
-      const footer = document.querySelector('.google-dialog-footer');
-      container.insertBefore(confirmScreen, footer);
-    }
-  }
-
-  const initial = (user.name || 'U').charAt(0).toUpperCase();
-  const bg = user.avatarColor || '#4285F4';
-
-  confirmScreen.innerHTML = `
-    <div class="google-body-left">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-        <div style="width:36px;height:36px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;color:#fff;flex-shrink:0;">${initial}</div>
-        <div>
-          <div style="font-size:14px;font-weight:600;color:#202124;">${escapeHtmlText(user.name)}</div>
-          <div style="font-size:12px;color:#5f6368;">${escapeHtmlText(user.email)}</div>
-        </div>
-      </div>
-      <h1 class="google-choose-title" style="font-size:22px;margin-top:12px;">Confirm sign-in</h1>
-      <p class="google-choose-sub" style="margin-top:6px;">You'll be signed in to Dhun as <strong>${escapeHtmlText(user.name)}</strong></p>
-    </div>
-    <div class="google-body-right">
-      <div style="background:#f8f9fa;border:1px solid #dadce0;border-radius:12px;padding:18px;margin-bottom:16px;">
-        <p style="font-size:13px;color:#5f6368;margin:0 0 10px;line-height:1.5;">Google will share your name, email address, and profile picture with Dhun Music.</p>
-        <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="#34a853"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
-          <span style="font-size:12px;color:#202124;">Verified Google Account</span>
-        </div>
-      </div>
-      <div class="google-form-actions" style="justify-content:flex-end;gap:12px;">
-        <button type="button" class="google-btn-text" onclick="cancelGoogleConfirm()">Cancel</button>
-        <button type="button" class="google-btn-blue" onclick="confirmGoogleSignIn()">Continue</button>
-      </div>
-    </div>
-  `;
-
-  confirmScreen.style.display = 'grid';
-}
-
-function cancelGoogleConfirm() {
-  const confirmScreen = document.getElementById('google-screen-confirm');
-  if (confirmScreen) confirmScreen.style.display = 'none';
-  _pendingGoogleUser = null;
-  _pendingGoogleUsers = null;
-
-  // Go back to chooser or close
-  const googleUsers = (getStoredUsers() || []).filter(u => u && u.provider === 'google');
-  if (googleUsers.length > 0) {
-    showGoogleAccountChooser();
-  } else {
-    closeGoogleAuthModal();
-  }
-}
-
-function confirmGoogleSignIn() {
-  const user = _pendingGoogleUser;
-  const users = _pendingGoogleUsers || getStoredUsers();
-  if (!user) return;
-
-  user.provider = 'google';
-  user.lastLoginAt = Date.now();
-  saveStoredUsers(users);
-  saveCredentials(user.email);
-
-  const confirmScreen = document.getElementById('google-screen-confirm');
-  if (confirmScreen) confirmScreen.style.display = 'none';
-
-  closeGoogleAuthModal();
-  closeAuthModal();
-
-  if (_googleAuthIsFromGate) {
-    enterAppFromGate(user);
-  } else {
-    switchToUser(user);
-  }
-
-  showToast(`✅ Welcome, ${user.name}! Signed in with Google.`);
-  pushProfileToCloud();
-
-  _pendingGoogleUser = null;
-  _pendingGoogleUsers = null;
-}
-
-function submitGoogleNewAccount() {
-  const el1 = document.getElementById('google-input-email');
-  const el2 = document.getElementById('google-new-email');
-  const emailInput = (el1 && el1.value) ? el1 : (el2 || el1);
-
-  const n1 = document.getElementById('google-input-name');
-  const n2 = document.getElementById('google-new-name');
-  const nameInput = (n1 && n1.value) ? n1 : (n2 || n1);
-
-  let emailVal = ((emailInput && emailInput.value) ? emailInput.value : '').trim().toLowerCase();
-  let nameVal = ((nameInput && nameInput.value) ? nameInput.value : '').trim();
-
-  if (!emailVal) {
-    showToast('⚠️ Please enter an email address');
-    if (emailInput && typeof emailInput.focus === 'function') emailInput.focus();
-    return;
-  }
-  if (!emailVal.includes('@')) {
-    emailVal = `${emailVal}@gmail.com`;
-  }
-  // Only generate a default name if user left it blank — use email prefix
-  const userProvidedName = nameVal; // Preserve what user explicitly typed
-  if (!nameVal) {
-    nameVal = emailVal.split('@')[0];
-    nameVal = nameVal.charAt(0).toUpperCase() + nameVal.slice(1);
-  }
-
-  const palette = ['#1a73e8', '#ea4335', '#fbbc05', '#34a853', '#7c3aed'];
-  const avatarColor = palette[Math.floor(Math.random() * palette.length)];
-  const canonicalId = makeUserIdFromEmail(emailVal);
-  const users = getStoredUsers();
-  let existing = users.find(u => u.email && u.email.toLowerCase().trim() === emailVal);
-
-  if (!existing) {
-    existing = {
-      id: canonicalId,
-      name: nameVal,
-      email: emailVal,
-      avatarColor: avatarColor,
-      provider: 'google',
-      bio: 'Google Verified Listener 🎧',
-      joinedAt: Date.now(),
-      lastLoginAt: Date.now()
-    };
-    users.push(existing);
-  } else {
-    if (existing.id && existing.id !== canonicalId) {
-      mergeUserStorageData(existing.id, canonicalId);
-    }
-    existing.id = canonicalId;
-    // Only update name if user explicitly provided one in this session
-    if (userProvidedName) {
-      existing.name = userProvidedName;
-    }
-    existing.provider = 'google';
-    existing.avatarColor = existing.avatarColor || avatarColor;
-    existing.lastLoginAt = Date.now();
-  }
-
-  saveStoredUsers(users);
-  saveCredentials(existing.email);
-
-  // Show confirmation instead of auto-login
-  _pendingGoogleUser = existing;
-  _pendingGoogleUsers = users;
-  showGoogleConfirmScreen(existing);
-}
-
-// Backward-compatibility aliases
-function submitGoogleSignInModal() {
-  return submitGoogleNewAccount();
-}
-function handleGoogleSelectSavedAccount(userId) {
-  return handleGoogleSelectAccount(userId);
-}
-function handleGoogleQuickAccountClick() {
-  // Always open Google auth modal for explicit confirmation
-  handleGoogleSignIn(true);
-}
-
-
-function signOutUser() {
-  showAppConfirm('Sign Out?', 'Are you sure you want to sign out of your account?', 'Sign Out', true, () => {
-    localStorage.removeItem('dhun_auth_active_user');
-    localStorage.removeItem('dhun_active_profile');
-    authState.currentUser = null;
-
-    // FIX (Guest Isolation): Purge any guest entries from persisted users list on every sign-out
-    try {
-      const cleanedUsers = (getStoredUsers() || []).filter(u => u && u.id !== 'guest' && u.provider !== 'guest');
-      saveStoredUsers(cleanedUsers);
-      authState.users = cleanedUsers;
-    } catch(e) {}
-
-    // 1. Reset in-memory playlists and songs state cleanly to prevent cross-session bleed
-    state.playlists = [];
-    if (Array.isArray(state.songs)) {
-      state.songs.forEach(s => { s.liked = false; });
-    }
-    if (Array.isArray(_libAllSongs)) {
-      _libAllSongs.forEach(s => { s.liked = false; });
-    }
-    if (state.currentSong) {
-      state.currentSong.liked = false;
-    }
-
-    // 2. Reset player heart buttons
-    const ph = document.getElementById('player-heart');
-    if (ph) { ph.textContent = '♡'; ph.classList.remove('liked'); }
-    const pbLike = document.getElementById('pb-like');
-    if (pbLike) { pbLike.textContent = '♡'; pbLike.classList.remove('liked'); }
-
-    // 3. Pause playback if currently playing
-    try {
-      if (typeof pauseSong === 'function') pauseSong();
-    } catch(e) {}
-
-    // 4. Clear sidebar and profile playlists UI
-    const sbPls = document.getElementById('sidebar-playlists');
-    if (sbPls) sbPls.innerHTML = '';
-    const profPls = document.getElementById('tab-content-playlists');
-    if (profPls) profPls.innerHTML = '';
-
-    const gateScreen = document.getElementById('login-gate-screen');
-    const appShell   = document.getElementById('app');
-
-    if (appShell) {
-      appShell.style.display = 'none';
-    }
-    if (gateScreen) {
-      gateScreen.style.display = 'flex';
-      gateScreen.classList.remove('gate-exiting');
-      switchGateTab('signin');
-      renderGateAvatarColorPicker();
-      renderGateSavedProfiles();
-      populateSavedCredentials();
-      // Re-init Google One Tap for next sign-in
-      _gsiInitialized = false;
-      initGoogleOneTap();
-    }
-
-    showToast('👋 Signed out. Please sign in to enter Dhun.');
-  });
-}
 
 
 function toggleUserMenu(force) {

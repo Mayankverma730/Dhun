@@ -6676,3 +6676,347 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   color: #fff;
   border-color: var(--purple-bright);
 }
+
+/* ══════════════════════════════════════════════════════════
+   REBUILT UNIFIED AUTHENTICATION STYLES (v34.0)
+   ══════════════════════════════════════════════════════════ */
+.auth-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.auth-input-wrap .form-input {
+  padding-right: 42px !important;
+  margin-bottom: 0 !important;
+}
+
+.auth-pwd-toggle {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  user-select: none;
+  z-index: 2;
+}
+
+.auth-pwd-toggle:hover {
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.auth-inline-error {
+  display: none;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  margin-top: 12px;
+  animation: authShake 0.3s ease-out;
+}
+
+.auth-inline-error a {
+  color: #ffffff;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.auth-inline-success {
+  display: none;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  color: #86efac;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  margin-top: 12px;
+  animation: fadeIn 0.25s ease-out;
+}
+
+@keyframes authShake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
+/* Password Strength Meter */
+.auth-pwd-strength {
+  display: none;
+  margin-top: 6px;
+  width: 100%;
+}
+
+.auth-pwd-meter {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.auth-pwd-meter-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: 2px;
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+.auth-pwd-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  display: flex;
+  justify-content: space-between;
+}
+
+/* Password Match Hint */
+.auth-match-hint {
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 4px;
+  min-height: 16px;
+  transition: color 0.2s ease;
+}
+.auth-match-hint.matched {
+  color: #4ade80;
+}
+.auth-match-hint.mismatch {
+  color: #f87171;
+}
+
+/* Saved Profile Chips */
+.saved-profiles-card {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.saved-profiles-heading {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.saved-profiles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.saved-profile-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.saved-profile-chip:hover {
+  background: rgba(124, 58, 237, 0.16);
+  border-color: rgba(124, 58, 237, 0.4);
+  transform: translateY(-1px);
+}
+
+.saved-profile-chip .chip-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  color: #ffffff;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.saved-profile-chip .chip-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.saved-profile-chip .chip-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.saved-profile-chip .chip-email {
+  font-size: 11px;
+  color: var(--text-3);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.saved-profile-delete-btn {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 14px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.saved-profile-delete-btn:hover {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.15);
+}
+
+/* Glassmorphism Google Setup Sheet */
+.google-setup-card {
+  width: min(520px, 94vw);
+  background: rgba(18, 12, 33, 0.95);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1.5px solid rgba(66, 133, 244, 0.35);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.75), 0 0 30px rgba(66, 133, 244, 0.2);
+  border-radius: 24px;
+  padding: 30px 28px;
+  position: relative;
+  animation: notifSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  color: var(--text-1);
+}
+
+.google-setup-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.google-setup-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(66, 133, 244, 0.12);
+  border: 1px solid rgba(66, 133, 244, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.google-setup-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-1);
+  margin: 0 0 3px 0;
+}
+
+.google-setup-subtitle {
+  font-size: 12.5px;
+  color: var(--text-2);
+  margin: 0;
+}
+
+.google-origin-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin-top: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.google-origin-chip:hover {
+  background: rgba(66, 133, 244, 0.15);
+  border-color: rgba(66, 133, 244, 0.4);
+  transform: translateY(-1px);
+}
+
+.google-origin-chip code {
+  font-family: monospace;
+  font-size: 12px;
+  color: #93c5fd;
+}
+
+.google-setup-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.btn-google-launch {
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  background: #4285F4;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px rgba(66, 133, 244, 0.4);
+}
+
+.btn-google-launch:hover {
+  background: #3367d6;
+  transform: translateY(-1px);
+}
+
+.btn-google-instant-demo {
+  width: 100%;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px dashed rgba(66, 133, 244, 0.4);
+  color: #93c5fd;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-google-instant-demo:hover {
+  background: rgba(66, 133, 244, 0.15);
+  color: #ffffff;
+}
