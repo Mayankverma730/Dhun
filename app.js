@@ -3692,22 +3692,43 @@ let _googleAuthIsFromGate = false;
    Get one at: console.cloud.google.com → APIs & Services → Credentials
    Add http://localhost:3000 as an Authorized JavaScript origin.
 ─────────────────────────────────────────────────────────────────────────── */
-const DHUN_GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
+function getGoogleClientId() {
+  const stored = localStorage.getItem('dhun_google_client_id');
+  if (stored && stored.trim() && !stored.startsWith('YOUR_GOOGLE')) return stored.trim();
+  if (typeof CONFIG !== 'undefined' && CONFIG.GOOGLE_CLIENT_ID && !CONFIG.GOOGLE_CLIENT_ID.startsWith('YOUR_GOOGLE')) {
+    return CONFIG.GOOGLE_CLIENT_ID.trim();
+  }
+  if (typeof window !== 'undefined' && window.DHUN_GOOGLE_CLIENT_ID && !window.DHUN_GOOGLE_CLIENT_ID.startsWith('YOUR_GOOGLE')) {
+    return window.DHUN_GOOGLE_CLIENT_ID.trim();
+  }
+  return '';
+}
+
+function setGoogleClientId(id) {
+  if (!id) return;
+  id = id.trim();
+  localStorage.setItem('dhun_google_client_id', id);
+  if (typeof CONFIG !== 'undefined') CONFIG.GOOGLE_CLIENT_ID = id;
+  window.DHUN_GOOGLE_CLIENT_ID = id;
+  _gsiInitialized = false;
+  initGoogleOneTap();
+}
+
+const DHUN_GOOGLE_CLIENT_ID = getGoogleClientId() || 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
 let _gsiInitialized = false;
 let _gsiOneTapShown = false;
 
 function initGoogleOneTap() {
-  // Only initialize if the GSI library loaded successfully
   if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) return;
   if (_gsiInitialized) return;
-  _gsiInitialized = true;
 
-  // Skip if no real Client ID configured
-  if (DHUN_GOOGLE_CLIENT_ID.startsWith('YOUR_GOOGLE')) return;
+  const clientId = getGoogleClientId();
+  if (!clientId || clientId.startsWith('YOUR_GOOGLE')) return;
+  _gsiInitialized = true;
 
   try {
     google.accounts.id.initialize({
-      client_id: DHUN_GOOGLE_CLIENT_ID,
+      client_id: clientId,
       callback: handleGSICredentialResponse,
       auto_select: false,
       cancel_on_tap_outside: true,
@@ -3719,105 +3740,256 @@ function initGoogleOneTap() {
   }
 }
 
+function copyOriginToClipboard(originText) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(originText).then(() => {
+      showToast(`📋 Copied "${originText}" to clipboard!`);
+    }).catch(() => {
+      showToast(`Origin: ${originText}`);
+    });
+  } else {
+    showToast(`Origin: ${originText}`);
+  }
+}
+
+function showGoogleOAuthSetupScreen() {
+  const chooser = document.getElementById('google-screen-chooser');
+  const signin = document.getElementById('google-screen-signin');
+  const oauthScreen = document.getElementById('google-screen-oauth');
+
+  if (chooser) chooser.style.display = 'none';
+  if (signin) signin.style.display = 'none';
+  if (oauthScreen) oauthScreen.style.display = 'grid';
+
+  const input = document.getElementById('google-client-id-input');
+  if (input) {
+    input.value = getGoogleClientId();
+    setTimeout(() => { if (typeof input.focus === 'function') input.focus(); }, 80);
+  }
+}
+
+function saveAndLaunchGoogleOAuth() {
+  const input = document.getElementById('google-client-id-input');
+  const val = (input && input.value ? input.value : '').trim();
+
+  if (!val) {
+    showToast('⚠️ Please paste your Google OAuth Web Client ID.');
+    if (input) input.focus();
+    return;
+  }
+
+  setGoogleClientId(val);
+  showToast('✅ Google OAuth Client ID saved!');
+  launchGoogleOAuth(_googleAuthIsFromGate);
+}
+
+function applyGoogleProfile(profile) {
+  if (!profile) return;
+  const email = (profile.email || '').toLowerCase().trim();
+  if (!email) {
+    showToast('⚠️ No email returned from Google.');
+    return;
+  }
+
+  const name = profile.name || profile.given_name || email.split('@')[0];
+  const pic = profile.picture || null;
+  const sub = profile.sub || null;
+
+  const canonicalId = makeUserIdFromEmail(email);
+  const users = getStoredUsers().filter(u => u && u.id !== 'guest' && u.provider !== 'guest');
+  let existing = users.find(u => u.email && u.email.toLowerCase().trim() === email);
+
+  if (!existing) {
+    existing = {
+      id: canonicalId,
+      name: name,
+      email: email,
+      avatarUrl: pic || null,
+      avatarColor: '#1a73e8',
+      provider: 'google',
+      googleSub: sub,
+      bio: 'Verified Google Listener 🎧',
+      joinedAt: Date.now(),
+      lastLoginAt: Date.now()
+    };
+    users.push(existing);
+  } else {
+    existing.name = name || existing.name;
+    existing.avatarUrl = pic || existing.avatarUrl;
+    existing.provider = 'google';
+    existing.googleSub = sub || existing.googleSub;
+    existing.lastLoginAt = Date.now();
+  }
+
+  saveStoredUsers(users);
+  saveCredentials(email);
+
+  // Close modals
+  closeGoogleAuthModal();
+  closeAuthModal();
+
+  if (_googleAuthIsFromGate) {
+    enterAppFromGate(existing);
+  } else {
+    switchToUser(existing);
+  }
+
+  showToast(`✅ Welcome, ${existing.name}! Signed in with Google.`);
+  pushProfileToCloud();
+}
+
 function handleGSICredentialResponse(response) {
-  // response.credential is a JWT ID token from Google
   try {
     const token = response && response.credential;
     if (!token) throw new Error('No credential');
 
-    // Decode the JWT payload (base64url middle part)
     const parts = token.split('.');
     if (parts.length < 2) throw new Error('Invalid JWT');
     const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
 
-    const email = (payload.email || '').toLowerCase().trim();
-    const name  = payload.name || payload.given_name || email.split('@')[0];
-    const pic   = payload.picture || null;
-    const sub   = payload.sub || null; // Google unique user ID
-
-    if (!email) throw new Error('No email in token');
-
-    const canonicalId = makeUserIdFromEmail(email);
-    const users = getStoredUsers().filter(u => u && u.id !== 'guest' && u.provider !== 'guest');
-    let existing = users.find(u => u.email && u.email.toLowerCase().trim() === email);
-
-    if (!existing) {
-      existing = {
-        id: canonicalId,
-        name: name,
-        email: email,
-        avatarUrl: pic || null,
-        avatarColor: '#1a73e8',
-        provider: 'google',
-        googleSub: sub,
-        bio: 'Google Verified Listener 🎧',
-        joinedAt: Date.now(),
-        lastLoginAt: Date.now()
-      };
-      users.push(existing);
-    } else {
-      // Update with freshest data from Google
-      existing.id = canonicalId;
-      existing.name = name || existing.name;
-      existing.avatarUrl = pic || existing.avatarUrl;
-      existing.provider = 'google';
-      existing.googleSub = sub || existing.googleSub;
-      existing.lastLoginAt = Date.now();
-    }
-
-    saveStoredUsers(users);
-    saveCredentials(email);
-
-    // Close any open auth modals
-    const googleModal = document.getElementById('google-auth-modal');
-    if (googleModal) googleModal.style.display = 'none';
-    closeAuthModal();
-
-    if (_googleAuthIsFromGate) {
-      enterAppFromGate(existing);
-    } else {
-      switchToUser(existing);
-    }
-
-    showToast(`✅ Signed in with Google as ${existing.name}!`);
-    pushProfileToCloud();
-
+    applyGoogleProfile(payload);
   } catch(err) {
     console.error('[Dhun] GSI credential decode failed:', err);
     showToast('⚠️ Google sign-in failed. Please try again.');
-    // Fall back to the manual Google form
-    openGoogleAuthModal(_googleAuthIsFromGate);
+    openGoogleOAuthSetupModal(_googleAuthIsFromGate);
   }
+}
+
+function launchGoogleOAuth(isFromGate = false) {
+  _googleAuthIsFromGate = isFromGate;
+  const clientId = getGoogleClientId();
+
+  // If no Client ID is configured yet, open the setup screen
+  if (!clientId || clientId.startsWith('YOUR_GOOGLE')) {
+    openGoogleOAuthSetupModal(isFromGate);
+    return;
+  }
+
+  // 1. Primary: Google Identity Services (GIS) OAuth 2.0 Token Client (Popup)
+  if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
+    try {
+      showToast('🔄 Opening Google Sign-In...');
+      const tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: 'openid email profile',
+        callback: async (tokenResponse) => {
+          if (tokenResponse && tokenResponse.access_token) {
+            try {
+              showToast('⏳ Connecting your Google account...');
+              const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
+              });
+              if (!res.ok) throw new Error('userinfo fetch failed: ' + res.status);
+              const googleProfile = await res.json();
+              applyGoogleProfile(googleProfile);
+            } catch (err) {
+              console.error('[Google OAuth] Userinfo fetch failed:', err);
+              showToast('⚠️ Failed to load Google profile data.');
+            }
+          } else if (tokenResponse && tokenResponse.error) {
+            console.warn('[Google OAuth] Error response:', tokenResponse.error);
+            showToast(`⚠️ Google sign-in: ${tokenResponse.error}`);
+          }
+        },
+        error_callback: (err) => {
+          console.warn('[Google OAuth] Client error:', err);
+          if (err && err.message) showToast(`⚠️ Google OAuth error: ${err.message}`);
+        }
+      });
+
+      tokenClient.requestAccessToken({ prompt: 'consent' });
+      return;
+    } catch (e) {
+      console.warn('[Google OAuth] Token Client init error, falling back to popup:', e);
+    }
+  }
+
+  // 2. Secondary: Google One Tap / GSI Prompt
+  if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+    try {
+      if (!_gsiInitialized) initGoogleOneTap();
+      google.accounts.id.prompt((notification) => {
+        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+          launchGoogleOAuthPopupFallback(clientId);
+        }
+      });
+      return;
+    } catch (e) {
+      // Fall through
+    }
+  }
+
+  // 3. Fallback: Direct OAuth 2.0 Popup Window
+  launchGoogleOAuthPopupFallback(clientId);
+}
+
+function launchGoogleOAuthPopupFallback(clientId) {
+  const width = 500, height = 620;
+  const left = window.screenX + (window.outerWidth - width) / 2;
+  const top = window.screenY + (window.outerHeight - height) / 2;
+  const redirectUri = window.location.origin + window.location.pathname;
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=openid%20email%20profile&prompt=select_account`;
+
+  const popup = window.open(authUrl, 'GoogleSignInPopup', `width=${width},height=${height},left=${left},top=${top}`);
+  if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+    showToast('⚠️ Popup blocked! Please allow popups or use in-app setup.');
+    openGoogleOAuthSetupModal(_googleAuthIsFromGate);
+  }
+}
+
+function openGoogleOAuthSetupModal(isFromGate = false) {
+  _googleAuthIsFromGate = isFromGate;
+  const modal = document.getElementById('google-auth-modal');
+  if (!modal) return;
+
+  if (!isFromGate) {
+    const mainAuthModal = document.getElementById('auth-modal');
+    if (mainAuthModal) mainAuthModal.style.display = 'none';
+  }
+
+  showGoogleOAuthSetupScreen();
+  modal.style.display = 'flex';
 }
 
 function handleGoogleSignIn(isFromGate = false) {
   _googleAuthIsFromGate = isFromGate;
-
-  // Try real Google GSI One Tap / Popup first
-  if (typeof google !== 'undefined' && google.accounts && google.accounts.id &&
-      !DHUN_GOOGLE_CLIENT_ID.startsWith('YOUR_GOOGLE')) {
-    try {
-      if (!_gsiInitialized) initGoogleOneTap();
-      // Show the Google popup sign-in flow
-      google.accounts.id.prompt((notification) => {
-        // If One Tap was suppressed (dismissed too many times, cookies blocked, etc.)
-        // fall back to the manual chooser modal
-        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-          openGoogleAuthModal(isFromGate);
-        }
-      });
-      return;
-    } catch(e) {
-      // GSI not ready, fall through to manual modal
-    }
-  }
-
-  // Fallback: open the manual Google account chooser/form
-  openGoogleAuthModal(isFromGate);
+  launchGoogleOAuth(isFromGate);
 }
 
+// Check for OAuth hash parameters on load (from popup or redirect return)
+(function checkGoogleOAuthHash() {
+  if (typeof window === 'undefined') return;
+  try {
+    if (window.location.hash && window.location.hash.includes('access_token')) {
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const token = hashParams.get('access_token');
+      if (token) {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+        fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+          .then(res => res.json())
+          .then(profile => {
+            if (profile && profile.email) {
+              applyGoogleProfile(profile);
+            }
+          })
+          .catch(e => console.warn('[Google OAuth] Token hash exchange failed:', e));
+      }
+    }
+  } catch (e) {}
+})();
+
 if (typeof window !== 'undefined') {
+  window.getGoogleClientId = getGoogleClientId;
+  window.setGoogleClientId = setGoogleClientId;
+  window.copyOriginToClipboard = copyOriginToClipboard;
+  window.showGoogleOAuthSetupScreen = showGoogleOAuthSetupScreen;
+  window.saveAndLaunchGoogleOAuth = saveAndLaunchGoogleOAuth;
+  window.applyGoogleProfile = applyGoogleProfile;
   window.handleGSICredentialResponse = handleGSICredentialResponse;
+  window.launchGoogleOAuth = launchGoogleOAuth;
+  window.openGoogleOAuthSetupModal = openGoogleOAuthSetupModal;
   window.handleGoogleSignIn = handleGoogleSignIn;
 }
 
@@ -3914,15 +4086,19 @@ function handleRemoveGoogleAccount(userId) {
 function showGoogleAccountChooser() {
   const chooser = document.getElementById('google-screen-chooser');
   const signin = document.getElementById('google-screen-signin');
+  const oauth = document.getElementById('google-screen-oauth');
   if (chooser) chooser.style.display = 'grid';
   if (signin) signin.style.display = 'none';
+  if (oauth) oauth.style.display = 'none';
 }
 
 function showGoogleAddAccountScreen(canGoBack = true) {
   const chooser = document.getElementById('google-screen-chooser');
   const signin = document.getElementById('google-screen-signin');
+  const oauth = document.getElementById('google-screen-oauth');
   if (chooser) chooser.style.display = 'none';
   if (signin) signin.style.display = 'grid';
+  if (oauth) oauth.style.display = 'none';
 
   const backBtn = document.getElementById('google-back-to-chooser-btn');
   if (backBtn) {
