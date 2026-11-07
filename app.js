@@ -1213,18 +1213,18 @@ const apiDelete = (path, opts)       => api('DELETE', path, null, opts);
 
 /* ── Gradient palette for dynamic cards ──────── */
 const GRADIENTS = [
-  'linear-gradient(135deg,#7c3aed,#2563eb)',
-  'linear-gradient(135deg,#0ea5e9,#06b6d4)',
-  'linear-gradient(135deg,#f97316,#ec4899)',
-  'linear-gradient(135deg,#7c3aed,#ec4899)',
-  'linear-gradient(135deg,#0ea5e9,#7c3aed)',
-  'linear-gradient(135deg,#f97316,#fbbf24)',
-  'linear-gradient(135deg,#10b981,#06b6d4)',
-  'linear-gradient(135deg,#6366f1,#7c3aed)',
-  'linear-gradient(135deg,#10b981,#7c3aed)',
-  'linear-gradient(135deg,#f43f5e,#ec4899)',
-  'linear-gradient(135deg,#f59e0b,#10b981)',
-  'linear-gradient(135deg,#0ea5e9,#10b981)',
+  'linear-gradient(135deg,#829779,#53684D)',
+  'linear-gradient(135deg,#DDE6D5,#829779)',
+  'linear-gradient(135deg,#F4DED2,#E9DFF0)',
+  'linear-gradient(135deg,#E9DFF0,#DCE9E9)',
+  'linear-gradient(135deg,#F5EBCB,#F4DED2)',
+  'linear-gradient(135deg,#DCE9E9,#DDE6D5)',
+  'linear-gradient(135deg,#829779,#DCE9E9)',
+  'linear-gradient(135deg,#53684D,#829779)',
+  'linear-gradient(135deg,#F4DED2,#F5EBCB)',
+  'linear-gradient(135deg,#DDE6D5,#F5EBCB)',
+  'linear-gradient(135deg,#E9DFF0,#829779)',
+  'linear-gradient(135deg,#DCE9E9,#53684D)',
 ];
 function gradientFor(id) {
   if (typeof id === 'string') {
@@ -2152,10 +2152,10 @@ function setVolume(val) {
 
   let sliderBg;
   if (val <= 100) {
-    sliderBg = `linear-gradient(to right, var(--purple, #7c3aed) ${fillPct}%, rgba(255,255,255,0.15) ${fillPct}%)`;
+    sliderBg = `linear-gradient(to right, var(--sage, #829779) ${fillPct}%, var(--border, #EAE8E0) ${fillPct}%)`;
   } else {
-    // VLC-style boost: purple up to 100%, fiery flame gradient for 101%-150%
-    sliderBg = `linear-gradient(to right, var(--purple, #7c3aed) 0%, var(--purple, #7c3aed) ${normalBoundaryPct}%, #f59e0b ${normalBoundaryPct}%, #ef4444 ${fillPct}%, rgba(255,255,255,0.15) ${fillPct}%)`;
+    // VLC-style boost: sage up to 100%, fiery flame gradient for 101%-150%
+    sliderBg = `linear-gradient(to right, var(--sage, #829779) 0%, var(--sage, #829779) ${normalBoundaryPct}%, #f59e0b ${normalBoundaryPct}%, #ef4444 ${fillPct}%, var(--border, #EAE8E0) ${fillPct}%)`;
   }
 
   // Bottom bar volume slider
@@ -2227,8 +2227,8 @@ function toggleMute() {
 const authState = {
   currentUser: null,
   users: [],
-  paletteColors: ['#7c3aed', '#ec4899', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'],
-  selectedAvatarColor: '#7c3aed'
+  paletteColors: ['#829779', '#53684D', '#A3B899', '#B5A8C8', '#D8A48F', '#9FB8B8', '#D4C59A', '#74796F'],
+  selectedAvatarColor: '#829779'
 };
 
 function getGoogleClientId() {
@@ -2526,7 +2526,7 @@ const DhunAuth = {
             const initial = (u.name || 'U').charAt(0).toUpperCase();
             return `
             <div class="saved-profile-chip" onclick="DhunAuth.selectSavedProfile('${escapeHtmlAttr(u.id)}')">
-              <div class="chip-avatar" style="background:${u.avatarColor || (isG ? '#4285F4' : '#7c3aed')}">
+              <div class="chip-avatar" style="background:${u.avatarColor || (isG ? '#4285F4' : '#829779')}">
                 ${u.avatarUrl ? `<img src="${escapeHtmlAttr(u.avatarUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;" onerror="this.onerror=null;this.parentElement.textContent='${initial}';" />` : initial}
               </div>
               <div class="chip-info">
@@ -2736,7 +2736,7 @@ const DhunAuth = {
       name: name,
       email: email,
       passwordHash: passwordHash,
-      avatarColor: authState.selectedAvatarColor || '#7c3aed',
+      avatarColor: authState.selectedAvatarColor || '#829779',
       avatarUrl: null,
       provider: 'email',
       bio: '🎵 High-fidelity music listener & collector',
@@ -2769,7 +2769,7 @@ const DhunAuth = {
       id: 'guest',
       name: 'Guest User',
       email: 'guest@dhun.local',
-      avatarColor: '#7c3aed',
+      avatarColor: '#829779',
       avatarUrl: null,
       provider: 'guest',
       bio: '🎵 Exploring Dhun Music Preview',
@@ -3430,7 +3430,7 @@ async function autoGenerateUserProfileLibrary(user, force = false) {
 }
 
 function updateAuthUI() {
-  const u = authState.currentUser || { name: 'Guest User', email: 'guest@dhun.local', provider: 'guest', avatarColor: '#7c3aed' };
+  const u = authState.currentUser || { name: 'Guest User', email: 'guest@dhun.local', provider: 'guest', avatarColor: '#829779' };
   const isGuest = (u.provider === 'guest' || u.id === 'guest');
   const initials = getProfileInitials(u.name);
 
@@ -3914,7 +3914,7 @@ function renderUserMenuAccounts() {
     <p class="ump-section-label" style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;padding:4px 12px;letter-spacing:0.5px">Switch Account</p>
     ${otherUsers.map(u => `
       <button class="ump-item" onclick="switchAccount('${u.id}');toggleUserMenu(false)">
-        <span class="palette-dot" style="background:${u.avatarColor || '#7c3aed'};width:18px;height:18px;display:inline-block;border-radius:50%;margin-right:8px"></span>
+        <span class="palette-dot" style="background:${u.avatarColor || '#829779'};width:18px;height:18px;display:inline-block;border-radius:50%;margin-right:8px"></span>
         <div style="text-align:left;overflow:hidden">
           <p style="font-size:13px;font-weight:600;color:var(--text-1);margin:0;line-height:1.2">${escapeHtmlText(u.name)}</p>
           <p style="font-size:11px;color:var(--text-3);margin:0;line-height:1.2">${escapeHtmlText(u.email)}</p>
@@ -4164,7 +4164,7 @@ function openProfileCoverModal() {
   const previewAvatar = document.getElementById('pcover-preview-avatar');
   if (previewAvatar && authState.currentUser) {
     previewAvatar.textContent = getProfileInitials(authState.currentUser.name);
-    previewAvatar.style.background = authState.currentUser.avatarColor || '#7c3aed';
+    previewAvatar.style.background = authState.currentUser.avatarColor || '#829779';
   }
 
   // Highlight active preset if matching
@@ -5262,7 +5262,7 @@ function renderPlaylistsFeatured() {
 
   row.innerHTML = plCards + `
     <div class="feat-card" onclick="createPlaylist()" style="cursor:pointer">
-      <div class="feat-thumb" style="background:linear-gradient(135deg,#7c3aed,#2563eb);display:flex;align-items:center;justify-content:center;font-size:28px;color:#fff">+</div>
+      <div class="feat-thumb" style="background:linear-gradient(135deg,var(--sage),var(--dark-sage));display:flex;align-items:center;justify-content:center;font-size:28px;color:#fff">+</div>
       <div class="feat-info">
         <span class="feat-tag">🎵 Custom</span>
         <h3 class="feat-name">Create Playlist</h3>
@@ -6123,7 +6123,7 @@ function renderLibrary(songs) {
         <p style="font-weight:700;font-size:16px;color:var(--text-1);margin-bottom:6px">Your Profile Library is Empty</p>
         <p style="font-size:13px;color:var(--text-3);max-width:440px;margin:0 auto 18px">Instantly auto-generate your personal library tailored with top YouTube Music category hits for your profile!</p>
         <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-          <button class="btn-primary" onclick="autoGenerateUserProfileLibrary(authState.currentUser, true)" style="display:inline-flex;align-items:center;gap:6px;padding:9px 20px;background:linear-gradient(135deg,#e11d48,#7c3aed);border:none;box-shadow:0 4px 14px rgba(225,29,72,0.35);font-size:13px">
+          <button class="btn-primary" onclick="autoGenerateUserProfileLibrary(authState.currentUser, true)" style="display:inline-flex;align-items:center;gap:6px;padding:9px 20px;background:var(--sage);border:none;box-shadow:0 4px 14px rgba(83,104,77,0.25);font-size:13px">
             ⚡ Auto-Generate via YT Music
           </button>
           <button class="btn-secondary" onclick="triggerAddSongFromPC()" style="display:inline-flex;align-items:center;gap:6px;padding:9px 18px;font-size:13px">
@@ -6503,7 +6503,7 @@ function getUserNotifications() {
     {
       id: 'welcome_' + u.id,
       icon: '🎵',
-      grad: 'linear-gradient(135deg,#7c3aed,#2563eb)',
+      grad: 'linear-gradient(135deg,var(--sage),var(--dark-sage))',
       title: 'Welcome to Dhun',
       text: `Your private profile is active. Enjoy high-fidelity listening!`,
       time: 'Just now',
@@ -6529,7 +6529,7 @@ function renderUserNotifications() {
   }
   list.innerHTML = notifs.map(n => `
     <div class="notif-item ${n.unread ? 'unread' : ''}" onclick="dismissNotifById('${n.id}')">
-      <div class="notif-icon" style="background:${n.grad || 'linear-gradient(135deg,#7c3aed,#ec4899)'}">${n.icon || '🔔'}</div>
+      <div class="notif-icon" style="background:${n.grad || 'linear-gradient(135deg,var(--sage),var(--light-sage))'}">${n.icon || '🔔'}</div>
       <div class="notif-body">
         <p class="notif-text"><strong>${escapeHtmlText(n.title)}:</strong> ${escapeHtmlText(n.text)}</p>
         <p class="notif-time">${n.time || 'Just now'}</p>
@@ -6682,7 +6682,7 @@ function setTheme(theme, showNotice = true) {
         <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="2"/>
         <path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
       </svg>`;
-      btn.title = 'Theme: Violet Indigo (Click to change)';
+      btn.title = 'Theme: Cloud Garden (Sage & Ivory) (Click to change)';
     }
   }
 
@@ -6692,7 +6692,7 @@ function setTheme(theme, showNotice = true) {
   if (btn) btn.setAttribute('aria-expanded', 'false');
 
   if (showNotice && typeof showToast === 'function') {
-    const titles = { default: 'Violet Indigo', dark: 'Dark Electric Cyan', light: 'Light Sunburst' };
+    const titles = { default: 'Cloud Garden (Sage & Ivory)', dark: 'Midnight Forest', light: 'Sunlit Peach' };
     showToast(`🎨 Mode: ${titles[theme] || theme}`);
   }
 
@@ -7559,7 +7559,7 @@ function handleJamMessageData(data) {
               id: jamState.peerId,
               name: jamState.userName,
               avatar: jamState.isHost ? 'DJ' : jamState.userName.slice(0, 2).toUpperCase(),
-              color: jamState.isHost ? '#7c3aed' : '#06b6d4',
+              color: jamState.isHost ? '#829779' : '#53684D',
               isHost: jamState.isHost
             });
           }
@@ -7744,7 +7744,7 @@ async function startJamSession() {
   jamState._e2eKey = null; // Will be set async below
 
   const djAvatar = getProfileInitials(djName);
-  const djColor = (authState.currentUser && authState.currentUser.avatarColor) || '#7c3aed';
+  const djColor = (authState.currentUser && authState.currentUser.avatarColor) || '#829779';
 
   // Real member list: ONLY Host with unique peerId
   jamState.peerId = 'peer_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);

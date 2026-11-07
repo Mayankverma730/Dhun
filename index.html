@@ -5,23 +5,29 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="referrer" content="strict-origin-when-cross-origin" />
-  <title>Dhun – Music Management</title>
+  <title>Dhun – Cloud Garden</title>
   <meta name="description"
-    content="Dhun – Your premium music management experience. Discover, play, and manage your music." />
+    content="Dhun – Music for every little moment. An artistic, warm and premium Cloud Garden music experience." />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' blob: https://cdn.jsdelivr.net https://www.youtube.com https://accounts.google.com; worker-src 'self' blob:; child-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://*.googleusercontent.com https://lastfm.freetls.fastly.net https://*.last.fm https://is1-ssl.mzstatic.com https://is2-ssl.mzstatic.com https://is3-ssl.mzstatic.com https://is4-ssl.mzstatic.com https://is5-ssl.mzstatic.com; media-src 'self' blob: data: https://audio-ssl.itunes.apple.com; connect-src 'self' wss: wss://* https://*; frame-src 'self' https://www.youtube.com https://accounts.google.com;" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap"
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..800;1,9..40,300..800&family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,600;0,700;1,400;1,600&family=Outfit:wght@400;500;600;700&display=swap"
     rel="stylesheet" />
   <link rel="icon" type="image/png" href="logo.png" />
   <link rel="apple-touch-icon" href="logo.png" />
-  <link rel="stylesheet" href="style.css?v=34.0" />
+  <link rel="stylesheet" href="style.css?v=35.0" />
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
     (function () {
       try {
         var t = localStorage.getItem('vibe-theme');
-        if (t && t !== 'default') document.documentElement.setAttribute('data-theme', t);
+        if (t === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        } else if (t === 'light') {
+          document.documentElement.setAttribute('data-theme', 'light');
+        } else {
+          document.documentElement.removeAttribute('data-theme');
+        }
       } catch (e) {}
 
       // If user opened directly via file://, show banner and offer redirect to http://localhost:3000
@@ -69,9 +75,10 @@
         <div class="gate-brand">
           <img src="logo.png" alt="Dhun Logo" class="gate-brand-icon" />
           <span class="gate-brand-name">Dhun</span>
+          <span class="gate-brand-badge">Cloud Garden</span>
         </div>
-        <h1 class="gate-hero-headline">Your Universe of Music.<br><span class="gate-gradient-text">Private, Isolated & Live.</span></h1>
-        <p class="gate-hero-sub">Step into a next-generation high-fidelity music experience. Zero data collision, real-time Listen Together rooms, and complete personal library isolation.</p>
+        <h1 class="gate-hero-headline">Music for every little moment.<br><span class="gate-gradient-text">Artistic & Private Suite.</span></h1>
+        <p class="gate-hero-sub">Step into a sunlit, peaceful listening space. Personal libraries, real-time synchronized Listen Together rooms, and high-fidelity music discovery.</p>
 
         <!-- Animated Vinyl Graphic -->
         <div class="gate-vinyl-wrap" aria-hidden="true">
@@ -340,7 +347,7 @@
         </button>
 
         <!-- Quick Action: Listen Together -->
-        <button class="nav-item sidebar-jam-btn" id="listen-together-sidebar-btn" onclick="openListenTogetherModal()" aria-label="Listen Together with Friends" style="margin-top:10px;background:linear-gradient(135deg,rgba(124,58,237,0.18),rgba(6,182,212,0.15));border:1px solid rgba(6,182,212,0.35);color:var(--text-1);font-weight:600">
+        <button class="nav-item sidebar-jam-btn" id="listen-together-sidebar-btn" onclick="openListenTogetherModal()" aria-label="Listen Together with Friends" style="margin-top:10px;background:var(--lilac);border:1px solid rgba(130,151,121,0.25);color:var(--dark-sage);font-weight:600">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
             <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
@@ -348,7 +355,7 @@
           </svg>
           <span id="jam-sidebar-btn-text">🎧 Listen Together</span>
           <span class="jam-pulse-dot" id="jam-sidebar-live-dot" style="display:none;margin-left:auto;"></span>
-          <span class="jam-count-badge" id="jam-sidebar-count-badge" style="display:none;margin-left:auto;background:#10b981;color:#fff;font-size:11px;font-weight:700;padding:1px 6px;border-radius:10px;">0</span>
+          <span class="jam-count-badge" id="jam-sidebar-count-badge" style="display:none;margin-left:auto;background:var(--sage);color:#fff;font-size:11px;font-weight:700;padding:1px 6px;border-radius:10px;">0</span>
         </button>
 
         <p class="nav-section-label" style="margin-top:28px">Your Playlists</p>
@@ -421,17 +428,17 @@
               <div class="theme-panel-title">🎨 Appearance</div>
               <button class="theme-option active" id="theme-opt-default" onclick="setTheme('default')">
                 <div class="theme-swatch swatch-default"></div>
-                <span class="theme-label theme-label-default">Default</span>
+                <span class="theme-label theme-label-default">Cloud Garden (Default)</span>
                 <span class="theme-check" id="check-default">✓</span>
               </button>
               <button class="theme-option" id="theme-opt-dark" onclick="setTheme('dark')">
                 <div class="theme-swatch swatch-dark"></div>
-                <span class="theme-label theme-label-dark">Dark</span>
+                <span class="theme-label theme-label-dark">Midnight Forest</span>
                 <span class="theme-check" id="check-dark" style="display:none">✓</span>
               </button>
               <button class="theme-option" id="theme-opt-light" onclick="setTheme('light')">
                 <div class="theme-swatch swatch-light"></div>
-                <span class="theme-label theme-label-light">Light</span>
+                <span class="theme-label theme-label-light">Sunlit Peach</span>
                 <span class="theme-check" id="check-light" style="display:none">✓</span>
               </button>
             </div>
@@ -526,7 +533,7 @@
             </div>
             <div class="featured-row" id="featured-playlists-row">
               <div class="feat-card" onclick="createPlaylist()" style="cursor:pointer">
-                <div class="feat-thumb" style="background:linear-gradient(135deg,#7c3aed,#2563eb);display:flex;align-items:center;justify-content:center;font-size:28px;color:#fff">+</div>
+                <div class="feat-thumb" style="background:linear-gradient(135deg,var(--sage),var(--dark-sage));display:flex;align-items:center;justify-content:center;font-size:28px;color:#fff">+</div>
                 <div class="feat-info">
                   <span class="feat-tag">🎵 Custom</span>
                   <h3 class="feat-name">Create Playlist</h3>
@@ -588,7 +595,7 @@
                 <button class="mood-pill" id="mood-happy" onclick="selectMood(this)">🎉 Party</button>
               </div>
               <div class="mood-song" onclick="if(state.songs.length) openPlayerById(state.songs[0].id)">
-                <div class="ms-thumb" style="background:linear-gradient(135deg,#7c3aed,#2563eb)"><img src="album1.jpg"
+                <div class="ms-thumb" style="background:linear-gradient(135deg,var(--light-sage),var(--mist))"><img src="album1.jpg"
                     alt="Now Playing" /></div>
                 <div class="ms-info">
                   <p class="ms-name" id="mood-song-name">Tujhko Jo Paaya</p>
@@ -603,7 +610,7 @@
             <div class="side-card glass-card">
               <h3 class="side-card-title">👥 Listen Together</h3>
               <div class="friend-item" onclick="openListenTogetherModal()" style="cursor:pointer">
-                <div class="friend-av" style="background:linear-gradient(135deg,#7c3aed,#ec4899)">🎧</div>
+                <div class="friend-av" style="background:linear-gradient(135deg,var(--mist),var(--lilac))">🎧</div>
                 <div class="friend-info">
                   <p class="friend-name">Synchronized Jam</p>
                   <p class="friend-song">🎵 Real-time beat & song sync</p>
@@ -704,35 +711,35 @@
               <h2 class="section-title">🎨 Browse Categories</h2>
             </div>
             <div class="categories-grid">
-              <div class="cat-card" style="background:linear-gradient(135deg,#7c3aed,#2563eb)"
+              <div class="cat-card cat-pop" style="background:linear-gradient(135deg,#F4DED2,#E9DFF0)"
                 onclick="searchCategory('Pop')"><span class="cat-emoji">🎤</span>
                 <p>Pop</p>
               </div>
-              <div class="cat-card" style="background:linear-gradient(135deg,#0ea5e9,#06b6d4)"
+              <div class="cat-card cat-electronic" style="background:linear-gradient(135deg,#DCE9E9,#DDE6D5)"
                 onclick="searchCategory('Electronic')"><span class="cat-emoji">⚡</span>
                 <p>Electronic</p>
               </div>
-              <div class="cat-card" style="background:linear-gradient(135deg,#f97316,#fbbf24)"
+              <div class="cat-card cat-bollywood" style="background:linear-gradient(135deg,#F5EBCB,#F4DED2)"
                 onclick="searchCategory('Bollywood')"><span class="cat-emoji">🎶</span>
                 <p>Bollywood</p>
               </div>
-              <div class="cat-card" style="background:linear-gradient(135deg,#ec4899,#f97316)"
+              <div class="cat-card cat-punjabi" style="background:linear-gradient(135deg,#F4DED2,#F5EBCB)"
                 onclick="searchCategory('Punjabi')"><span class="cat-emoji">⚡</span>
                 <p>Punjabi</p>
               </div>
-              <div class="cat-card" style="background:linear-gradient(135deg,#10b981,#0ea5e9)"
+              <div class="cat-card cat-lofi" style="background:linear-gradient(135deg,#DDE6D5,#DCE9E9)"
                 onclick="searchCategory('Lo-Fi')"><span class="cat-emoji">☕</span>
                 <p>Lo-Fi</p>
               </div>
-              <div class="cat-card" style="background:linear-gradient(135deg,#6366f1,#7c3aed)"
+              <div class="cat-card cat-rock" style="background:linear-gradient(135deg,#E9DFF0,#DCE9E9)"
                 onclick="searchCategory('Rock')"><span class="cat-emoji">🎸</span>
                 <p>Rock</p>
               </div>
-              <div class="cat-card" style="background:linear-gradient(135deg,#f43f5e,#ec4899)"
+              <div class="cat-card cat-romantic" style="background:linear-gradient(135deg,#F4DED2,#E9DFF0)"
                 onclick="searchCategory('Romantic')"><span class="cat-emoji">💖</span>
                 <p>Romantic</p>
               </div>
-              <div class="cat-card" style="background:linear-gradient(135deg,#f59e0b,#10b981)"
+              <div class="cat-card cat-hiphop" style="background:linear-gradient(135deg,#DDE6D5,#F5EBCB)"
                 onclick="searchCategory('Hip-Hop')"><span class="cat-emoji">🎧</span>
                 <p>Hip-Hop</p>
               </div>
@@ -1235,7 +1242,7 @@
             <div class="tab-content" id="tab-content-activity">
               <div class="comment-list" id="profile-activity-list">
                 <div class="comment-card glass-card">
-                  <div class="comment-av" style="background:linear-gradient(135deg,#7c3aed,#ec4899)">🎵</div>
+                  <div class="comment-av" style="background:linear-gradient(135deg,var(--peach),var(--buttercream))">🎵</div>
                   <div class="comment-body">
                     <p class="comment-author">Personal Music Hub</p>
                     <p class="comment-text">Library synchronized with high-precision beat flow, song analytics, and live Dhun vibe aura.</p>
@@ -1287,7 +1294,7 @@
               <option value="plays">Sort: Most Played</option>
               <option value="rating">Sort: Top Rated</option>
             </select>
-            <button class="btn-primary" onclick="autoGenerateUserProfileLibrary(authState.currentUser, true)" style="padding:8px 16px;font-size:13px;display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#e11d48,#7c3aed);border:none;box-shadow:0 2px 10px rgba(225,29,72,0.3)" title="Auto-Generate Profile Library via YouTube Music Suggestions">
+            <button class="btn-primary" onclick="autoGenerateUserProfileLibrary(authState.currentUser, true)" style="padding:8px 16px;font-size:13px;display:inline-flex;align-items:center;gap:6px;background:var(--sage);border:none;box-shadow:0 2px 10px rgba(83,104,77,0.25)" title="Auto-Generate Profile Library via YouTube Music Suggestions">
               ⚡ Auto-Generate via YT
             </button>
             <button class="btn-primary btn-add-pc" onclick="triggerAddSongFromPC()" style="padding:8px 18px;font-size:13px;display:inline-flex;align-items:center;gap:6px">
@@ -1326,7 +1333,7 @@
 
       <!-- Left: Song info -->
       <div class="pb-left" onclick="navigate('player')" style="cursor:pointer">
-        <div class="pb-thumb" id="pb-thumb" style="background:linear-gradient(135deg,#7c3aed,#2563eb)">
+        <div class="pb-thumb" id="pb-thumb" style="background:linear-gradient(135deg,var(--sage),var(--dark-sage))">
           <img id="pb-img" src="album1.jpg" alt="Now playing" onerror="this.onerror=null;this.src='album1.jpg'" />
         </div>
         <div class="pb-info">
@@ -1446,7 +1453,7 @@
 
   <!-- ══ ADD SONG MODAL ══════════════════════════════ -->
   <div id="add-song-modal" style="display:none;position:fixed;inset:0;z-index:9990;
-     background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);
+     background:rgba(48,58,50,0.45);backdrop-filter:blur(10px);
      align-items:center;justify-content:center;">
     <div class="glass-card" style="width:min(480px,90vw);padding:32px;border-radius:20px;position:relative">
       <button onclick="hideAddSongModal()" style="position:absolute;top:16px;right:16px;
