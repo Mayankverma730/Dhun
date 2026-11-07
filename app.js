@@ -7305,6 +7305,7 @@ const jamState = {
   roomId: null,
   isHost: false,
   userName: 'You (DJ)',
+  peerId: 'peer_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36),
   allowControl: true,
   members: [],
   channel: null,
@@ -7321,12 +7322,30 @@ const jamState = {
 };
 
 /* ══════════════════════════════════════════════════════════
-   JAM E2E ENCRYPTION  — AES-256-GCM via Web Crypto API
+   JAM E2E ENCRYPTION — AES-256-GCM via Web Crypto API
    Key is derived from the room code using PBKDF2 (100k iters).
-   Every MQTT/BroadcastChannel/localStorage message is encrypted
-   with a fresh random 12-byte IV. The public broker only ever
-   sees ciphertext — no song titles, no usernames, nothing plain.
+   Every MQTT message is encrypted with a fresh random 12-byte IV.
+   Wire format: DHUN_E2E:<base64-iv>:<base64-ciphertext>
 ══════════════════════════════════════════════════════════ */
+
+function _jamU8ToB64(u8) {
+  let binary = '';
+  const len = u8.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(u8[i]);
+  }
+  return btoa(binary);
+}
+
+function _jamB64ToU8(b64) {
+  const binary = atob(b64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
 
 /** Derive a 256-bit AES-GCM key from the room code via PBKDF2. */
 async function deriveJamE2EKey(roomCode) {
@@ -7350,8 +7369,8 @@ async function deriveJamE2EKey(roomCode) {
 }
 
 /**
- * Encrypt payload → "<base64-iv>.<base64-ciphertext>"
- * Falls back to plain JSON if Web Crypto is unavailable.
+ * Encrypt payload → "DHUN_E2E:<base64-iv>:<base64-ciphertext>"
+ * Falls back to plain JSON if key is not available.
  */
 async function jamE2EEncrypt(payload) {
   if (!jamState._e2eKey) return JSON.stringify(payload);
@@ -7361,8 +7380,7 @@ async function jamE2EEncrypt(payload) {
     const cipherBuf = await crypto.subtle.encrypt(
       { name: 'AES-GCM', iv }, jamState._e2eKey, enc.encode(JSON.stringify(payload))
     );
-    const toB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
-    return toB64(iv.buffer) + '.' + toB64(cipherBuf);
+    return 'DHUN_E2E:' + _jamU8ToB64(iv) + ':' + _jamU8ToB64(new Uint8Array(cipherBuf));
   } catch (e) {
     console.warn('[Jam E2E] Encrypt error, sending plain:', e);
     return JSON.stringify(payload);
@@ -7370,30 +7388,33 @@ async function jamE2EEncrypt(payload) {
 }
 
 /**
- * Decrypt an incoming wire message string.
- * Accepts both the encrypted "<iv>.<ct>" format and legacy plain JSON.
+ * Decrypt incoming message string.
+ * Supports both DHUN_E2E:<iv>:<ct> and plain JSON.
  */
 async function jamE2EDecrypt(raw) {
   if (!raw) return null;
-  if (!jamState._e2eKey || !raw.includes('.')) {
+  if (typeof raw !== 'string') {
+    try { raw = raw.toString(); } catch(e) { return null; }
+  }
+  if (!raw.startsWith('DHUN_E2E:') || !jamState._e2eKey) {
     try { return JSON.parse(raw); } catch (e) { return null; }
   }
   try {
-    const parts = raw.split('.');
-    if (parts.length !== 2) { try { return JSON.parse(raw); } catch (e) { return null; } }
-    const fromB64 = (s) => Uint8Array.from(atob(s), c => c.charCodeAt(0));
-    const iv = fromB64(parts[0]);
-    const cipherBuf = fromB64(parts[1]);
+    const parts = raw.split(':');
+    if (parts.length !== 3) {
+      try { return JSON.parse(raw); } catch(e) { return null; }
+    }
+    const iv = _jamB64ToU8(parts[1]);
+    const cipher = _jamB64ToU8(parts[2]);
     const plainBuf = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv }, jamState._e2eKey, cipherBuf
+      { name: 'AES-GCM', iv }, jamState._e2eKey, cipher
     );
     return JSON.parse(new TextDecoder().decode(plainBuf));
   } catch (e) {
-    // Key mismatch or legacy plaintext — try plain JSON parse
+    console.warn('[Jam E2E] Decrypt error, fallback to parse:', e);
     try { return JSON.parse(raw); } catch (e2) { return null; }
   }
 }
-
 
 /** Update the E2E encryption status indicator in the Listen Together modal. */
 function updateJamE2EStatusUI(active) {
@@ -7409,6 +7430,7 @@ function updateJamE2EStatusUI(active) {
     el.title = 'Web Crypto API unavailable — messages sent as plain text.';
   }
 }
+
 /* Dedicated silent API caller for Jam Session sync (Local Desktop fallback) */
 async function jamApi(method, path, data) {
   try {
@@ -7472,14 +7494,14 @@ function connectJamMqtt(roomId, onReady) {
         jamState.mqttConnected = true;
         const topic = `dhun/v2/rooms/${roomId}`;
         client.subscribe(topic, { qos: 0 }, (err) => {
-          if (err) console.warn('[Jam MQTT] Subscribe error:', err);
-          else console.log(`[Jam MQTT] Subscribed to room topic: ${topic}`);
+          if (err) {
+            console.warn('[Jam MQTT] Subscribe error:', err);
+            if (!settled) { settled = true; if (onReady) onReady(false); }
+          } else {
+            console.log(`[Jam MQTT] Subscribed to room topic: ${topic}`);
+            if (!settled) { settled = true; if (onReady) onReady(true); }
+          }
         });
-
-        if (!settled) {
-          settled = true;
-          if (onReady) onReady(true);
-        }
       });
 
       client.on('message', (t, rawMsg) => {
@@ -7593,6 +7615,7 @@ function broadcastJam(payload) {
     song: songPayload,
     roomId: jamState.roomId,
     sender: jamState.userName,
+    senderId: jamState.peerId,
     timestamp: Date.now()
   };
 
@@ -7682,7 +7705,9 @@ function handleJamMessageData(data) {
   if (!data || !data.roomId) return;
   if (!jamState.active && data.type !== 'JOIN_REQUEST' && data.type !== 'JOIN_ROOM') return;
   if (data.roomId !== jamState.roomId) return;
-  if (data.sender === jamState.userName) return;
+  // Ignore messages from this exact tab/client instance
+  if (data.senderId && data.senderId === jamState.peerId) return;
+  if (!data.senderId && data.sender === jamState.userName && data.timestamp && (Date.now() - data.timestamp < 3000)) return;
 
   jamState._isRemoteSync = true;
   try {
@@ -8001,12 +8026,11 @@ async function startJamSession() {
     source: isCurrentSongYT() ? 'ytmusic' : (state.currentSong.source || 'library')
   } : null;
 
-  // Derive E2E encryption key from room code (async, non-blocking)
-  deriveJamE2EKey(randCode).then(key => {
-    jamState._e2eKey = key;
-    if (key) { console.log('[Jam E2E] AES-256-GCM key derived for room:', randCode); updateJamE2EStatusUI(true); }
-    else { console.warn('[Jam E2E] Key derivation failed — messages will be unencrypted'); updateJamE2EStatusUI(false); }
-  });
+  // Derive E2E encryption key from room code before connecting
+  jamState._e2eKey = await deriveJamE2EKey(randCode);
+  updateJamE2EStatusUI(!!jamState._e2eKey);
+  if (jamState._e2eKey) console.log('[Jam E2E] AES-256-GCM key derived for room:', randCode);
+  else console.warn('[Jam E2E] Key derivation failed — messages will be unencrypted');
 
   // Connect to cloud MQTT broker for worldwide real-time sync
   connectJamMqtt(randCode, (connected) => {
@@ -8126,12 +8150,11 @@ async function joinJamSession(prefilledCode) {
     { name: guestName, avatar: guestAvatar, color: guestColor, isHost: false }
   ];
 
-  // Derive same E2E key from room code — both sides derive identical key from code
-  deriveJamE2EKey(code).then(key => {
-    jamState._e2eKey = key;
-    if (key) { console.log('[Jam E2E] AES-256-GCM key derived for room:', code); updateJamE2EStatusUI(true); }
-    else { console.warn('[Jam E2E] Key derivation failed'); updateJamE2EStatusUI(false); }
-  });
+  // Derive same E2E key from room code before connecting
+  jamState._e2eKey = await deriveJamE2EKey(code);
+  updateJamE2EStatusUI(!!jamState._e2eKey);
+  if (jamState._e2eKey) console.log('[Jam E2E] AES-256-GCM key derived for room:', code);
+  else console.warn('[Jam E2E] Key derivation failed');
 
   showJamPanel('active');
   renderJamMembers();
