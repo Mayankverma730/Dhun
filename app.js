@@ -7705,9 +7705,8 @@ function handleJamMessageData(data) {
   if (!data || !data.roomId) return;
   if (!jamState.active && data.type !== 'JOIN_REQUEST' && data.type !== 'JOIN_ROOM') return;
   if (data.roomId !== jamState.roomId) return;
-  // Ignore messages from this exact tab/client instance
+  // Ignore messages from this exact tab/client instance (never drop based on display name!)
   if (data.senderId && data.senderId === jamState.peerId) return;
-  if (!data.senderId && data.sender === jamState.userName && data.timestamp && (Date.now() - data.timestamp < 3000)) return;
 
   jamState._isRemoteSync = true;
   try {
@@ -7789,18 +7788,25 @@ function handleJamMessageData(data) {
       case 'JOIN_REQUEST':
       case 'JOIN_ROOM':
       case 'JOIN': {
-        const existingMember = jamState.members.find(m => m.name === data.sender);
+        const memberId = data.senderId || ('anon_' + Math.random().toString(36).substring(2, 7));
+        const existingMember = jamState.members.find(m => m.id === memberId);
         if (!existingMember) {
           const initials = (data.avatar || (data.sender || 'FR').slice(0, 2)).toUpperCase();
+          let displayName = data.sender || 'Guest';
+          const sameNameCount = jamState.members.filter(m => m.name === displayName).length;
+          if (sameNameCount > 0) {
+            displayName = `${displayName} (${sameNameCount + 1})`;
+          }
           jamState.members.push({
-            name: data.sender,
+            id: memberId,
+            name: displayName,
             avatar: initials,
             color: data.color || '#06b6d4',
             isHost: false
           });
           renderJamMembers();
           updateJamUI();
-          showToast(`🎉 ${data.sender} joined your Jam!`);
+          showToast(`🎉 ${displayName} joined your Jam!`);
         }
         // If we are Host, broadcast our current room state immediately back to the room
         if (jamState.isHost) {
@@ -7829,16 +7835,21 @@ function handleJamMessageData(data) {
         // Track host liveness for inactivity detection
         jamState.lastHostHeartbeat = Date.now();
         jamState._hostWarningShown = false;
-        // Sync members list
+        // Sync members list by unique member.id
         if (Array.isArray(data.members) && data.members.length > 0) {
           data.members.forEach(m => {
-            if (!jamState.members.some(e => e.name === m.name)) {
-              jamState.members.push(m);
+            const mId = m.id || m.name;
+            const idx = jamState.members.findIndex(e => e.id === mId);
+            if (idx === -1) {
+              jamState.members.push({ ...m, id: mId });
+            } else {
+              jamState.members[idx] = { ...jamState.members[idx], ...m };
             }
           });
           // Ensure self is in members list
-          if (!jamState.members.some(e => e.name === jamState.userName)) {
+          if (!jamState.members.some(e => e.id === jamState.peerId)) {
             jamState.members.push({
+              id: jamState.peerId,
               name: jamState.userName,
               avatar: jamState.isHost ? 'DJ' : jamState.userName.slice(0, 2).toUpperCase(),
               color: jamState.isHost ? '#7c3aed' : '#06b6d4',
@@ -7871,12 +7882,18 @@ function handleJamMessageData(data) {
       }
 
       case 'LEAVE_ROOM':
-      case 'LEAVE':
-        jamState.members = jamState.members.filter(m => m.name !== data.sender);
+      case 'LEAVE': {
+        const leaveId = data.senderId;
+        if (leaveId) {
+          jamState.members = jamState.members.filter(m => m.id !== leaveId);
+        } else {
+          jamState.members = jamState.members.filter(m => m.name !== data.sender);
+        }
         renderJamMembers();
         updateJamUI();
         showToast(`👋 ${data.sender} left the jam`);
         break;
+      }
     }
   } finally {
     jamState._isRemoteSync = false;
@@ -8010,9 +8027,10 @@ async function startJamSession() {
   const djAvatar = getProfileInitials(djName);
   const djColor = (authState.currentUser && authState.currentUser.avatarColor) || '#7c3aed';
 
-  // Real member list: ONLY Host — zero bots!
+  // Real member list: ONLY Host with unique peerId
+  jamState.peerId = 'peer_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
   jamState.members = [
-    { name: djName, avatar: djAvatar, color: djColor, isHost: true }
+    { id: jamState.peerId, name: djName, avatar: djAvatar, color: djColor, isHost: true }
   ];
 
   showJamPanel('active');
@@ -8146,8 +8164,9 @@ async function joinJamSession(prefilledCode) {
   jamState._hostWarningShown = false;
   jamState.lastHostHeartbeat = Date.now();
   jamState._e2eKey = null;
+  jamState.peerId = 'peer_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
   jamState.members = [
-    { name: guestName, avatar: guestAvatar, color: guestColor, isHost: false }
+    { id: jamState.peerId, name: guestName, avatar: guestAvatar, color: guestColor, isHost: false }
   ];
 
   // Derive same E2E key from room code before connecting
@@ -8164,10 +8183,11 @@ async function joinJamSession(prefilledCode) {
   connectJamMqtt(code, (connected) => {
     if (connected) {
       showToast(`🟢 Connected to Jam Room ${code}! Syncing...`);
-      // Request room state from host
+      // Request room state from host with unique senderId
       broadcastJam({
         type: 'JOIN_REQUEST',
         sender: guestName,
+        senderId: jamState.peerId,
         avatar: guestName.slice(0, 2).toUpperCase(),
         color: '#06b6d4'
       });
