@@ -2259,19 +2259,38 @@ async function fetchServerGoogleClientId() {
   return _googleConfigPromise;
 }
 
+// Clean up any accidentally saved client secrets or malformed credentials immediately
+try {
+  const _savedCid = localStorage.getItem('dhun_google_client_id');
+  if (_savedCid && (_savedCid.startsWith('GOCSPX-') || !_savedCid.includes('.apps.googleusercontent.com') || _savedCid.startsWith('YOUR_GOOGLE'))) {
+    localStorage.removeItem('dhun_google_client_id');
+  }
+} catch (e) {}
+
 function getGoogleClientId() {
-  const stored = localStorage.getItem('dhun_google_client_id');
-  if (stored && stored.trim() && !stored.startsWith('YOUR_GOOGLE')) return stored.trim();
+  let stored = localStorage.getItem('dhun_google_client_id');
+  if (stored) {
+    stored = stored.trim();
+    if (stored.startsWith('GOCSPX-') || !stored.includes('.apps.googleusercontent.com') || stored.startsWith('YOUR_GOOGLE')) {
+      localStorage.removeItem('dhun_google_client_id');
+      stored = null;
+    }
+  }
+  if (stored) return stored;
+
   if (typeof window !== 'undefined' && window._dhunServerGoogleClientId) {
-    return window._dhunServerGoogleClientId.trim();
+    const srv = window._dhunServerGoogleClientId.trim();
+    if (srv && !srv.startsWith('GOCSPX-') && !srv.startsWith('YOUR_GOOGLE')) return srv;
   }
-  if (typeof CONFIG !== 'undefined' && CONFIG.GOOGLE_CLIENT_ID && !CONFIG.GOOGLE_CLIENT_ID.startsWith('YOUR_GOOGLE')) {
-    return CONFIG.GOOGLE_CLIENT_ID.trim();
+  if (typeof CONFIG !== 'undefined' && CONFIG.GOOGLE_CLIENT_ID) {
+    const cfg = CONFIG.GOOGLE_CLIENT_ID.trim();
+    if (cfg && !cfg.startsWith('GOCSPX-') && !cfg.startsWith('YOUR_GOOGLE')) return cfg;
   }
-  if (typeof window !== 'undefined' && window.DHUN_GOOGLE_CLIENT_ID && !window.DHUN_GOOGLE_CLIENT_ID.startsWith('YOUR_GOOGLE')) {
-    return window.DHUN_GOOGLE_CLIENT_ID.trim();
+  if (typeof window !== 'undefined' && window.DHUN_GOOGLE_CLIENT_ID) {
+    const winId = window.DHUN_GOOGLE_CLIENT_ID.trim();
+    if (winId && !winId.startsWith('GOCSPX-') && !winId.startsWith('YOUR_GOOGLE')) return winId;
   }
-  return '';
+  return '193302703008-0ph67s6q60gt2tp72j704981fon32qm0.apps.googleusercontent.com';
 }
 
 function setGoogleClientId(id) {

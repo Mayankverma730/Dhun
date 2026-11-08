@@ -67,7 +67,7 @@ module.exports = async (req, res) => {
 
   // GET: Public Google OAuth Client ID for frontend initialization (Secret NEVER returned)
   if (req.method === 'GET') {
-    const clientId = process.env.GOOGLE_CLIENT_ID || '';
+    const clientId = process.env.GOOGLE_CLIENT_ID || '193302703008-0ph67s6q60gt2tp72j704981fon32qm0.apps.googleusercontent.com';
     return res.status(200).json({
       success: true,
       configured: Boolean(clientId),
@@ -80,7 +80,7 @@ module.exports = async (req, res) => {
     const body = req.body || {};
     const { credential, code, redirectUri } = body;
 
-    const configuredClientId = process.env.GOOGLE_CLIENT_ID;
+    const configuredClientId = process.env.GOOGLE_CLIENT_ID || '193302703008-0ph67s6q60gt2tp72j704981fon32qm0.apps.googleusercontent.com';
     const configuredClientSecret = process.env.GOOGLE_CLIENT_SECRET;
 
     // 1. Google Identity Services ID Token (JWT) verification

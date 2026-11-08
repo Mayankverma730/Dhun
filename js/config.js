@@ -23,7 +23,7 @@ const CONFIG = {
     JAM_STALE_HOST_TIMEOUT_MS: 15000,
     MAX_HISTORY_ITEMS: 50,
     CACHE_EXPIRY_MS: 10 * 60 * 1000, // 10 minutes
-    GOOGLE_CLIENT_ID: '' // Set your Google Cloud OAuth 2.0 Web Client ID here or via in-app setup
+    GOOGLE_CLIENT_ID: '193302703008-0ph67s6q60gt2tp72j704981fon32qm0.apps.googleusercontent.com' // Set your Google Cloud OAuth 2.0 Web Client ID here or via in-app setup
 };
 
 if (typeof window !== 'undefined') {
