@@ -391,7 +391,6 @@ function render(tracks, seedTitle) {
            title="Click to play ${safeTitle} directly on Dhun">
         <div class="rec-art" style="background:${gradient}">
           ${artImg}
-          ${matchPct > 0 ? `<span class="rec-match-badge">${matchPct}% match</span>` : ''}
         </div>
         <div class="rec-info">
           <p class="rec-track-name" title="${safeTitle}">${safeTitle}</p>
@@ -813,7 +812,7 @@ function _injectStyles() {
   transition: opacity 0.22s ease;
 }
 .rec-card:hover .rec-art-overlay { opacity: 1; }
-.rec-match-badge {
+.rec-match-badge { display: none !important; 
   position: absolute;
   top: 8px; right: 8px;
   font-size: 10px; font-weight: 700;

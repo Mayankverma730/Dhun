@@ -10971,11 +10971,11 @@ function getPersonalizedDiscoverTracks(vibe = 'auto') {
           const topG = profile.topGenres[0].toLowerCase();
           if (tGenre.includes(topG) || topG.includes(tGenre)) {
             score += 60;
-            matchBadge = `🎯 98% Vibe Match`;
+            matchBadge = `🎯 Vibe Match`;
             matchReason = `Top Genre: ${profile.topGenres[0]}`;
           } else if (profile.topGenres[1] && (tGenre.includes(profile.topGenres[1].toLowerCase()) || profile.topGenres[1].toLowerCase().includes(tGenre))) {
             score += 45;
-            matchBadge = `✨ 92% Match`;
+            matchBadge = `✨ Similar Track`;
             matchReason = `Enjoyed: ${profile.topGenres[1]}`;
           }
         }
