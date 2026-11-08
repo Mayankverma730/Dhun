@@ -4442,10 +4442,120 @@ function saveUserPlaylistsToStorage(playlists) {
 let _cloudSyncClient = null;
 let _cloudPushTimer = null;
 
-function getCloudSyncTopic(email) {
+function _csU8ToB64(u8) {
+  let binary = '';
+  const len = u8.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(u8[i]);
+  }
+  return btoa(binary);
+}
+
+function _csB64ToU8(b64) {
+  const binary = atob(b64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+/** Derive a 256-bit AES-GCM key from the user's email via PBKDF2 */
+async function deriveCloudSyncKey(email) {
+  if (!email || typeof crypto === 'undefined' || !crypto.subtle) return null;
+  try {
+    const enc = new TextEncoder();
+    const normEmail = email.toLowerCase().trim();
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw', enc.encode(normEmail), { name: 'PBKDF2' }, false, ['deriveKey']
+    );
+    return await crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt: enc.encode('dhun_cloud_sync_salt_v3_' + normEmail), iterations: 100000, hash: 'SHA-256' },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  } catch (e) {
+    console.warn('[CloudSync] Key derivation failed:', e);
+    return null;
+  }
+}
+
+/** Obfuscate MQTT topic so user emails are never exposed on public brokers */
+async function getCloudSyncTopic(email) {
   if (!email) return null;
-  const cleanEmail = email.toLowerCase().trim().replace(/[^a-zA-Z0-9_]/g, '_');
-  return `dhun/v2/cloud_sync/${cleanEmail}`;
+  const normEmail = email.toLowerCase().trim();
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    try {
+      const enc = new TextEncoder();
+      const buf = await crypto.subtle.digest('SHA-256', enc.encode('dhun_cs_topic_v3:' + normEmail));
+      const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+      return `dhun/v3/cs_${hash.substring(0, 32)}`;
+    } catch (e) {}
+  }
+  let h = 5381;
+  for (let i = 0; i < normEmail.length; i++) {
+    h = ((h << 5) + h) + normEmail.charCodeAt(i);
+    h = h & h;
+  }
+  return `dhun/v3/cs_${Math.abs(h).toString(16)}`;
+}
+
+async function encryptCloudSyncPayload(payload, email) {
+  try {
+    const key = await deriveCloudSyncKey(email);
+    if (!key || typeof crypto === 'undefined' || !crypto.getRandomValues) {
+      return JSON.stringify(payload);
+    }
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const enc = new TextEncoder();
+    const cipherBuf = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv }, key, enc.encode(JSON.stringify(payload))
+    );
+    return JSON.stringify({
+      e2e: true,
+      v: 3,
+      iv: _csU8ToB64(iv),
+      ct: _csU8ToB64(new Uint8Array(cipherBuf))
+    });
+  } catch (e) {
+    console.warn('[CloudSync] Encrypt error, falling back:', e);
+    return JSON.stringify(payload);
+  }
+}
+
+async function decryptCloudSyncPayload(raw, email) {
+  if (!raw) return null;
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (parsed && parsed.e2e && parsed.iv && parsed.ct) {
+      const key = await deriveCloudSyncKey(email);
+      if (!key) return null;
+      const iv = _csB64ToU8(parsed.iv);
+      const cipher = _csB64ToU8(parsed.ct);
+      const plainBuf = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv }, key, cipher
+      );
+      return JSON.parse(new TextDecoder().decode(plainBuf));
+    }
+    // Backward compatibility for legacy plaintext payloads
+    return parsed;
+  } catch (e) {
+    console.warn('[CloudSync] Decrypt error:', e);
+    return null;
+  }
+}
+
+/** Clear legacy unencrypted retained message from public broker */
+function clearLegacyCloudSyncTopic(email, client) {
+  if (!email || !client) return;
+  try {
+    const cleanEmail = email.toLowerCase().trim().replace(/[^a-zA-Z0-9_]/g, '_');
+    const legacyTopic = `dhun/v2/cloud_sync/${cleanEmail}`;
+    client.publish(legacyTopic, '', { retain: true, qos: 1 });
+  } catch (e) {}
 }
 
 function getCloudMqttClient(callback) {
@@ -4503,10 +4613,10 @@ function getCloudMqttClient(callback) {
   tryBroker();
 }
 
-function pushProfileToCloud() {
+async function pushProfileToCloud() {
   const user = authState.currentUser;
   if (!user || !user.email || user.id === 'guest') return;
-  const topic = getCloudSyncTopic(user.email);
+  const topic = await getCloudSyncTopic(user.email);
   if (!topic) return;
 
   const pls = getUserPlaylistsFromStorage() || (state.playlists || []);
@@ -4525,11 +4635,14 @@ function pushProfileToCloud() {
     lastUpdated: Date.now()
   };
 
+  const encrypted = await encryptCloudSyncPayload(syncPayload, user.email);
+
   getCloudMqttClient(client => {
     if (!client) return;
     try {
-      client.publish(topic, JSON.stringify(syncPayload), { retain: true, qos: 1 });
-      console.log('[CloudSync] Pushed profile to cloud:', topic, syncPayload.playlists.length, 'playlists');
+      client.publish(topic, encrypted, { retain: true, qos: 1 });
+      clearLegacyCloudSyncTopic(user.email, client);
+      console.log('[CloudSync] Secure E2E encrypted profile pushed to cloud:', topic, syncPayload.playlists.length, 'playlists');
     } catch(e) {
       console.warn('[CloudSync] Push error:', e);
     }
@@ -4543,13 +4656,13 @@ function pushProfileToCloudDebounced() {
   }, 1000);
 }
 
-function pullProfileFromCloud(onDone) {
+async function pullProfileFromCloud(onDone) {
   const user = authState.currentUser;
   if (!user || !user.email || user.id === 'guest') {
     if (onDone) onDone(false);
     return;
   }
-  const topic = getCloudSyncTopic(user.email);
+  const topic = await getCloudSyncTopic(user.email);
   if (!topic) {
     if (onDone) onDone(false);
     return;
@@ -4562,91 +4675,112 @@ function pullProfileFromCloud(onDone) {
     }
 
     let handled = false;
-    const msgHandler = (recvTopic, payload) => {
-      if (recvTopic !== topic) return;
-      try {
-        const data = JSON.parse(payload.toString());
-        if (!data || !data.email || data.email.toLowerCase().trim() !== user.email.toLowerCase().trim()) return;
+    const cleanEmail = user.email.toLowerCase().trim().replace(/[^a-zA-Z0-9_]/g, '_');
+    const legacyTopic = `dhun/v2/cloud_sync/${cleanEmail}`;
 
-        handled = true;
-        client.removeListener('message', msgHandler);
+    const handlePayloadData = (data) => {
+      if (!data || !data.email || data.email.toLowerCase().trim() !== user.email.toLowerCase().trim()) return false;
 
-        // Merge playlists
-        const localPls = getUserPlaylistsFromStorage() || (state.playlists || []);
-        const rawCloudPls = Array.isArray(data.playlists) ? data.playlists : [];
-        const cloudPls = rawCloudPls.filter(cp => cp && !isPredefaultPlaylist(cp.name));
-        const mergedPls = [...localPls].filter(lp => lp && !isPredefaultPlaylist(lp.name));
-        let hasNewPl = false;
+      // Merge playlists
+      const localPls = getUserPlaylistsFromStorage() || (state.playlists || []);
+      const rawCloudPls = Array.isArray(data.playlists) ? data.playlists : [];
+      const cloudPls = rawCloudPls.filter(cp => cp && !isPredefaultPlaylist(cp.name));
+      const mergedPls = [...localPls].filter(lp => lp && !isPredefaultPlaylist(lp.name));
+      let hasNewPl = false;
 
-        cloudPls.forEach(cp => {
-          if (!cp || !cp.name) return;
-          const match = mergedPls.find(lp => lp.name && lp.name.toLowerCase().trim() === cp.name.toLowerCase().trim());
-          if (match) {
-            const songSet = new Set([...(match.songs || []), ...(cp.songs || [])]);
-            if (songSet.size > (match.songs || []).length) {
-              match.songs = Array.from(songSet);
-              hasNewPl = true;
-            }
-          } else {
-            mergedPls.push(cp);
+      cloudPls.forEach(cp => {
+        if (!cp || !cp.name) return;
+        const match = mergedPls.find(lp => lp.name && lp.name.toLowerCase().trim() === cp.name.toLowerCase().trim());
+        if (match) {
+          const songSet = new Set([...(match.songs || []), ...(cp.songs || [])]);
+          if (songSet.size > (match.songs || []).length) {
+            match.songs = Array.from(songSet);
             hasNewPl = true;
           }
-        });
-
-        if (hasNewPl || (cloudPls.length > 0 && localPls.length === 0)) {
-          saveUserPlaylistsToStorage(mergedPls);
-          state.playlists = mergedPls;
-          renderPlaylists();
+        } else {
+          mergedPls.push(cp);
+          hasNewPl = true;
         }
+      });
 
-        // Merge likes
-        const localLikes = getUserLikedSet();
-        const cloudLikes = Array.isArray(data.likes) ? data.likes : [];
-        let hasNewLike = false;
-        cloudLikes.forEach(sId => {
-          if (!localLikes.has(sId)) {
-            localLikes.add(sId);
-            hasNewLike = true;
+      if (hasNewPl || (cloudPls.length > 0 && localPls.length === 0)) {
+        saveUserPlaylistsToStorage(mergedPls);
+        state.playlists = mergedPls;
+        renderPlaylists();
+      }
+
+      // Merge likes
+      const localLikes = getUserLikedSet();
+      const cloudLikes = Array.isArray(data.likes) ? data.likes : [];
+      let hasNewLike = false;
+      cloudLikes.forEach(sId => {
+        if (!localLikes.has(sId)) {
+          localLikes.add(sId);
+          hasNewLike = true;
+        }
+      });
+      if (hasNewLike) {
+        saveUserLikedSet(localLikes);
+      }
+
+      // Sync name/bio/color if current was default
+      if (data.name && (!user.name || user.name.length < data.name.length)) {
+        user.name = data.name;
+      }
+      if (data.bio && !user.bio) {
+        user.bio = data.bio;
+      }
+      if (data.avatarColor && !user.avatarColor) {
+        user.avatarColor = data.avatarColor;
+      }
+      if (data.coverUrl) {
+        user.coverUrl = data.coverUrl;
+        const coverImg = document.getElementById('pcover-img');
+        if (coverImg) coverImg.src = data.coverUrl;
+      }
+      saveStoredUsers(authState.users);
+      updateAuthUI();
+
+      console.log('[CloudSync] Pulled & merged cloud profile securely!');
+      return true;
+    };
+
+    const msgHandler = async (recvTopic, payload) => {
+      if (recvTopic !== topic && recvTopic !== legacyTopic) return;
+      try {
+        const rawStr = payload.toString();
+        if (!rawStr || !rawStr.trim()) return;
+
+        const data = await decryptCloudSyncPayload(rawStr, user.email);
+        if (!data) return;
+
+        const success = handlePayloadData(data);
+        if (success) {
+          handled = true;
+          client.removeListener('message', msgHandler);
+          // If message came from legacy unencrypted topic, wipe it and re-push encrypted
+          if (recvTopic === legacyTopic) {
+            clearLegacyCloudSyncTopic(user.email, client);
+            pushProfileToCloud();
           }
-        });
-        if (hasNewLike) {
-          saveUserLikedSet(localLikes);
+          if (onDone) onDone(true, { mergedPlaylists: (data.playlists || []).length });
         }
-
-        // Sync name/bio/color if current was default
-        if (data.name && (!user.name || user.name.length < data.name.length)) {
-          user.name = data.name;
-        }
-        if (data.bio && !user.bio) {
-          user.bio = data.bio;
-        }
-        if (data.avatarColor && !user.avatarColor) {
-          user.avatarColor = data.avatarColor;
-        }
-        if (data.coverUrl) {
-          user.coverUrl = data.coverUrl;
-          const coverImg = document.getElementById('pcover-img');
-          if (coverImg) coverImg.src = data.coverUrl;
-        }
-        saveStoredUsers(authState.users);
-        updateAuthUI();
-
-        console.log('[CloudSync] Pulled & merged cloud profile successfully!');
-        if (onDone) onDone(true, { mergedPlaylists: mergedPls.length });
-      } catch(e) {
+      } catch (e) {
         console.warn('[CloudSync] Pull parse error:', e);
-        if (onDone) onDone(false);
       }
     };
 
     client.on('message', msgHandler);
     client.subscribe(topic, { qos: 1 });
+    // Also temporarily listen for legacy topic to migrate existing accounts
+    client.subscribe(legacyTopic, { qos: 1 });
 
     // Wait up to 3.5 seconds for retained message
     setTimeout(() => {
       if (!handled) {
         client.removeListener('message', msgHandler);
-        // If no message arrived, push our local state to cloud so it seeds the cloud
+        try { client.unsubscribe(legacyTopic); } catch(e) {}
+        // If no message arrived, push our local state to cloud so it seeds the encrypted cloud
         pushProfileToCloud();
         if (onDone) onDone(true, { seeded: true });
       }

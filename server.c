@@ -1147,7 +1147,7 @@ typedef struct JamRoom {
 static JamRoom *g_jam_rooms = NULL;
 
 static const char *JAM_COLORS[] = {
-    "#7c3aed", "#06b6d4", "#ec4899", "#10b981", "#f59e0b", "#8b5cf6", "#3b82f6", "#ef4444"
+    "#829779", "#53684D", "#E9DFF0", "#F4DED2", "#DCE9E9", "#F5EBCB", "#10b981", "#3b82f6"
 };
 #define JAM_COLORS_COUNT 8
 
@@ -1293,7 +1293,7 @@ static void route_jam_create(SOCKET sock, const char *body)
     /* Host is member #0 — NO BOTS */
     snprintf(r->members[0].name, sizeof(r->members[0].name), "%s", dj_name);
     strcpy(r->members[0].avatar, "DJ");
-    strcpy(r->members[0].color, "#7c3aed");
+    strcpy(r->members[0].color, "#829779");
     r->members[0].is_host = 1;
     r->members[0].last_seen = r->created_at;
 
@@ -1744,7 +1744,7 @@ static void route_register(SOCKET sock, const char *body)
     snprintf(u->name, sizeof(u->name), "%s", name);
     snprintf(u->email, sizeof(u->email), "%s", email);
     hash_password(password, u->password_hash, sizeof(u->password_hash));
-    strcpy(u->avatar_color, "#7c3aed");
+    strcpy(u->avatar_color, "#829779");
     strcpy(u->provider, "email");
     generate_secure_token(u->session_token, sizeof(u->session_token), "sess_");
     u->created_at = time(NULL);

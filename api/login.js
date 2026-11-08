@@ -1,3 +1,12 @@
+function isAllowedOrigin(origin) {
+  if (!origin) return false;
+  const allowed = process.env.ALLOWED_ORIGIN;
+  if (allowed === '*' || origin === allowed) return true;
+  if (/^https?:\/\/localhost(:\d+)?$/.test(origin) || /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) return true;
+  if (/^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/.test(origin)) return true;
+  return false;
+}
+
 /**
  * api/login.js — Serverless Auth Endpoint for Dhun on Vercel
  *
@@ -26,8 +35,12 @@ module.exports = (req, res) => {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   /* Restrict CORS to known origin instead of wildcard */
-  const allowedOrigin = process.env.ALLOWED_ORIGIN || 'http://localhost:3000';
-  res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+  const origin = req.headers.origin;
+  if (origin && isAllowedOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGIN || 'https://dhun-vk85.vercel.app');
+  }
 
   if (req.method === 'OPTIONS') {
     return res.status(204).end();

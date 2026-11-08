@@ -3,16 +3,27 @@
  * Fetches suggestions from Google server-side, eliminating browser CORS restrictions.
  */
 
+function isAllowedOrigin(origin) {
+  if (!origin) return false;
+  const allowed = process.env.ALLOWED_ORIGIN;
+  if (allowed === '*' || origin === allowed) return true;
+  if (/^https?:\/\/localhost(:\d+)?$/.test(origin) || /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) return true;
+  if (/^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/.test(origin)) return true;
+  return false;
+}
+
 function setCORS(req, res) {
   const origin = req.headers.origin;
-  const allowed = process.env.ALLOWED_ORIGIN || 'http://localhost:3000';
-  if (origin && (origin === allowed || allowed === '*')) {
+  if (origin && isAllowedOrigin(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
+  } else if (!origin) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
   } else {
-    res.setHeader('Access-Control-Allow-Origin', allowed);
+    const defaultOrigin = process.env.ALLOWED_ORIGIN || 'https://dhun-vk85.vercel.app';
+    res.setHeader('Access-Control-Allow-Origin', defaultOrigin);
   }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-user-id');
   res.setHeader('Content-Type', 'application/json');
 }
 
