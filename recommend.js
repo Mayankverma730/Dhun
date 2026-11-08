@@ -75,13 +75,38 @@ function getSeed() {
    Calls Last.fm track.getSimilar (JSON, CORS-enabled).
    Falls back to artist.getSimilar if track returns nothing.
 ══════════════════════════════════════════════════════════════════ */
+
+/* ── iTunes discovery fallback (no API key required) ── */
+async function _fetchItunesFallback(artist, title) {
+  const cacheKey = 'itunes_fallback|' + (artist || '').toLowerCase();
+  if (_lastfmCache.has(cacheKey)) return _lastfmCache.get(cacheKey);
+
+  try {
+    const q = encodeURIComponent(artist || title || 'Bollywood Hits');
+    const res = await fetch(`${ITUNES_BASE}?term=${q}&media=music&entity=song&limit=${SIMILAR_LIMIT}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    const results = (data.results || []).map(r => ({
+      name: r.trackName || '',
+      artist: r.artistName || artist || '',
+      url: r.trackViewUrl || '',
+      match: 0.90,
+      image: (r.artworkUrl100 || '').replace('100x100bb', '300x300bb')
+    })).filter(t => t.name && t.artist);
+
+    _lastfmCache.set(cacheKey, results);
+    return results;
+  } catch (e) {
+    return [];
+  }
+}
+
 async function fetchSimilar(artist, title) {
   const cacheKey = `${artist.toLowerCase()}|${title.toLowerCase()}`;
   if (_lastfmCache.has(cacheKey)) return _lastfmCache.get(cacheKey);
 
   if (!LASTFM_API_KEY || LASTFM_API_KEY === 'YOUR_LASTFM_API_KEY_HERE') {
-    console.warn('[Recommend] Last.fm API key not set — recommendations limited.');
-    return [];
+    return await _fetchItunesFallback(artist, title);
   }
 
   const params = new URLSearchParams({
@@ -398,7 +423,7 @@ function _renderLoading() {
   const statusEl = document.getElementById('rec-status');
   if (statusEl) {
     statusEl.style.display = 'flex';
-    statusEl.innerHTML = `<div class="rec-spinner"></div><span>Finding similar tracks via Last.fm…</span>`;
+    statusEl.innerHTML = `<div class="rec-spinner"></div><span>Finding similar tracks…</span>`;
   }
   if (grid) grid.innerHTML = '';
 }
@@ -434,28 +459,7 @@ async function initRecommendations() {
 
   const filtered = filterLocal(similar);
 
-  if (LASTFM_API_KEY === 'YOUR_LASTFM_API_KEY_HERE') {
-    _renderError('');
-    const grid = document.getElementById('rec-grid');
-    if (grid) grid.innerHTML = `
-      <div class="rec-api-banner" style="grid-column:1/-1">
-        <div class="rec-api-banner-inner">
-          <span class="rec-api-icon">🔑</span>
-          <div>
-            <p class="rec-api-title">Unlock Global Recommendations</p>
-            <p class="rec-api-desc">Get a free Last.fm API key in 2 minutes — no credit card needed.</p>
-            <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-              <a href="https://www.last.fm/api/account/create" target="_blank" rel="noopener noreferrer"
-                 class="rec-api-link-btn">Get Free API Key →</a>
-              <span style="font-size:12px;color:var(--text-muted);align-self:center">
-                Then paste it in recommend.js line 28 → LASTFM_API_KEY
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>`;
-    return;
-  }
+
 
   if (filtered.length === 0) {
     try {
@@ -743,7 +747,7 @@ function _injectRecommendationsSection() {
     <div class="section-header rec-section-header">
       <h2 class="section-title">
         🌐 Recommended For You
-        <span class="rec-badge">Last.fm AI</span>
+        <span class="rec-badge">AI Discovery</span>
       </h2>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span id="rec-seed-label"></span>
