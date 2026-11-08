@@ -76,23 +76,80 @@ function getSeed() {
    Falls back to artist.getSimilar if track returns nothing.
 ══════════════════════════════════════════════════════════════════ */
 
-/* ── iTunes discovery fallback (no API key required) ── */
-async function _fetchItunesFallback(artist, title) {
-  const cacheKey = 'itunes_fallback|' + (artist || '').toLowerCase();
-  if (_lastfmCache.has(cacheKey)) return _lastfmCache.get(cacheKey);
+/* ── Fisher-Yates Array Shuffle for Refresh Randomness ── */
+function _shuffleArray(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/* ── Smart Query Cleaner (strips record labels, channel names & mashups) ── */
+function _cleanSeedQuery(artist, title) {
+  const labelPatterns = /^(t-series|tseries|sony music|zee music|tips|yrf|speed records|geet mp3|desi music|white hill|saregama|aditya|times music|eros)/i;
+  let cleanT = (title || '').replace(/\(.*?\)|\[.*?\]/g, '').split('/')[0].split(':')[0].trim();
+  const isLabel = labelPatterns.test(artist || '');
+  if (isLabel) return cleanT || 'Bollywood Hits';
+  if (artist && cleanT) return `${artist} ${cleanT}`;
+  return artist || cleanT || 'Bollywood Hits';
+}
+
+/* ── iTunes discovery fallback (no API key required, diverse songs & artists) ── */
+async function _fetchItunesFallback(artist, title, force = false) {
+  const cacheKey = 'itunes_fallback|' + (artist || '').toLowerCase() + '|' + (title || '').toLowerCase();
+  if (!force && _lastfmCache.has(cacheKey)) return _lastfmCache.get(cacheKey);
 
   try {
-    const q = encodeURIComponent(artist || title || 'Bollywood Hits');
-    const res = await fetch(`${ITUNES_BASE}?term=${q}&media=music&entity=song&limit=${SIMILAR_LIMIT}`);
+    const primaryQuery = _cleanSeedQuery(artist, title);
+    const q = encodeURIComponent(primaryQuery);
+    const res = await fetch(`${ITUNES_BASE}?term=${q}&media=music&entity=song&limit=30`);
     if (!res.ok) return [];
     const data = await res.json();
-    const results = (data.results || []).map(r => ({
-      name: r.trackName || '',
-      artist: r.artistName || artist || '',
-      url: r.trackViewUrl || '',
-      match: 0.90,
-      image: (r.artworkUrl100 || '').replace('100x100bb', '300x300bb')
-    })).filter(t => t.name && t.artist);
+    let initialResults = (data.results || []);
+
+    // Extract top lead artist to pull additional hit songs for maximum diversity
+    let moreResults = [];
+    if (initialResults.length > 0 && initialResults[0].artistName) {
+      const leadArtist = initialResults[0].artistName.split('&')[0].replace(/feat\..*$/i, '').trim();
+      if (leadArtist && leadArtist.length > 2) {
+        try {
+          const res2 = await fetch(`${ITUNES_BASE}?term=${encodeURIComponent(leadArtist + ' Hits')}&media=music&entity=song&limit=25`);
+          if (res2.ok) {
+            const data2 = await res2.json();
+            moreResults = data2.results || [];
+          }
+        } catch (e2) {}
+      }
+    }
+
+    const combined = [...initialResults, ...moreResults];
+    
+    // Prevent duplicate album artwork / identical mixtape covers
+    const seenArtworks = new Set();
+    let results = [];
+    for (const r of combined) {
+      const trackName = r.trackName || '';
+      const artistName = r.artistName || artist || '';
+      const art = (r.artworkUrl100 || '').replace('100x100bb', '300x300bb');
+      if (!trackName) continue;
+      // If artwork is non-empty, avoid repeating same compilation cover more than twice
+      if (art && seenArtworks.has(art)) continue;
+      if (art) seenArtworks.add(art);
+
+      results.push({
+        name: trackName,
+        artist: artistName,
+        url: r.trackViewUrl || '',
+        match: 0.90,
+        image: art
+      });
+    }
+
+    if (force || results.length > DISPLAY_LIMIT) {
+      results = _shuffleArray(results);
+    }
 
     _lastfmCache.set(cacheKey, results);
     return results;
@@ -101,12 +158,12 @@ async function _fetchItunesFallback(artist, title) {
   }
 }
 
-async function fetchSimilar(artist, title) {
-  const cacheKey = `${artist.toLowerCase()}|${title.toLowerCase()}`;
-  if (_lastfmCache.has(cacheKey)) return _lastfmCache.get(cacheKey);
+async function fetchSimilar(artist, title, force = false) {
+  const cacheKey = `${(artist || '').toLowerCase()}|${(title || '').toLowerCase()}`;
+  if (!force && _lastfmCache.has(cacheKey)) return _lastfmCache.get(cacheKey);
 
   if (!LASTFM_API_KEY || LASTFM_API_KEY === 'YOUR_LASTFM_API_KEY_HERE') {
-    return await _fetchItunesFallback(artist, title);
+    return await _fetchItunesFallback(artist, title, force);
   }
 
   const params = new URLSearchParams({
@@ -126,7 +183,7 @@ async function fetchSimilar(artist, title) {
     let tracks = (data.similartracks && data.similartracks.track) || [];
     if (!Array.isArray(tracks)) tracks = tracks ? [tracks] : [];
 
-    const normalized = tracks.map(t => ({
+    let normalized = tracks.map(t => ({
       name  : t.name   || '',
       artist: typeof t.artist === 'string' ? t.artist : (t.artist && t.artist.name) || '',
       url   : t.url    || '',
@@ -136,10 +193,12 @@ async function fetchSimilar(artist, title) {
 
     if (normalized.length === 0) {
       const artistTracks = await _fetchArtistSimilar(artist);
+      if (force) artistTracks = _shuffleArray(artistTracks);
       _lastfmCache.set(cacheKey, artistTracks);
       return artistTracks;
     }
 
+    if (force) normalized = _shuffleArray(normalized);
     _lastfmCache.set(cacheKey, normalized);
     return normalized;
 
@@ -617,33 +676,37 @@ function _renderError(msg) {
 /* ══════════════════════════════════════════════════════════════════
    STEP 6 — initRecommendations (Main Orchestrator)
 ══════════════════════════════════════════════════════════════════ */
-async function initRecommendations() {
+async function initRecommendations(force = false) {
   _renderLoading();
 
   const seed = getSeed();
   if (!seed) {
-    _renderError('Add songs to your library or play something to get recommendations.');
+    _renderError('Play any song to get personalized recommendations.');
     return;
   }
 
   let similar = [];
   try {
-    similar = await fetchSimilar(seed.artist, seed.title);
+    similar = await fetchSimilar(seed.artist, seed.title, force);
   } catch (e) {
     console.warn('[Recommend] fetchSimilar error:', e);
   }
 
   let filtered = filterLocal(similar);
 
-  if (filtered.length < 4) {
+  if (filtered.length < 6 || force) {
     try {
-      const more = await _fetchItunesFallback(seed.artist, seed.title);
+      const more = await _fetchItunesFallback(seed.artist, seed.title, force);
       const moreFiltered = filterLocal(more);
       filtered = deduplicateTracks([...filtered, ...moreFiltered]);
     } catch (e) {}
   }
 
   filtered = deduplicateTracks(filtered);
+
+  if (force) {
+    filtered = _shuffleArray(filtered);
+  }
 
   if (filtered.length === 0) {
     _renderError(`Enjoying "${seed.title}" by ${seed.artist}!`);
@@ -660,6 +723,37 @@ async function initRecommendations() {
   render(enriched, seed.title);
 }
 
+/* ── Interactive Manual Refresh with UI Feedback ── */
+window.refreshRecommendations = async function(e) {
+  if (e) {
+    try { e.stopPropagation(); e.preventDefault(); } catch(err) {}
+  }
+  const btn = document.getElementById('rec-refresh-btn') || (e && e.target ? e.target : null);
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Refreshing…';
+    btn.style.opacity = '0.7';
+  }
+
+  _lastfmCache.clear();
+  _itunesCache.clear();
+
+  try {
+    await initRecommendations(true);
+    if (typeof showToast === 'function') {
+      showToast('✨ Recommendations refreshed!');
+    }
+  } catch (err) {
+    console.warn('[Recommend] Refresh failed:', err);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '↻ Refresh';
+      btn.style.opacity = '1';
+    }
+  }
+};
+
 /* ── Auto-refresh hooks ── */
 function _hookSongChange() {
   const _orig = window.openPlayerById;
@@ -668,8 +762,20 @@ function _hookSongChange() {
       await _orig.call(this, id);
       clearTimeout(_recRefreshTimer);
       _recRefreshTimer = setTimeout(() => {
+        _injectRecommendationsSection();
         if (document.getElementById('recommendations')) initRecommendations();
-      }, 1200);
+      }, 1000);
+    };
+  }
+  const _origYT = window.playYTMusicTrack;
+  if (typeof _origYT === 'function') {
+    window.playYTMusicTrack = async function(track) {
+      await _origYT.call(this, track);
+      clearTimeout(_recRefreshTimer);
+      _recRefreshTimer = setTimeout(() => {
+        _injectRecommendationsSection();
+        if (document.getElementById('recommendations')) initRecommendations();
+      }, 1000);
     };
   }
 }
@@ -960,28 +1066,45 @@ function _injectStyles() {
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   DOM INJECTION — Creates #recommendations in home-col-main
+   DOM INJECTION — Ensures #recommendations is in #page-player ONLY
 ══════════════════════════════════════════════════════════════════ */
 function _injectRecommendationsSection() {
-  if (document.getElementById('recommendations')) return;
-  const colMain = document.querySelector('.home-col-main') || document.getElementById('page-home');
-  if (!colMain) return;
-  const section = document.createElement('section');
-  section.id = 'recommendations';
-  section.innerHTML = `
-    <div class="section-header rec-section-header">
-      <h2 class="section-title">
-        🌐 Recommended For You
-        
-      </h2>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <span id="rec-seed-label"></span>
-        <button class="see-all-btn rec-refresh-btn" onclick="initRecommendations()">↻ Refresh</button>
+  // 1. Remove recommendations if it ever appears on Home page
+  const homeCol = document.querySelector('.home-col-main');
+  if (homeCol) {
+    const inHome = homeCol.querySelector('#recommendations');
+    if (inHome) inHome.remove();
+  }
+  const pageHome = document.getElementById('page-home');
+  if (pageHome) {
+    const inHome = pageHome.querySelector('#recommendations');
+    if (inHome) inHome.remove();
+  }
+
+  const playerPage = document.getElementById('page-player');
+  if (!playerPage) return;
+
+  let section = document.getElementById('recommendations');
+  if (!section) {
+    section = document.createElement('section');
+    section.id = 'recommendations';
+    section.className = 'player-recommendations-section';
+    section.innerHTML = `
+      <div class="section-header rec-section-header">
+        <h2 class="section-title">
+          🌐 Recommended For You
+        </h2>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span id="rec-seed-label"></span>
+          <button class="see-all-btn rec-refresh-btn" id="rec-refresh-btn" onclick="refreshRecommendations(event)">↻ Refresh</button>
+        </div>
       </div>
-    </div>
-    <div id="rec-status" style="display:none"></div>
-    <div id="rec-grid"></div>`;
-  colMain.appendChild(section);
+      <div id="rec-status" style="display:none"></div>
+      <div id="rec-grid"></div>`;
+    playerPage.appendChild(section);
+  } else if (!playerPage.contains(section)) {
+    playerPage.appendChild(section);
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -992,28 +1115,38 @@ function _boot() {
   _injectRecommendationsSection();
   _hookSongChange();
 
-  // Patch navigate() so Home always triggers fresh recommendations
+  // Patch navigate() so Now Playing page activates recommendations
   const _origNavigate = window.navigate;
   if (typeof _origNavigate === 'function') {
     window.navigate = function(page) {
       _origNavigate.call(this, page);
-      if (page === 'home') {
+      if (page === 'player') {
         clearTimeout(_recRefreshTimer);
-        _recRefreshTimer = setTimeout(initRecommendations, 600);
+        _recRefreshTimer = setTimeout(() => {
+          _injectRecommendationsSection();
+          initRecommendations();
+        }, 200);
       }
     };
   }
 
-  // Initial load after DOM is ready
+  // Pre-load recommendations into #page-player when DOM is ready
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => setTimeout(initRecommendations, 900));
+    document.addEventListener('DOMContentLoaded', () => setTimeout(() => {
+      _injectRecommendationsSection();
+      initRecommendations();
+    }, 800));
   } else {
-    setTimeout(initRecommendations, 900);
+    setTimeout(() => {
+      _injectRecommendationsSection();
+      initRecommendations();
+    }, 800);
   }
 }
 
 // Public API
 window.initRecommendations = initRecommendations;
+window.refreshRecommendations = refreshRecommendations;
 window.fetchSimilar        = fetchSimilar;
 window.filterLocal         = filterLocal;
 window.enrich              = enrich;

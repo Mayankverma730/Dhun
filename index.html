@@ -1160,6 +1160,19 @@
           </div>
 
         </div>
+
+        <!-- Recommended For You Under Now Playing [T5-06] -->
+        <section id="recommendations" class="player-recommendations-section">
+          <div class="section-header rec-section-header">
+            <h2 class="section-title">🌐 Recommended For You</h2>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <span id="rec-seed-label"></span>
+              <button class="see-all-btn rec-refresh-btn" id="rec-refresh-btn" onclick="refreshRecommendations(event)">↻ Refresh</button>
+            </div>
+          </div>
+          <div id="rec-status" style="display:none"></div>
+          <div id="rec-grid"></div>
+        </section>
       </section>
 
       <!-- ══ PAGE: PROFILE ═══════════════════════ -->
@@ -2149,7 +2162,7 @@
   <script src="ytmusic_api.js?v=32.0"></script>
   <script src="app.js?v=39.0"></script>
   <!-- Last.fm + iTunes Global Recommendation Engine -->
-  <script src="recommend.js?v=6.0"></script>
+  <script src="recommend.js?v=7.0"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 

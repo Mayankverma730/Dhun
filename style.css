@@ -7233,3 +7233,15 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   box-shadow: 0 4px 12px rgba(104, 126, 95, 0.35);
   filter: brightness(1.06);
 }
+
+/* ── Recommendations inside Now Playing section ── */
+.player-recommendations-section {
+  width: 100% !important;
+  margin-top: 32px !important;
+  margin-bottom: 60px !important;
+  padding: 24px 8px 60px 8px !important;
+  border-top: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+}
+.player-recommendations-section .rec-section-header {
+  margin-bottom: 20px;
+}
