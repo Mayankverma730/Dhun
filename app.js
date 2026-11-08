@@ -1805,6 +1805,9 @@ function loadSongUI(s) {
   if (typeof renderRelated === 'function') {
     renderRelated();
   }
+  if (typeof window.onSongChange === 'function') {
+    try { window.onSongChange(s); } catch (e) {}
+  }
 }
 
 function _set(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }

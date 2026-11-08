@@ -515,19 +515,25 @@ const YTMusicAPI = (() => {
     const genre = detectGenre(track.title || '', track.artist || '') || explicitGenre || 'Pop';
     const catKey = normalizeCategoryKey(genre);
 
-    // Candidates pool: Category feed first, then all feeds
-    const pool = [
-      ...(TRENDING_FEEDS[catKey] || []),
-      ...TRENDING_FEEDS.trending,
-      ...TRENDING_FEEDS.bollywood,
-      ...TRENDING_FEEDS.punjabi,
-      ...TRENDING_FEEDS.pop,
-      ...TRENDING_FEEDS.electronic,
-      ...TRENDING_FEEDS.lofi,
-      ...TRENDING_FEEDS.rock,
-      ...TRENDING_FEEDS.romantic,
-      ...TRENDING_FEEDS.hiphop
-    ];
+    // Detect whether track belongs to Indian/Bollywood genre
+    const isIndian = /bollywood|hindi|punjabi|sufi|ghazal|qawwali|bhangra|desi|arijit|pritam|mithoon|neha|badshah|jubin|asees|t-series|zee music|sony music|shreya|sunidhi|atif|mohit|rahat|tanishk|bagchi|sachin-jigar|alka|kumar sanu|udit|sonu nigam|shankar|vishal|shekhar|rahman|jasleen|b praak|darshan|diljit|sidhu|karan aujla|shubh|crook|aashiqui|simmba|shershaah|brahmastra|jawan|pathaan|war|loveyatri|pagalpanti|half girlfriend/i.test(`${title} ${artist} ${explicitGenre} ${genre}`);
+
+    // Candidates pool: Strict genre boundaries (never recommend Western rock/pop for Bollywood)
+    const pool = isIndian
+      ? [
+          ...(TRENDING_FEEDS.bollywood || []),
+          ...(TRENDING_FEEDS.romantic || []),
+          ...(TRENDING_FEEDS.punjabi || []),
+          ...(catKey === 'bollywood' || catKey === 'romantic' || catKey === 'punjabi' ? (TRENDING_FEEDS[catKey] || []) : [])
+        ]
+      : [
+          ...(TRENDING_FEEDS[catKey] || []),
+          ...TRENDING_FEEDS.trending,
+          ...TRENDING_FEEDS.pop,
+          ...TRENDING_FEEDS.rock,
+          ...TRENDING_FEEDS.electronic,
+          ...TRENDING_FEEDS.lofi
+        ];
 
     const targetVid = track.videoId || (typeof track.id === 'string' && track.id.startsWith('yt_') ? track.id.replace('yt_', '') : null);
 

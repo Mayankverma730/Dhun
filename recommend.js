@@ -110,7 +110,13 @@ function _getCuratedFallback(seed) {
 }
 
 
-/* ── Smart Query Cleaner (strips emojis, record labels, channel names & mashups) ── */
+/* ── Smart Query Cleaner & Indian/Bollywood Genre Detector ── */
+function _isIndianMusic(title, artist) {
+  const text = `${title || ''} ${artist || ''}`.toLowerCase();
+  const indianPatterns = /bollywood|hindi|punjabi|sufi|ghazal|qawwali|bhangra|desi|arijit|pritam|mithoon|neha|badshah|jubin|asees|t-series|zee music|sony music|shreya|sunidhi|atif|mohit|rahat|tanishk|bagchi|sachin-jigar|alka|kumar sanu|udit|sonu nigam|shankar|vishal|shekhar|rahman|jasleen|b praak|darshan|diljit|sidhu|karan aujla|shubh|crook|aashiqui|simmba|shershaah|brahmastra|jawan|pathaan|war|loveyatri|pagalpanti|half girlfriend|kabira|tum hi ho|darkhaast|tere bin/i;
+  return indianPatterns.test(text);
+}
+
 function _cleanSeedQuery(artist, title) {
   const labelPatterns = /^(t-series|tseries|sony music|zee music|tips|yrf|speed records|geet mp3|desi music|white hill|saregama|aditya|times music|eros)/i;
   let cleanT = (title || '')
@@ -122,9 +128,17 @@ function _cleanSeedQuery(artist, title) {
     .trim();
 
   const isLabel = labelPatterns.test((artist || '').trim());
-  if (isLabel) return cleanT || 'Bollywood Hits';
+  const isIndian = _isIndianMusic(title, artist);
+
+  if (isIndian) {
+    if (isLabel) return cleanT ? `${cleanT} Bollywood` : 'Bollywood Romance Hits';
+    if (artist && cleanT) return `${artist} ${cleanT}`;
+    return cleanT ? `${cleanT} Bollywood` : 'Bollywood Romance Hits';
+  }
+
+  if (isLabel) return cleanT || 'Pop Hits';
   if (artist && cleanT) return `${artist} ${cleanT}`;
-  return cleanT || artist || 'Bollywood Hits';
+  return cleanT || artist || 'Pop Hits';
 }
 
 function _cleanArtistOnly(artist) {
@@ -133,23 +147,24 @@ function _cleanArtistOnly(artist) {
   if (labelPatterns.test(artist.trim())) return '';
   return artist.trim();
 }
-
-/* ── Multi-Tier iTunes Discovery Fallback (Always returns 10+ diverse songs) ── */
+/* ── Multi-Tier iTunes Discovery Fallback (Strict Genre Matching & country=IN) ── */
 async function _fetchItunesFallback(artist, title, force = false) {
   const cacheKey = 'itunes_fallback|' + (artist || '').toLowerCase() + '|' + (title || '').toLowerCase();
   if (!force && _lastfmCache.has(cacheKey)) return _lastfmCache.get(cacheKey);
 
   try {
+    const isIndian = _isIndianMusic(title, artist);
     const cleanTitle = _cleanSongTitle(title || '');
     const cleanArtist = _cleanArtistOnly(artist || '');
     const primaryQuery = _cleanSeedQuery(artist, title);
+    const countryParam = isIndian ? '&country=IN' : '';
 
     let pool = [];
 
-    // 1. Search primary query
+    // 1. Search primary query with country=IN for Indian songs
     try {
       const q = encodeURIComponent(primaryQuery);
-      const res = await fetch(`${ITUNES_BASE}?term=${q}&media=music&entity=song&limit=25`);
+      const res = await fetch(`${ITUNES_BASE}?term=${q}${countryParam}&media=music&entity=song&limit=25`);
       if (res.ok) {
         const data = await res.json();
         pool.push(...(data.results || []));
@@ -173,7 +188,8 @@ async function _fetchItunesFallback(artist, title, force = false) {
     const topArtists = Array.from(artistsFound).slice(0, 2);
     for (const art of topArtists) {
       try {
-        const resA = await fetch(`${ITUNES_BASE}?term=${encodeURIComponent(art + ' Hits')}&media=music&entity=song&limit=20`);
+        const qArt = isIndian ? `${art} Bollywood Hits` : `${art} Hits`;
+        const resA = await fetch(`${ITUNES_BASE}?term=${encodeURIComponent(qArt)}${countryParam}&media=music&entity=song&limit=20`);
         if (resA.ok) {
           const dA = await resA.json();
           pool.push(...(dA.results || []));
@@ -181,10 +197,11 @@ async function _fetchItunesFallback(artist, title, force = false) {
       } catch(e) {}
     }
 
-    // 4. Broad Bollywood Romance fallback if pool is small
+    // 4. Broad fallback if pool is small
     if (pool.length < 20) {
       try {
-        const resB = await fetch(`${ITUNES_BASE}?term=Bollywood%20Romance%20Hits&media=music&entity=song&limit=20`);
+        const fbTerm = isIndian ? 'Bollywood Romance Hits' : 'Top Hits';
+        const resB = await fetch(`${ITUNES_BASE}?term=${encodeURIComponent(fbTerm)}${countryParam}&media=music&entity=song&limit=20`);
         if (resB.ok) {
           const dB = await resB.json();
           pool.push(...(dB.results || []));
@@ -192,17 +209,23 @@ async function _fetchItunesFallback(artist, title, force = false) {
       } catch(e) {}
     }
 
-    // 5. Format and deduplicate
+    // 5. Format and strictly filter by genre (NO English rock/metal for Bollywood!)
     const cleanSeedNorm = cleanTitle ? cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
     const seenTitles = new Set();
     const seenArt = new Set();
     let results = [];
 
+    const westernDisallowed = /metal|punk|americana|country|hard rock|heavy metal|alternative|death metal/i;
+
     for (const r of pool) {
       const tName = r.trackName || '';
       const aName = r.artistName || artist || '';
+      const genre = r.primaryGenreName || '';
       const art = (r.artworkUrl100 || '').replace('100x100bb', '300x300bb');
       if (!tName) continue;
+
+      // Strict check: If user is listening to Indian/Bollywood, filter out Western rock/metal/Americana tracks
+      if (isIndian && westernDisallowed.test(genre)) continue;
 
       const tNorm = _cleanSongTitle(tName).toLowerCase().replace(/[^a-z0-9]/g, '');
       // Skip if it is the current seed song
@@ -245,7 +268,6 @@ async function _fetchItunesFallback(artist, title, force = false) {
     return _getCuratedFallback({ artist, title });
   }
 }
-
 async function fetchSimilar(artist, title, force = false) {
   const cacheKey = `${(artist || '').toLowerCase()}|${(title || '').toLowerCase()}`;
   if (!force && _lastfmCache.has(cacheKey)) return _lastfmCache.get(cacheKey);
@@ -842,6 +864,14 @@ window.refreshRecommendations = async function(e) {
 };
 
 /* ── Auto-refresh hooks ── */
+window.onSongChange = function(song) {
+  clearTimeout(_recRefreshTimer);
+  _recRefreshTimer = setTimeout(() => {
+    _injectRecommendationsSection();
+    initRecommendations(true);
+  }, 100);
+};
+
 function _hookSongChange() {
   const _orig = window.openPlayerById;
   if (typeof _orig === 'function') {
@@ -850,8 +880,8 @@ function _hookSongChange() {
       clearTimeout(_recRefreshTimer);
       _recRefreshTimer = setTimeout(() => {
         _injectRecommendationsSection();
-        if (document.getElementById('recommendations')) initRecommendations();
-      }, 1000);
+        if (document.getElementById('recommendations')) initRecommendations(true);
+      }, 300);
     };
   }
   const _origYT = window.playYTMusicTrack;
@@ -861,8 +891,8 @@ function _hookSongChange() {
       clearTimeout(_recRefreshTimer);
       _recRefreshTimer = setTimeout(() => {
         _injectRecommendationsSection();
-        if (document.getElementById('recommendations')) initRecommendations();
-      }, 1000);
+        if (document.getElementById('recommendations')) initRecommendations(true);
+      }, 300);
     };
   }
 }
