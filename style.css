@@ -859,9 +859,8 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
 .player-page-layout {
   display: grid;
   grid-template-columns: 1fr 340px;
-  gap: 24px;
-  min-height: 100%;
-  padding-bottom: 60px;
+  gap: 20px;
+  padding-bottom: 8px;
 }
 .player-left  { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .player-right { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
@@ -7237,11 +7236,11 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
 /* ── Recommendations inside Now Playing section ── */
 .player-recommendations-section {
   width: 100% !important;
-  margin-top: 32px !important;
-  margin-bottom: 60px !important;
-  padding: 24px 8px 60px 8px !important;
+  margin-top: 14px !important;
+  margin-bottom: 32px !important;
+  padding: 16px 8px 24px 8px !important;
   border-top: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
 }
 .player-recommendations-section .rec-section-header {
-  margin-bottom: 20px;
+  margin-bottom: 14px;
 }

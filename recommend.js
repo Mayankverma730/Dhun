@@ -86,65 +86,153 @@ function _shuffleArray(arr) {
   return a;
 }
 
-/* ── Smart Query Cleaner (strips record labels, channel names & mashups) ── */
-function _cleanSeedQuery(artist, title) {
-  const labelPatterns = /^(t-series|tseries|sony music|zee music|tips|yrf|speed records|geet mp3|desi music|white hill|saregama|aditya|times music|eros)/i;
-  let cleanT = (title || '').replace(/\(.*?\)|\[.*?\]/g, '').split('/')[0].split(':')[0].trim();
-  const isLabel = labelPatterns.test(artist || '');
-  if (isLabel) return cleanT || 'Bollywood Hits';
-  if (artist && cleanT) return `${artist} ${cleanT}`;
-  return artist || cleanT || 'Bollywood Hits';
+/* ── Curated Evergreen Fallback Tracks (Guarantees Recommendations Never Fail) ── */
+const _CURATED_FALLBACK = [
+  { name: 'Tum Hi Ho', artist: 'Arijit Singh & Mithoon', image: 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/98/95/92/989592f6-3023-e292-1dc3-9994c6439e6a/8902894354784_Cover.jpg/300x300bb.jpg' },
+  { name: 'Kesariya', artist: 'Pritam & Arijit Singh', image: 'https://is1-ssl.mzstatic.com/image/thumb/Music112/v4/7c/ec/c0/7cecc0df-56ad-506e-8e8e-8a9010ebff6c/196589334863.jpg/300x300bb.jpg' },
+  { name: 'Apna Bana Le', artist: 'Arijit Singh & Sachin-Jigar', image: 'https://is1-ssl.mzstatic.com/image/thumb/Music122/v4/d9/f4/bf/d9f4bf4e-b5f7-876b-965a-044238e8cb57/196589578649.jpg/300x300bb.jpg' },
+  { name: 'Channa Mereya', artist: 'Pritam & Arijit Singh', image: 'https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/71/34/08/713408f6-df30-9706-9ea6-f6d8924b1a45/886446153676.jpg/300x300bb.jpg' },
+  { name: 'Raataan Lambiyan', artist: 'Tanishk Bagchi, Jubin Nautiyal & Asees Kaur', image: 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/a5/d5/07/a5d50711-b847-f831-2917-8e6ca6fbf5e2/8902894361003_Cover.jpg/300x300bb.jpg' },
+  { name: 'Shayad', artist: 'Pritam & Arijit Singh', image: 'https://is1-ssl.mzstatic.com/image/thumb/Music114/v4/ee/17/dc/ee17dcc9-122e-1c88-e925-5e6df7db0ec8/886448259741.jpg/300x300bb.jpg' },
+  { name: 'Agar Tum Saath Ho', artist: 'Alka Yagnik & Arijit Singh', image: 'https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/c7/2b/9d/c72b9d03-2415-3221-5a9f-4375b48695d7/8902894357730_Cover.jpg/300x300bb.jpg' },
+  { name: 'Hawayein', artist: 'Pritam & Arijit Singh', image: 'https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/80/e7/7d/80e77d01-e737-fb42-ae5a-69488a0b5a19/886446654876.jpg/300x300bb.jpg' },
+  { name: 'Heeriye', artist: 'Jasleen Royal & Arijit Singh', image: 'https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/b4/0b/c4/b40bc438-660b-85cf-155e-653140656a8d/197188764028.jpg/300x300bb.jpg' },
+  { name: 'Kalank (Title Track)', artist: 'Pritam & Arijit Singh', image: 'https://is1-ssl.mzstatic.com/image/thumb/Music114/v4/b8/47/98/b84798c8-b593-3d08-8f83-84f981156553/886447662054.jpg/300x300bb.jpg' }
+];
+
+function _getCuratedFallback(seed) {
+  const seedNorm = seed && seed.title ? _cleanSongTitle(seed.title).toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+  const filtered = _CURATED_FALLBACK.filter(c => {
+    const cNorm = _cleanSongTitle(c.name).toLowerCase().replace(/[^a-z0-9]/g, '');
+    return !seedNorm || (!cNorm.includes(seedNorm) && !seedNorm.includes(cNorm));
+  });
+  return _shuffleArray(filtered.map(t => ({ ...t, match: 0.90, url: '' })));
 }
 
-/* ── iTunes discovery fallback (no API key required, diverse songs & artists) ── */
+
+/* ── Smart Query Cleaner (strips emojis, record labels, channel names & mashups) ── */
+function _cleanSeedQuery(artist, title) {
+  const labelPatterns = /^(t-series|tseries|sony music|zee music|tips|yrf|speed records|geet mp3|desi music|white hill|saregama|aditya|times music|eros)/i;
+  let cleanT = (title || '')
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+    .replace(/(\s*-\s*|\s*\|\s*)?(full song|video song|official video|lyrical video|audio song|official lyrical|lyrics|audio|hd|4k)\b/gi, '')
+    .replace(/\(.*?\)|\[.*?\]/g, '')
+    .split('/')[0]
+    .split(':')[0]
+    .trim();
+
+  const isLabel = labelPatterns.test((artist || '').trim());
+  if (isLabel) return cleanT || 'Bollywood Hits';
+  if (artist && cleanT) return `${artist} ${cleanT}`;
+  return cleanT || artist || 'Bollywood Hits';
+}
+
+function _cleanArtistOnly(artist) {
+  if (!artist) return '';
+  const labelPatterns = /^(t-series|tseries|sony music|zee music|tips|yrf|speed records|geet mp3|desi music|white hill|saregama|aditya|times music|eros)/i;
+  if (labelPatterns.test(artist.trim())) return '';
+  return artist.trim();
+}
+
+/* ── Multi-Tier iTunes Discovery Fallback (Always returns 10+ diverse songs) ── */
 async function _fetchItunesFallback(artist, title, force = false) {
   const cacheKey = 'itunes_fallback|' + (artist || '').toLowerCase() + '|' + (title || '').toLowerCase();
   if (!force && _lastfmCache.has(cacheKey)) return _lastfmCache.get(cacheKey);
 
   try {
+    const cleanTitle = _cleanSongTitle(title || '');
+    const cleanArtist = _cleanArtistOnly(artist || '');
     const primaryQuery = _cleanSeedQuery(artist, title);
-    const q = encodeURIComponent(primaryQuery);
-    const res = await fetch(`${ITUNES_BASE}?term=${q}&media=music&entity=song&limit=30`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    let initialResults = (data.results || []);
 
-    // Extract top lead artist to pull additional hit songs for maximum diversity
-    let moreResults = [];
-    if (initialResults.length > 0 && initialResults[0].artistName) {
-      const leadArtist = initialResults[0].artistName.split('&')[0].replace(/feat\..*$/i, '').trim();
-      if (leadArtist && leadArtist.length > 2) {
-        try {
-          const res2 = await fetch(`${ITUNES_BASE}?term=${encodeURIComponent(leadArtist + ' Hits')}&media=music&entity=song&limit=25`);
-          if (res2.ok) {
-            const data2 = await res2.json();
-            moreResults = data2.results || [];
-          }
-        } catch (e2) {}
+    let pool = [];
+
+    // 1. Search primary query
+    try {
+      const q = encodeURIComponent(primaryQuery);
+      const res = await fetch(`${ITUNES_BASE}?term=${q}&media=music&entity=song&limit=25`);
+      if (res.ok) {
+        const data = await res.json();
+        pool.push(...(data.results || []));
+      }
+    } catch(e) {}
+
+    // 2. Discover individual artists from the results
+    const artistsFound = new Set();
+    if (cleanArtist) artistsFound.add(cleanArtist);
+    for (const r of pool) {
+      if (!r.artistName) continue;
+      const parts = r.artistName.split(/[,&/|]/).map(p => p.trim()).filter(p => p.length > 2);
+      for (const p of parts) {
+        if (!/^(feat|various|original|soundtrack|zee|t-series|sony|tips|yrf)/i.test(p)) {
+          artistsFound.add(p);
+        }
       }
     }
 
-    const combined = [...initialResults, ...moreResults];
-    
-    // Prevent duplicate album artwork / identical mixtape covers
-    const seenArtworks = new Set();
+    // 3. Query hit songs for top discovered artists
+    const topArtists = Array.from(artistsFound).slice(0, 2);
+    for (const art of topArtists) {
+      try {
+        const resA = await fetch(`${ITUNES_BASE}?term=${encodeURIComponent(art + ' Hits')}&media=music&entity=song&limit=20`);
+        if (resA.ok) {
+          const dA = await resA.json();
+          pool.push(...(dA.results || []));
+        }
+      } catch(e) {}
+    }
+
+    // 4. Broad Bollywood Romance fallback if pool is small
+    if (pool.length < 20) {
+      try {
+        const resB = await fetch(`${ITUNES_BASE}?term=Bollywood%20Romance%20Hits&media=music&entity=song&limit=20`);
+        if (resB.ok) {
+          const dB = await resB.json();
+          pool.push(...(dB.results || []));
+        }
+      } catch(e) {}
+    }
+
+    // 5. Format and deduplicate
+    const cleanSeedNorm = cleanTitle ? cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+    const seenTitles = new Set();
+    const seenArt = new Set();
     let results = [];
-    for (const r of combined) {
-      const trackName = r.trackName || '';
-      const artistName = r.artistName || artist || '';
+
+    for (const r of pool) {
+      const tName = r.trackName || '';
+      const aName = r.artistName || artist || '';
       const art = (r.artworkUrl100 || '').replace('100x100bb', '300x300bb');
-      if (!trackName) continue;
-      // If artwork is non-empty, avoid repeating same compilation cover more than twice
-      if (art && seenArtworks.has(art)) continue;
-      if (art) seenArtworks.add(art);
+      if (!tName) continue;
+
+      const tNorm = _cleanSongTitle(tName).toLowerCase().replace(/[^a-z0-9]/g, '');
+      // Skip if it is the current seed song
+      if (cleanSeedNorm && (tNorm.includes(cleanSeedNorm) || cleanSeedNorm.includes(tNorm))) continue;
+      if (seenTitles.has(tNorm)) continue;
+      if (art && seenArt.has(art)) continue; // Max 1 per album cover!
+
+      seenTitles.add(tNorm);
+      if (art) seenArt.add(art);
 
       results.push({
-        name: trackName,
-        artist: artistName,
+        name: tName,
+        artist: aName,
         url: r.trackViewUrl || '',
         match: 0.90,
         image: art
       });
+    }
+
+    // Fallback to curated tracks if pool is somehow still small
+    if (results.length < 6) {
+      const seedObj = { artist, title };
+      const cur = _getCuratedFallback(seedObj);
+      for (const c of cur) {
+        const cNorm = _cleanSongTitle(c.name).toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cleanSeedNorm && (cNorm.includes(cleanSeedNorm) || cleanSeedNorm.includes(cNorm))) continue;
+        if (seenTitles.has(cNorm)) continue;
+        seenTitles.add(cNorm);
+        results.push(c);
+      }
     }
 
     if (force || results.length > DISPLAY_LIMIT) {
@@ -154,7 +242,7 @@ async function _fetchItunesFallback(artist, title, force = false) {
     _lastfmCache.set(cacheKey, results);
     return results;
   } catch (e) {
-    return [];
+    return _getCuratedFallback({ artist, title });
   }
 }
 
@@ -203,15 +291,10 @@ async function fetchSimilar(artist, title, force = false) {
     return normalized;
 
   } catch (err) {
-    console.warn('[Recommend] Last.fm fetch failed:', err.message);
-    try {
-      const af = await _fetchArtistSimilar(artist);
-      _lastfmCache.set(cacheKey, af);
-      return af;
-    } catch (e2) { return []; }
+    console.warn('[Recommend] Last.fm fetch failed, using iTunes discovery:', err.message);
+    return await _fetchItunesFallback(artist, title, force);
   }
 }
-
 async function _fetchArtistSimilar(artist) {
   const params = new URLSearchParams({
     method : 'artist.getSimilar',
@@ -708,9 +791,13 @@ async function initRecommendations(force = false) {
     filtered = _shuffleArray(filtered);
   }
 
+  if (filtered.length < 4) {
+    const fallback = _getCuratedFallback(seed);
+    filtered = deduplicateTracks([...filtered, ...fallback]);
+  }
+
   if (filtered.length === 0) {
-    _renderError(`Enjoying "${seed.title}" by ${seed.artist}!`);
-    return;
+    filtered = _getCuratedFallback(seed);
   }
 
   let enriched = [];
