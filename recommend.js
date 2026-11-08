@@ -258,7 +258,43 @@ async function _fetchItunesFallback(artist, title, force = false) {
       }
     }
 
-    if (force || results.length > DISPLAY_LIMIT) {
+    // 6. Score and rank candidates using hybrid scoring (Blueprint Section 7)
+    const userLikes = new Set((window.state && window.state.favorites || []).map(f => (f.title || '').toLowerCase().trim()));
+    const history = (window.state && window.state.history || []).map(h => (h.title || '').toLowerCase().trim());
+
+    results.forEach(item => {
+      let contentSim = 0.5;
+      const cArt = (item.artist || '').toLowerCase();
+      const sArt = (artist || '').toLowerCase();
+      if (cArt && sArt && (cArt.includes(sArt) || sArt.includes(cArt))) contentSim = 0.95;
+
+      let prefScore = 0.5;
+      const itemTitle = (item.name || '').toLowerCase();
+      if (userLikes.has(itemTitle)) prefScore += 0.4;
+      if (history.includes(itemTitle)) prefScore += 0.2;
+      prefScore = Math.min(1.0, prefScore);
+
+      const exploration = Math.random();
+      item.score = (0.40 * contentSim) + (0.30 * prefScore) + (0.20 * 0.8) + (0.10 * exploration);
+      item.match = +item.score.toFixed(2);
+    });
+
+    results.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+    // 7. Apply Artist Diversity Limits (max 2 tracks per artist to prevent single artist dominance)
+    const artistCounts = new Map();
+    const diverseResults = [];
+    for (const item of results) {
+      const artKey = (item.artist || 'unknown').toLowerCase().split('&')[0].trim();
+      const count = artistCounts.get(artKey) || 0;
+      if (count < 2) {
+        diverseResults.push(item);
+        artistCounts.set(artKey, count + 1);
+      }
+    }
+    results = diverseResults;
+
+    if (force) {
       results = _shuffleArray(results);
     }
 
