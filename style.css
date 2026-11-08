@@ -676,7 +676,7 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   min-width: 0;
 }
 .feat-card:hover { transform: translateY(-4px); box-shadow: var(--glow); }
-.feat-thumb { height: 130px; overflow: hidden; }
+.feat-thumb { width: 100%; aspect-ratio: 16 / 10; border-radius: var(--radius-lg) var(--radius-lg) 0 0; overflow: hidden; }
 .feat-thumb img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.3s; }
 .feat-card:hover .feat-thumb img { transform: scale(1.05); }
 .feat-info { padding: 12px 14px; min-width: 0; }
@@ -1965,7 +1965,7 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
 /* ═══════════════════════════════════════════════
    PROFILE PAGE
 ═══════════════════════════════════════════════ */
-.profile-cover { height: 220px; border-radius: var(--radius-lg); overflow: hidden; position: relative; margin-bottom: 0; z-index: 5; }
+.profile-cover { width: 100%; aspect-ratio: 21 / 9; min-height: 180px; max-height: 280px; border-radius: var(--radius-lg); overflow: hidden; position: relative; margin-bottom: 0; z-index: 5; }
 .pcover-img    { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
 .pcover-overlay{ position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 40%, rgba(8,12,20,0.9)); pointer-events: none; }
 .pcover-change { position: absolute; bottom: 16px; right: 16px; background: rgba(0,0,0,0.75); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--glass-border); color: white; border-radius: 20px; padding: 8px 18px; font-size: 12.5px; font-weight: 600; cursor: pointer !important; font-family: var(--font); z-index: 50 !important; pointer-events: auto !important; transition: all 0.25s ease; user-select: none; }
@@ -1973,7 +1973,7 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
 
 .profile-body  { display: grid; grid-template-columns: 320px 1fr; gap: 28px; margin-top: -40px; position: relative; z-index: 10; pointer-events: none; }
 .profile-left  { display: flex; flex-direction: column; gap: 16px; position: relative; z-index: 20; pointer-events: auto; }
-.pav-large { width: 80px; height: 80px; border-radius: 50%; background: var(--grad-main); display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 900; color: white; border: 4px solid var(--bg); box-shadow: 0 4px 16px rgba(83,104,77,0.25); }
+.pav-large { width: 80px; height: 80px; aspect-ratio: 1; border-radius: 50%; background: var(--grad-main); display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 900; color: white; border: 4px solid var(--bg); box-shadow: 0 4px 16px rgba(83,104,77,0.25); }
 .pname { font-size: 26px; font-weight: 900; }
 .pbio  { font-size: 13px; color: var(--text-2); line-height: 1.6; }
 .profile-actions { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -4222,17 +4222,464 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   display: none;
 }
 .mobile-bottom-nav {
-  grid-area: mobilenav !important;
-  display: flex !important;
-  align-items: center;
-  justify-content: space-around;
-  height: 56px;
-  background: #FFFFFF;
-  border-top: 1px solid var(--border);
-  z-index: 60;
-  padding: 0 4px;
-  box-shadow: 0 -2px 10px rgba(53, 65, 49, 0.04);
+  display: none;
 }
+
+/* ── 1. LAPTOP COMPACT SCREENS (1101px to 1366px) ──────────────── */
+@media (min-width: 1101px) and (max-width: 1366px) {
+  :root {
+    --sidebar-w: 220px;
+  }
+  .home-grid {
+    grid-template-columns: minmax(0, 1fr) 275px;
+    gap: 18px;
+  }
+  .st-header, .st-row {
+    grid-template-columns: 32px minmax(140px, 3fr) minmax(110px, 1.8fr) 65px 75px;
+  }
+  .st-header .st-h:nth-child(4),
+  .st-row .st-cell:nth-child(4) {
+    display: none; /* Hide genre column on compact laptop */
+  }
+  .hero-banner {
+    aspect-ratio: 22 / 9;
+    min-height: 210px;
+  }
+}
+
+/* ── 1B. TABLET & COMPACT SCREENS (1100px and below) ──────────────── */
+@media (max-width: 1100px) {
+  :root {
+    --sidebar-w: 200px;
+  }
+
+  .home-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .home-col-side {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 16px;
+    margin-top: 12px;
+  }
+  .side-card { margin-top: 0 !important; }
+
+  .player-page-layout {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .trending-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 12px;
+  }
+
+  .featured-row {
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 14px;
+  }
+
+  .categories-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+
+  .st-header, .st-row {
+    grid-template-columns: 32px 3fr 1.5fr 70px 70px;
+  }
+  .st-header .st-h:nth-child(4),
+  .st-row .st-cell:nth-child(4) {
+    display: none; /* Hide genre on tablet */
+  }
+
+  .player-bar {
+    grid-template-columns: 240px 1fr 180px;
+    padding: 0 16px;
+  }
+
+  .pb-song {
+    max-width: 140px;
+  }
+
+  .profile-body {
+    grid-template-columns: 1fr;
+    margin-top: 0;
+  }
+
+  .hero-banner {
+    aspect-ratio: 20 / 9;
+    min-height: 200px;
+  }
+
+  .profile-cover {
+    aspect-ratio: 18 / 9;
+    min-height: 180px;
+  }
+}
+
+/* ── 2. MOBILE PHONE & SMALL TABLET (768px and below) ────────────── */
+@media (max-width: 768px) {
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+  }
+
+  /* Full App Shell auto-adjusts to single vertical column with fixed app navigation */
+  .app-shell {
+    grid-template-columns: 100% !important;
+    grid-template-rows: minmax(0, 1fr) auto auto !important;
+    grid-template-areas:
+      "main"
+      "playerbar"
+      "mobilenav" !important;
+    height: 100dvh;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+  }
+
+  /* Off-canvas mobile slide-out drawer sidebar */
+  .sidebar {
+    position: fixed !important;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(300px, 82vw) !important;
+    z-index: 99999 !important;
+    transform: translateX(-105%);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 8px 0 36px rgba(53, 65, 49, 0.18);
+    background: #FFFFFF !important;
+    border-right: 1px solid var(--border);
+  }
+
+  .sidebar.mobile-open {
+    transform: translateX(0) !important;
+  }
+
+  /* Drawer backdrop */
+  .sidebar-backdrop {
+    display: block !important;
+    position: fixed;
+    inset: 0;
+    background: rgba(48, 58, 50, 0.45);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 99995;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+
+  .sidebar-backdrop.active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* Mobile hamburger button */
+  .mobile-menu-btn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--text-1);
+    cursor: pointer;
+    padding: 6px;
+    margin-right: 8px;
+    border-radius: 8px;
+    transition: background 0.15s ease;
+  }
+
+  .mobile-menu-btn:hover,
+  .mobile-menu-btn:active {
+    background: var(--bg-2);
+  }
+
+  /* Mobile Top Bar */
+  .topbar {
+    height: 54px;
+    padding: 0 12px;
+    gap: 8px;
+    background: rgba(250, 248, 243, 0.95);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .topbar-left {
+    display: flex;
+    align-items: center;
+  }
+
+  .breadcrumb {
+    font-size: 17px;
+    font-weight: 800;
+  }
+
+  .topbar-right {
+    gap: 6px;
+  }
+
+  .topbar-jam-btn {
+    padding: 6px 10px;
+    font-size: 11.5px;
+    border-radius: 20px;
+    gap: 5px;
+  }
+
+  .topbar-pc-btn {
+    padding: 6px 9px;
+    font-size: 11px;
+    border-radius: 20px;
+  }
+  .topbar-pc-btn span {
+    display: none; /* Icon-only on mobile */
+  }
+
+  .topbar-icon-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 13px;
+  }
+
+  .topbar-avatar {
+    width: 32px;
+    height: 32px;
+    font-size: 12px;
+  }
+
+  /* Main Pages */
+  .page {
+    padding: 14px 12px 24px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Home Page Banner */
+  .hero-banner {
+    height: auto;
+    aspect-ratio: 16 / 9;
+    min-height: 180px;
+    max-height: 240px;
+    padding: 16px 14px;
+    margin-bottom: 20px;
+    border-radius: 16px;
+  }
+
+  .hero-content {
+    position: relative;
+    left: 0;
+    bottom: 0;
+    max-width: 100%;
+  }
+
+  .hero-tag {
+    font-size: 10px;
+    padding: 3px 10px;
+    margin-bottom: 8px;
+  }
+
+  .hero-title {
+    font-size: 22px;
+    line-height: 1.15;
+    margin-bottom: 6px;
+  }
+
+  .hero-sub {
+    font-size: 12px;
+    margin-bottom: 12px;
+    white-space: normal;
+  }
+
+  .hero-actions {
+    gap: 8px;
+  }
+
+  .hero-actions .btn-primary,
+  .hero-actions .btn-secondary {
+    padding: 8px 16px;
+    font-size: 12.5px;
+    border-radius: 20px;
+  }
+
+  .hero-stats {
+    position: static;
+    margin-top: 14px;
+    gap: 16px;
+    display: flex;
+    justify-content: flex-start;
+  }
+
+  .hstat-num {
+    font-size: 17px;
+  }
+  .hstat-label {
+    font-size: 10px;
+  }
+
+  /* Grid Layouts on Phone */
+  .home-col-side {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-top: 16px;
+  }
+
+  .trending-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px;
+  }
+
+  .trend-rank {
+    font-size: 10px;
+    margin-bottom: 4px;
+  }
+
+  .trend-name {
+    font-size: 12px;
+  }
+
+  .trend-artist {
+    font-size: 10px;
+  }
+
+  .categories-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px;
+  }
+
+  .cat-card {
+    aspect-ratio: 16 / 10;
+    padding: 16px 14px;
+  }
+  .cat-emoji {
+    font-size: 24px;
+    margin-bottom: 6px;
+  }
+  .cat-card p {
+    font-size: 13px;
+  }
+
+  .featured-row {
+    grid-template-columns: 1fr !important;
+    gap: 12px;
+  }
+
+  /* Songs Table on Phone - Sleek Mobile Music Row */
+  .songs-table .st-header {
+    display: none !important;
+  }
+
+  .songs-table .st-row {
+    display: grid !important;
+    grid-template-columns: 38px 1fr auto !important;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    margin-bottom: 4px;
+  }
+
+  .st-row .st-num {
+    display: none !important;
+  }
+
+  .st-row:hover::before {
+    display: none !important;
+  }
+
+  .st-thumb {
+    width: 38px;
+    height: 38px;
+    aspect-ratio: 1;
+    border-radius: 8px;
+  }
+
+  .st-song-name {
+    font-size: 13.5px;
+    line-height: 1.2;
+  }
+
+  .st-artist {
+    font-size: 11px;
+    margin-top: 2px;
+  }
+
+  /* Hide Album & Genre columns on phone */
+  .st-row .st-cell:nth-child(3),
+  .st-row .st-cell:nth-child(4) {
+    display: none !important;
+  }
+
+  .st-dur {
+    font-size: 11px;
+    margin-right: 4px;
+  }
+
+  .st-acts {
+    gap: 2px;
+  }
+
+  .icon-act {
+    padding: 4px;
+    font-size: 14px;
+  }
+
+  /* ── NOW PLAYING PAGE ON PHONE ── */
+  #page-player {
+    padding: 12px 10px 24px;
+  }
+
+  .player-page-layout {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 14px;
+  }
+
+  .sv-toggle-wrap {
+    margin-bottom: 6px;
+  }
+
+  .flow-visualizer-wrap {
+    height: min(72vw, 280px) !important;
+    aspect-ratio: 16 / 10;
+    border-radius: 18px;
+    margin-bottom: 8px;
+  }
+
+  .visualizer-top-bar {
+    padding: 6px 8px;
+  }
+
+  .visualizer-badge {
+    font-size: 9.5px;
+    padding: 3px 8px;
+  }
+
+  .visualizer-presets {
+    max-width: 72%;
+    gap: 3px;
+    padding: 2px 4px;
+  }
+
+  .viz-preset-btn {
+    font-size: 10px;
+    padding: 3px 7px;
+  }
+
+  .visualizer-album-card {
+    width: min(32vw, 105px) !important;
+    height: min(32vw, 105px) !important;
+    aspect-ratio: 1 !important;
+    border-radius: 16px;
+  }
+
+  .visualizer-bottom-bar {
+    padding: 0 4px;
+  }
 
   .viz-beat-bar {
     width: 55px;
@@ -4263,6 +4710,7 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   .ctrl-play {
     width: 52px !important;
     height: 52px !important;
+    aspect-ratio: 1;
     font-size: 20px;
   }
 
@@ -4285,6 +4733,26 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
     gap: 8px;
   }
 
+  /* ── Profile Page Responsive Ratios ── */
+  .profile-cover {
+    height: auto;
+    aspect-ratio: 16 / 9;
+    min-height: 150px;
+    max-height: 200px;
+  }
+
+  .pav-large {
+    width: 68px;
+    height: 68px;
+    aspect-ratio: 1;
+    font-size: 24px;
+  }
+
+  .content-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)) !important;
+    gap: 10px;
+  }
+
   /* ── BOTTOM PLAYER MINI-BAR (PHONE) ── */
   .player-bar {
     grid-area: playerbar !important;
@@ -4294,9 +4762,10 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
     padding: 6px 12px 6px 12px !important;
     height: 60px !important;
     position: relative;
-    border-top: 1px solid var(--glass-border);
-    background: var(--playerbar-bg) !important;
+    border-top: 1px solid var(--border);
+    background: #FFFFFF !important;
     z-index: 55;
+    box-shadow: 0 -2px 12px rgba(53, 65, 49, 0.08);
   }
 
   .pb-right {
@@ -4328,8 +4797,11 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   }
 
   .pb-play {
-    width: 34px !important;
-    height: 34px !important;
+    width: 36px !important;
+    height: 36px !important;
+    aspect-ratio: 1;
+    background: var(--sage);
+    color: #FFFFFF;
   }
 
   .pb-play svg {
@@ -4366,6 +4838,7 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   .pb-thumb {
     width: 42px !important;
     height: 42px !important;
+    aspect-ratio: 1 !important;
     border-radius: 8px;
   }
 
@@ -4391,10 +4864,11 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
     align-items: center;
     justify-content: space-around;
     height: 56px;
-    background: var(--sidebar-bg);
-    border-top: 1px solid var(--glass-border);
+    background: #FFFFFF;
+    border-top: 1px solid var(--border);
     z-index: 60;
     padding: 0 4px;
+    box-shadow: 0 -2px 10px rgba(53, 65, 49, 0.04);
   }
 
   .mob-nav-btn {
@@ -4404,7 +4878,7 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
     justify-content: center;
     background: none;
     border: none;
-    color: var(--text-3);
+    color: var(--text-2);
     font-family: var(--font);
     font-size: 10px;
     font-weight: 600;
@@ -4416,7 +4890,10 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
     user-select: none;
   }
 
-  .mob-nav-btn.active { color: var(--dark-sage); font-weight: 700; }
+  .mob-nav-btn.active {
+    color: var(--dark-sage);
+    font-weight: 700;
+  }
 
   .mob-nav-btn.active .mob-nav-icon {
     transform: scale(1.15);
@@ -4444,7 +4921,9 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
     padding: 22px 16px 28px !important;
     margin: 0 !important;
     align-self: flex-end !important;
-    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.7) !important;
+    background: #FFFFFF !important;
+    border: 1px solid var(--border);
+    box-shadow: 0 -10px 40px rgba(53, 65, 49, 0.15) !important;
     animation: slideUpModal 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
   }
 
@@ -4466,6 +4945,7 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   .jam-header-icon-wrap {
     width: 42px;
     height: 42px;
+    aspect-ratio: 1;
     border-radius: 12px;
   }
 
@@ -4509,6 +4989,7 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   .jam-track-thumb {
     width: 38px;
     height: 38px;
+    aspect-ratio: 1;
     font-size: 17px;
   }
 
@@ -4543,6 +5024,7 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   .jam-e2e-shield-box {
     width: 32px;
     height: 32px;
+    aspect-ratio: 1;
     font-size: 16px;
   }
   .jam-e2e-card-title {
@@ -4570,6 +5052,7 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
     aspect-ratio: 16 / 9;
   }
 }
+
 
 /* ── 3. EXTRA SMALL PHONES (440px and below) ─────────────────────── */
 @media (max-width: 440px) {
