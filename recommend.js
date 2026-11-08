@@ -192,8 +192,58 @@ function _pickLargestImage(imageArr) {
    STEP 3 — filterLocal
    Removes songs already in the user's local library.
 ══════════════════════════════════════════════════════════════════ */
+/* ── Clean and Deduplicate Track Titles ── */
+function _cleanSongTitle(title) {
+  if (!title) return '';
+  return String(title)
+    .toLowerCase()
+    .replace(/\s*[\(\[].*?[\)\]]/g, '')
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function deduplicateTracks(tracks) {
+  if (!Array.isArray(tracks)) return [];
+  const seenKeys = new Set();
+  const seenCleanTitles = new Set();
+  const result = [];
+
+  const seed = getSeed();
+  if (seed && seed.title) {
+    seenCleanTitles.add(_cleanSongTitle(seed.title));
+    if (seed.artist) seenKeys.add(_normalizeKey(seed.artist, seed.title));
+  }
+  if (window.state && window.state.currentSong) {
+    const cs = window.state.currentSong;
+    if (cs.title) seenCleanTitles.add(_cleanSongTitle(cs.title));
+    if (cs.artist && cs.title) seenKeys.add(_normalizeKey(cs.artist, cs.title));
+  }
+
+  for (const t of tracks) {
+    if (!t) continue;
+    const name = (t.name || t.title || '').trim();
+    const artist = (t.artist || '').trim();
+    if (!name) continue;
+
+    const cleanTitle = _cleanSongTitle(name);
+    const key = _normalizeKey(artist, name);
+
+    if (seenKeys.has(key) || seenCleanTitles.has(cleanTitle)) {
+      continue;
+    }
+
+    seenKeys.add(key);
+    seenCleanTitles.add(cleanTitle);
+    result.push(t);
+  }
+
+  return result;
+}
+
 function filterLocal(tracks) {
   const known = new Set();
+  const knownCleanTitles = new Set();
 
   const allKnown = [
     ...(window.state && window.state.songs   || []),
@@ -204,20 +254,37 @@ function filterLocal(tracks) {
     if (!s) continue;
     const key = _normalizeKey(s.artist, s.title);
     if (key) known.add(key);
-    if (s.title) known.add(s.title.toLowerCase().trim());
+    if (s.title) {
+      known.add(s.title.toLowerCase().trim());
+      knownCleanTitles.add(_cleanSongTitle(s.title));
+    }
   }
 
   const seed = getSeed();
-  if (seed) {
+  if (seed && seed.title) {
     known.add(_normalizeKey(seed.artist, seed.title));
     known.add(seed.title.toLowerCase().trim());
+    knownCleanTitles.add(_cleanSongTitle(seed.title));
   }
 
-  return tracks.filter(t => {
+  const result = [];
+  const localSeen = new Set();
+
+  for (const t of tracks) {
+    if (!t || !t.name) continue;
     const key = _normalizeKey(t.artist, t.name);
     const byTitle = t.name.toLowerCase().trim();
-    return !known.has(key) && !known.has(byTitle);
-  });
+    const cleanTitle = _cleanSongTitle(t.name);
+
+    if (known.has(key) || known.has(byTitle) || knownCleanTitles.has(cleanTitle) || localSeen.has(cleanTitle) || localSeen.has(key)) {
+      continue;
+    }
+    localSeen.add(cleanTitle);
+    localSeen.add(key);
+    result.push(t);
+  }
+
+  return result;
 }
 
 function _normalizeKey(artist, title) {
@@ -288,7 +355,9 @@ function render(tracks, seedTitle) {
   if (statusEl) statusEl.style.display = 'none';
   if (seedSpan && seedTitle) seedSpan.textContent = `Based on: ${seedTitle}`;
 
-  if (!tracks || tracks.length === 0) {
+  const uniqueTracks = deduplicateTracks(tracks);
+
+  if (!uniqueTracks || uniqueTracks.length === 0) {
     grid.innerHTML = `
       <div class="rec-empty">
         <span style="font-size:32px">🌐</span>
@@ -298,7 +367,7 @@ function render(tracks, seedTitle) {
     return;
   }
 
-  grid.innerHTML = tracks.slice(0, DISPLAY_LIMIT).map((t, idx) => {
+  grid.innerHTML = uniqueTracks.slice(0, DISPLAY_LIMIT).map((t, idx) => {
     const artwork   = (t.itunes && t.itunes.artwork) || t.image || '';
     const previewUrl= (t.itunes && t.itunes.preview) || '';
     const duration  = t.itunes && t.itunes.trackTimeMillis ? _fmtMs(t.itunes.trackTimeMillis) : '';
@@ -312,27 +381,33 @@ function render(tracks, seedTitle) {
       ? `<img src="${_escAttr(artwork)}" alt="${safeTitle}" class="rec-art-img"
              onerror="this.style.display='none'" />`
       : '';
-    const previewBtn = previewUrl
-      ? `<button class="rec-btn rec-btn-preview"
-              data-preview="${_escAttr(previewUrl)}"
-              onclick="_recPlayPreview(this, this.dataset.preview, event)"
-              title="30s Preview">
-           <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-           Preview
-         </button>`
-      : `<button class="rec-btn rec-btn-search"
-              data-name="${_escAttr(t.name)}"
-              data-artist="${_escAttr(t.artist)}"
-              onclick="_recSearchTrack(this.dataset.name, this.dataset.artist, event)"
-              title="Search on Dhun">
-           🔍 Search
-         </button>`;
 
     return `
-      <div class="rec-card" id="rec-card-${idx}">
+      <div class="rec-card" id="rec-card-${idx}"
+           onclick="_recPlayDirect(this.dataset.name, this.dataset.artist, this.dataset.art, event)"
+           data-name="${_escAttr(t.name)}"
+           data-artist="${_escAttr(t.artist)}"
+           data-art="${_escAttr(artwork)}"
+           title="Click to play ${safeTitle} directly on Dhun">
         <div class="rec-art" style="background:${gradient}">
           ${artImg}
-          <div class="rec-art-overlay">${previewBtn}</div>
+          <div class="rec-art-overlay">
+            <button class="rec-btn rec-btn-play-overlay"
+                    data-name="${_escAttr(t.name)}"
+                    data-artist="${_escAttr(t.artist)}"
+                    data-art="${_escAttr(artwork)}"
+                    onclick="_recPlayDirect(this.dataset.name, this.dataset.artist, this.dataset.art, event)"
+                    title="Play on Dhun">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Play
+            </button>
+            ${previewUrl ? `
+            <button class="rec-btn rec-btn-preview"
+                    data-preview="${_escAttr(previewUrl)}"
+                    onclick="_recPlayPreview(this, this.dataset.preview, event)"
+                    title="30s Audio Preview">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg> Preview
+            </button>` : ''}
+          </div>
           ${matchPct > 0 ? `<span class="rec-match-badge">${matchPct}% match</span>` : ''}
         </div>
         <div class="rec-info">
@@ -342,14 +417,18 @@ function render(tracks, seedTitle) {
           ${duration   ? `<span class="rec-dur">${duration}</span>` : ''}
         </div>
         <div class="rec-actions">
+          <button class="rec-btn rec-btn-play-action"
+                  data-name="${_escAttr(t.name)}"
+                  data-artist="${_escAttr(t.artist)}"
+                  data-art="${_escAttr(artwork)}"
+                  onclick="_recPlayDirect(this.dataset.name, this.dataset.artist, this.dataset.art, event)"
+                  title="Play directly on Dhun">▶ Play</button>
           <button class="rec-btn rec-btn-queue"
                   data-name="${_escAttr(t.name)}"
                   data-artist="${_escAttr(t.artist)}"
                   data-art="${_escAttr(artwork)}"
                   onclick="_recAddToQueue(this.dataset.name, this.dataset.artist, this.dataset.art, event)"
-                  title="Search and Queue">＋ Queue</button>
-          ${t.url ? `<a class="rec-btn rec-btn-lastfm" href="${_escAttr(t.url)}"
-               target="_blank" rel="noopener noreferrer" title="View on Last.fm">🎵 Last.fm</a>` : ''}
+                  title="Add to Queue">＋ Queue</button>
         </div>
       </div>`;
   }).join('');
@@ -388,6 +467,49 @@ window._recPlayPreview = function(btn, url, e) {
   };
 };
 
+/* ── Direct Play from YouTube Music / Library ── */
+window._recPlayDirect = async function(title, artist, artwork, e) {
+  if (e) {
+    try { e.stopPropagation(); e.preventDefault(); } catch(err) {}
+  }
+  if (!title) return;
+  if (typeof showToast === 'function') {
+    showToast(`▶ Playing "${title}" by ${artist || ''}...`);
+  }
+
+  // 1. Check if song already exists in state.songs
+  const allSongs = (window.state && window.state.songs) || [];
+  const found = allSongs.find(s =>
+    s && s.title &&
+    s.title.toLowerCase().trim() === title.toLowerCase().trim() &&
+    (!artist || !s.artist || s.artist.toLowerCase().trim() === artist.toLowerCase().trim())
+  );
+  if (found && typeof openPlayerById === 'function') {
+    openPlayerById(found.id);
+    return;
+  }
+
+  // 2. Play directly via YouTube Music track resolver
+  if (typeof playYTMusicTrack === 'function') {
+    try {
+      await playYTMusicTrack({
+        title: title,
+        artist: artist || '',
+        thumbnail: artwork || '',
+        id: 'yt_rec_' + Date.now()
+      });
+      return;
+    } catch (err) {
+      console.warn('[Recommend] playYTMusicTrack error:', err);
+    }
+  }
+
+  // 3. Fallback: Search on Dhun
+  if (typeof _recSearchTrack === 'function') {
+    _recSearchTrack(title, artist, null);
+  }
+};
+
 window._recSearchTrack = function(title, artist, e) {
   if (e) e.stopPropagation();
   const query = `${artist} ${title}`.trim();
@@ -401,20 +523,47 @@ window._recSearchTrack = function(title, artist, e) {
   }, 300);
 };
 
-window._recAddToQueue = function(title, artist, artwork, e) {
-  if (e) e.stopPropagation();
-  const found = ((window.state && window.state.songs) || []).find(s =>
-    s.title && s.artist &&
+window._recAddToQueue = async function(title, artist, artwork, e) {
+  if (e) {
+    try { e.stopPropagation(); e.preventDefault(); } catch(err) {}
+  }
+  if (!title) return;
+  if (typeof showToast === 'function') {
+    showToast(`⏳ Adding "${title}" to queue...`);
+  }
+
+  // 1. Check existing song in state.songs
+  const allSongs = (window.state && window.state.songs) || [];
+  const found = allSongs.find(s =>
+    s && s.title &&
     s.title.toLowerCase().trim() === title.toLowerCase().trim() &&
-    s.artist.toLowerCase().trim() === artist.toLowerCase().trim()
+    (!artist || !s.artist || s.artist.toLowerCase().trim() === artist.toLowerCase().trim())
   );
   if (found && typeof enqueueSong === 'function') {
-    enqueueSong(String(found.id));
-    if (typeof showToast === 'function') showToast(`Queued: "${title}"`);
+    await enqueueSong(String(found.id));
+    if (typeof showToast === 'function') showToast(`Queued: "${title}" ✅`);
     return;
   }
+
+  // 2. Resolve via YTMusicAPI
+  if (typeof YTMusicAPI !== 'undefined' && YTMusicAPI.resolveVideoIdForTrack) {
+    try {
+      const vid = await YTMusicAPI.resolveVideoIdForTrack(title, artist || '');
+      if (vid && typeof autoAddTrackToLibrary === 'function' && typeof enqueueSong === 'function') {
+        const song = await autoAddTrackToLibrary({
+          title, artist: artist || '', videoId: vid, thumbnail: artwork || ''
+        });
+        if (song && song.id !== undefined) {
+          await enqueueSong(song.id);
+          if (typeof showToast === 'function') showToast(`Queued: "${title}" ✅`);
+          return;
+        }
+      }
+    } catch(err) {}
+  }
+
+  // 3. Fallback: Search & Queue
   _recSearchTrack(title, artist, null);
-  if (typeof showToast === 'function') showToast(`Searching for "${title}" by ${artist}`);
 };
 
 /* ── Loading / Error states ── */
@@ -449,35 +598,40 @@ async function initRecommendations() {
 
   const seed = getSeed();
   if (!seed) {
-    _renderError('Add songs to your library or play something to get global recommendations.');
+    _renderError('Add songs to your library or play something to get recommendations.');
     return;
   }
 
   let similar = [];
-  try { similar = await fetchSimilar(seed.artist, seed.title); }
-  catch (e) { console.warn('[Recommend] fetchSimilar error:', e); }
+  try {
+    similar = await fetchSimilar(seed.artist, seed.title);
+  } catch (e) {
+    console.warn('[Recommend] fetchSimilar error:', e);
+  }
 
-  const filtered = filterLocal(similar);
+  let filtered = filterLocal(similar);
 
+  if (filtered.length < 4) {
+    try {
+      const more = await _fetchItunesFallback(seed.artist, seed.title);
+      const moreFiltered = filterLocal(more);
+      filtered = deduplicateTracks([...filtered, ...moreFiltered]);
+    } catch (e) {}
+  }
 
+  filtered = deduplicateTracks(filtered);
 
   if (filtered.length === 0) {
-    try {
-      const more = await _fetchArtistSimilar(seed.artist);
-      const moreFiltered = filterLocal(more);
-      if (moreFiltered.length > 0) {
-        const enriched = await enrich(moreFiltered.slice(0, DISPLAY_LIMIT));
-        render(enriched, seed.title);
-        return;
-      }
-    } catch (e) {}
-    _renderError(`You already have everything similar to "${seed.title}" in your library!`);
+    _renderError(`Enjoying "${seed.title}" by ${seed.artist}!`);
     return;
   }
 
   let enriched = [];
-  try { enriched = await enrich(filtered.slice(0, DISPLAY_LIMIT + 5)); }
-  catch (e) { enriched = filtered.slice(0, DISPLAY_LIMIT).map(t => ({ ...t, itunes: null })); }
+  try {
+    enriched = await enrich(filtered.slice(0, DISPLAY_LIMIT));
+  } catch (e) {
+    enriched = filtered.slice(0, DISPLAY_LIMIT).map(t => ({ ...t, itunes: null }));
+  }
 
   render(enriched, seed.title);
 }
@@ -695,6 +849,53 @@ function _injectStyles() {
   flex: 1; justify-content: center;
 }
 .rec-btn-queue:hover { background: #ddd0e6; }
+
+.rec-btn-play-overlay {
+  background: var(--primary-sage, #829779) !important;
+  color: #FFFFFF !important;
+  border: none;
+  font-weight: 700;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+  padding: 8px 16px;
+  font-size: 13px;
+  gap: 6px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+.rec-btn-play-overlay:hover {
+  filter: brightness(1.12);
+  transform: scale(1.06);
+}
+.rec-btn-play-action {
+  background: var(--light-sage, #DDE6D5);
+  color: var(--dark-sage, #3e5039);
+  border: 1px solid var(--border-subtle, #EAE8E0);
+  flex: 1;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.rec-btn-play-action:hover {
+  background: #ccd9c4;
+}
+.rec-card {
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.rec-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+}
+
 .rec-btn-lastfm {
   background: rgba(210,35,42,0.12); color: #c53030;
   border: 1px solid rgba(210,35,42,0.25);
