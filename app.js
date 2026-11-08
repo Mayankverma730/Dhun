@@ -2416,18 +2416,26 @@ const DhunAuth = {
       purgePredefaultPlaylists();
       setTimeout(() => pullProfileFromCloud(), 600);
     } else {
-      // Not authenticated: display dedicated full-page landing gate
-      authState.currentUser = null;
+      // Land directly on main webpage as Guest preview (bypass login gate)
+      const guestUser = {
+        id: 'guest',
+        name: 'Guest User',
+        email: 'guest@dhun.local',
+        avatarColor: '#829779',
+        avatarUrl: null,
+        provider: 'guest',
+        bio: '🎵 Exploring Dhun Music Preview',
+        joinedAt: Date.now(),
+        lastLoginAt: Date.now()
+      };
+      authState.currentUser = guestUser;
       if (gateScreen) {
-        gateScreen.style.display = 'flex';
+        gateScreen.style.display = 'none';
         gateScreen.classList.remove('gate-exiting');
-        this.setTab('signin', false);
-        this.renderSavedProfiles();
-        this.renderColorPickers();
-        this.prefillSavedCredentials();
-        this.initGoogleGSI();
       }
-      if (appShell) appShell.style.display = 'none';
+      if (appShell) appShell.style.display = '';
+      updateAuthUI();
+      this.initGoogleGSI();
     }
   },
 
@@ -2858,18 +2866,27 @@ const DhunAuth = {
         if (typeof pauseSong === 'function') pauseSong();
       } catch(e) {}
 
+      const guestUser = {
+        id: 'guest',
+        name: 'Guest User',
+        email: 'guest@dhun.local',
+        avatarColor: '#829779',
+        avatarUrl: null,
+        provider: 'guest',
+        bio: '🎵 Exploring Dhun Music Preview',
+        joinedAt: Date.now(),
+        lastLoginAt: Date.now()
+      };
+      authState.currentUser = guestUser;
       const gateScreen = document.getElementById('login-gate-screen');
       const appShell = document.getElementById('app');
-      if (appShell) appShell.style.display = 'none';
       if (gateScreen) {
-        gateScreen.style.display = 'flex';
+        gateScreen.style.display = 'none';
         gateScreen.classList.remove('gate-exiting');
-        this.setTab('signin', false);
-        this.renderSavedProfiles();
-        this.renderColorPickers();
-        this.prefillSavedCredentials();
       }
-      showToast('👋 Signed out. Please sign in to enter Dhun.');
+      if (appShell) appShell.style.display = '';
+      updateAuthUI();
+      showToast('👋 Signed out. Switched to Guest mode.');
     });
   },
 
@@ -3692,7 +3709,11 @@ function updateAuthUI() {
 
   const signoutBtn = document.getElementById('ump-signout-btn');
   if (signoutBtn) {
-    signoutBtn.style.display = 'flex';
+    signoutBtn.style.display = isGuest ? 'none' : 'flex';
+  }
+  const topbarSigninBtn = document.getElementById('topbar-signin-btn');
+  if (topbarSigninBtn) {
+    topbarSigninBtn.style.display = isGuest ? 'inline-flex' : 'none';
   }
 
   const trigger = document.getElementById('ump-auth-trigger');

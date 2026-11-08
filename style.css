@@ -7210,3 +7210,26 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   background: rgba(66, 133, 244, 0.15);
   color: #ffffff;
 }
+
+.btn-topbar-signin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--grad-main, linear-gradient(135deg, #829779 0%, #687e5f 100%));
+  color: #FFFFFF !important;
+  font-size: 12.5px;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(104, 126, 95, 0.25);
+  margin-right: 6px;
+}
+.btn-topbar-signin:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(104, 126, 95, 0.35);
+  filter: brightness(1.06);
+}
