@@ -10,10 +10,14 @@ function getUserId(req) {
   const auth = req.headers.authorization || '';
   if (auth.startsWith('Bearer ')) {
     const token = auth.slice(7).trim();
-    if (token) return token.slice(0, 64);
+    if (token && token.length >= 8) return token.slice(0, 64);
   }
-  const guest = req.headers['x-user-id'] || 'guest';
-  return String(guest).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'guest';
+  const clientHeader = req.headers['x-user-id'];
+  // Prevent unauthenticated callers from spoofing registered usr_ accounts
+  if (clientHeader && typeof clientHeader === 'string' && clientHeader.startsWith('guest_')) {
+    return clientHeader.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+  }
+  return 'guest';
 }
 
 function isAllowedOrigin(origin) {

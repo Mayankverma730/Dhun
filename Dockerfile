@@ -20,6 +20,11 @@ COPY index.html style.css app.js presentation.html logo.svg /app/
 COPY js/ /app/js/
 COPY *.jpg *.png /app/ 2>/dev/null || true
 
+# Run as non-root user for container security
+RUN useradd -u 10001 -m -s /bin/sh appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 3000
 
 ENV DHUN_PORT=3000

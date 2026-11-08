@@ -16,9 +16,9 @@
     {
       "source": "/api/(.*)",
       "headers": [
-        { "key": "Access-Control-Allow-Origin",  "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,DELETE,OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type,Authorization,X-User-Id,X-Host-Token" }
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type,Authorization,X-User-Id,X-Host-Token" },
+        { "key": "Vary",                         "value": "Origin" }
       ]
     },
     {

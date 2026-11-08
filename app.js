@@ -752,9 +752,11 @@ function updatePVPFullscreenBtnIcon() {
 }
 
 function initPVPOverlayListeners() {
+  if (window._pvpListenersInitialized) return;
   const dock = document.getElementById('yt-player-dock');
   const overlay = document.getElementById('pvp-dock-overlay');
   if (!overlay || typeof overlay.addEventListener !== 'function') return;
+  window._pvpListenersInitialized = true;
 
   ['mousemove', 'pointermove', 'click', 'touchstart'].forEach(evt => {
     overlay.addEventListener(evt, onUserPVPActivity, { passive: true });
@@ -2232,9 +2234,37 @@ const authState = {
   selectedAvatarColor: '#829779'
 };
 
+let _googleConfigPromise = null;
+async function fetchServerGoogleClientId() {
+  if (typeof window !== 'undefined' && window._dhunServerGoogleClientId) {
+    return window._dhunServerGoogleClientId;
+  }
+  if (_googleConfigPromise) return _googleConfigPromise;
+  _googleConfigPromise = (async () => {
+    try {
+      const res = await fetch('/api/auth/google');
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.clientId) {
+          const cid = data.clientId.trim();
+          if (typeof window !== 'undefined') window._dhunServerGoogleClientId = cid;
+          if (typeof CONFIG !== 'undefined') CONFIG.GOOGLE_CLIENT_ID = cid;
+          window.DHUN_GOOGLE_CLIENT_ID = cid;
+          return cid;
+        }
+      }
+    } catch (e) {}
+    return '';
+  })();
+  return _googleConfigPromise;
+}
+
 function getGoogleClientId() {
   const stored = localStorage.getItem('dhun_google_client_id');
   if (stored && stored.trim() && !stored.startsWith('YOUR_GOOGLE')) return stored.trim();
+  if (typeof window !== 'undefined' && window._dhunServerGoogleClientId) {
+    return window._dhunServerGoogleClientId.trim();
+  }
   if (typeof CONFIG !== 'undefined' && CONFIG.GOOGLE_CLIENT_ID && !CONFIG.GOOGLE_CLIENT_ID.startsWith('YOUR_GOOGLE')) {
     return CONFIG.GOOGLE_CLIENT_ID.trim();
   }
@@ -3007,10 +3037,13 @@ const DhunAuth = {
   },
 
   // 7. GOOGLE OAUTH 2.0 INTEGRATION
-  initGoogleGSI() {
+  async initGoogleGSI() {
+    let clientId = getGoogleClientId();
+    if (!clientId) {
+      clientId = await fetchServerGoogleClientId();
+    }
     if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) return;
     if (this._gsiInitialized) return;
-    const clientId = getGoogleClientId();
     if (!clientId || clientId.startsWith('YOUR_GOOGLE')) return;
     this._gsiInitialized = true;
     try {
@@ -3025,22 +3058,51 @@ const DhunAuth = {
     } catch(e) {}
   },
 
-  handleGSICredential(response) {
+  async handleGSICredential(response) {
     try {
       const token = response && response.credential;
       if (!token) return;
+
+      showToast('🔄 Verifying Google credentials...');
+
+      // Server-side verification with backend
+      try {
+        const verifyRes = await fetch('/api/auth/google', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ credential: token })
+        });
+        if (verifyRes.ok) {
+          const resData = await verifyRes.json();
+          if (resData && resData.user) {
+            if (resData.token) {
+              localStorage.setItem('dhun_session_token', resData.token);
+            }
+            this.applyGoogleProfile(resData.user);
+            return;
+          }
+        }
+      } catch (srvErr) {
+        console.warn('[Google Auth] Server verification offline, using client validation:', srvErr);
+      }
+
+      // Client-side fallback if server is unreachable
       const parts = token.split('.');
-      if (parts.length < 2) return;
-      const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-      this.applyGoogleProfile(payload);
+      if (parts.length >= 2) {
+        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+        this.applyGoogleProfile(payload);
+      }
     } catch(e) {
       showToast('⚠️ Google sign-in failed. Please try again.');
     }
   },
 
-  googleSignIn(isFromGate = false) {
+  async googleSignIn(isFromGate = false) {
     this._isFromGate = isFromGate;
-    const clientId = getGoogleClientId();
+    let clientId = getGoogleClientId();
+    if (!clientId) {
+      clientId = await fetchServerGoogleClientId();
+    }
 
     if (!clientId || clientId.startsWith('YOUR_GOOGLE')) {
       this.openGoogleSetup(isFromGate);
@@ -3080,11 +3142,14 @@ const DhunAuth = {
       } catch(e) {}
     }
 
-    // Fallback: Direct OAuth Popup Window
+    // Fallback: Direct OAuth Popup Window (strip trailing slash to match Google Cloud Console URI)
     const width = 500, height = 620;
     const left = window.screenX + (window.outerWidth - width) / 2;
     const top = window.screenY + (window.outerHeight - height) / 2;
-    const redirectUri = window.location.origin + window.location.pathname;
+    let redirectUri = window.location.origin;
+    if (window.location.pathname && window.location.pathname !== '/' && !window.location.pathname.endsWith('/index.html')) {
+      redirectUri += window.location.pathname.replace(/\/+$/, '');
+    }
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=openid%20email%20profile&prompt=select_account`;
     const popup = window.open(authUrl, 'GoogleSignIn', `width=${width},height=${height},left=${left},top=${top}`);
     if (!popup || popup.closed) {
@@ -3157,8 +3222,18 @@ const DhunAuth = {
   saveGoogleClientIdAndLaunch() {
     const input = document.getElementById('google-client-id-input');
     const val = (input?.value || '').trim();
-    if (!val) {
+    if (!val || val.startsWith('YOUR_GOOGLE')) {
       this.showError('google-setup-status', 'Please enter your Google Web Client ID.');
+      if (input) input.focus();
+      return;
+    }
+    if (val.startsWith('GOCSPX-')) {
+      this.showError('google-setup-status', '⚠️ That is your Client Secret (starts with GOCSPX-). Please enter your Client ID instead (ends with .apps.googleusercontent.com). Client Secret should never be entered in the browser.');
+      if (input) input.focus();
+      return;
+    }
+    if (!val.includes('.apps.googleusercontent.com')) {
+      this.showError('google-setup-status', '⚠️ Invalid Client ID format. Google Web Client IDs must end with .apps.googleusercontent.com');
       if (input) input.focus();
       return;
     }
@@ -3166,6 +3241,17 @@ const DhunAuth = {
     this.closeGoogleSetup();
     showToast('✅ Google OAuth Client ID saved!');
     this.googleSignIn(this._isFromGate);
+  },
+
+  resetGoogleClientId() {
+    localStorage.removeItem('dhun_google_client_id');
+    if (typeof CONFIG !== 'undefined') CONFIG.GOOGLE_CLIENT_ID = '';
+    window.DHUN_GOOGLE_CLIENT_ID = '';
+    window._dhunServerGoogleClientId = '';
+    const input = document.getElementById('google-client-id-input');
+    if (input) input.value = '';
+    showToast('🔄 Stored Google Client ID cleared from browser.');
+    this.clearError('google-setup-status');
   },
 
   demoGoogleSignIn() {
@@ -3772,18 +3858,7 @@ function handleForgotPassword(isFromGate = false) {
       </div>
     `;
 
-    // Interactive Demo Simulation Link: provided for convenient testing when account exists
-    if (generatedToken) {
-      html += `
-        <div class="reset-simulation-card">
-          <div class="sim-title"><span>📧</span> Test Simulation: Reset Link Generated</div>
-          <p style="margin:4px 0 0;font-size:12px;color:var(--text-2);">In production this is delivered via email. For direct browser testing, click below:</p>
-          <a class="sim-link" onclick="openResetPasswordWithToken('${generatedToken}', ${isFromGate})">
-            Follow Password Reset Link (Token: ${generatedToken.slice(0, 10)}...) →
-          </a>
-        </div>
-      `;
-    }
+      // Simulation card removed for anti-enumeration and credential safety
 
     statusEl.innerHTML = html;
     statusEl.style.display = 'block';
@@ -4507,7 +4582,7 @@ async function encryptCloudSyncPayload(payload, email) {
   try {
     const key = await deriveCloudSyncKey(email);
     if (!key || typeof crypto === 'undefined' || !crypto.getRandomValues) {
-      return JSON.stringify(payload);
+      return null;
     }
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const enc = new TextEncoder();
@@ -4521,8 +4596,8 @@ async function encryptCloudSyncPayload(payload, email) {
       ct: _csU8ToB64(new Uint8Array(cipherBuf))
     });
   } catch (e) {
-    console.warn('[CloudSync] Encrypt error, falling back:', e);
-    return JSON.stringify(payload);
+    console.warn('[CloudSync] Encrypt error, refusing unencrypted fallback:', e);
+    return null;
   }
 }
 
@@ -4540,8 +4615,8 @@ async function decryptCloudSyncPayload(raw, email) {
       );
       return JSON.parse(new TextDecoder().decode(plainBuf));
     }
-    // Backward compatibility for legacy plaintext payloads
-    return parsed;
+    // Refuse unencrypted payloads from public brokers
+    return null;
   } catch (e) {
     console.warn('[CloudSync] Decrypt error:', e);
     return null;
@@ -4636,6 +4711,10 @@ async function pushProfileToCloud() {
   };
 
   const encrypted = await encryptCloudSyncPayload(syncPayload, user.email);
+  if (!encrypted) {
+    console.warn('[CloudSync] Encryption unavailable, aborting cloud push to protect user data');
+    return;
+  }
 
   getCloudMqttClient(client => {
     if (!client) return;
@@ -6628,7 +6707,7 @@ async function showSugg() {
     const box = document.getElementById(id);
     if (!box) return;
     if (items.length) {
-      box.innerHTML = items.map(it => `<div class="sugg-item" onmousedown="event.preventDefault()" onclick="selectSuggestion('${escapeHtmlAttr(it.val)}')">${it.html}</div>`).join('');
+      box.innerHTML = items.map(it => `<div class="sugg-item" onmousedown="event.preventDefault()" data-val="${escapeHtmlAttr(it.val)}" onclick="selectSuggestion(this.getAttribute('data-val'))">${it.html}</div>`).join('');
       box.style.display = 'block';
     } else {
       box.style.display = 'none';
@@ -7639,6 +7718,17 @@ function handleJamMessageData(data) {
   jamState._isRemoteSync = true;
   try {
     switch (data.type) {
+      case 'HOST_TAKEOVER':
+        if (data.newHost) {
+          jamState.hostName = data.newHost;
+          jamState.isHost = false;
+          jamState.members.forEach(m => {
+            m.isHost = (m.name === data.newHost || m.id === data.senderId);
+          });
+          renderJamMembers();
+          showToast(`👑 ${escapeHTML(data.newHost)} took over as Host`);
+        }
+        break;
       case 'SYNC_PLAY':
         if (data.song && (!state.currentSong || state.currentSong.id !== data.song.id)) {
           applyRemoteSong(data.song, true, data.progress);
@@ -8323,7 +8413,7 @@ function renderJamReactionParticle(emoji, senderName) {
   el.style.setProperty('--rot-end', `${rotEnd}deg`);
 
   el.innerHTML = `
-    <span class="reaction-global-emoji">${emoji}</span>
+    <span class="reaction-global-emoji">${escapeHTML(emoji || '')}</span>
     <span class="reaction-global-badge">${escapeHTML(senderName || 'Friend')}</span>
   `;
 
@@ -8352,7 +8442,7 @@ function addJamChatReactionPill(sender, emoji) {
 
   const pill = document.createElement('div');
   pill.className = 'jam-chat-reaction-pill';
-  pill.innerHTML = `<span>${emoji}</span> <span>${escapeHTML(sender)} reacted</span>`;
+  pill.innerHTML = `<span>${escapeHTML(emoji || '')}</span> <span>${escapeHTML(sender || '')} reacted</span>`;
   container.appendChild(pill);
   container.scrollTop = container.scrollHeight;
 
@@ -8375,8 +8465,10 @@ function updateJamTrackCard() {
     titleEl.textContent = state.currentSong.title || 'Untitled Track';
     artistEl.textContent = `${state.currentSong.artist || 'Unknown Artist'} · ${state.currentSong.album || 'Dhun Stream'}`;
     if (thumbEl) {
-      if (state.currentSong.cover) {
-        thumbEl.innerHTML = `<img src="${state.currentSong.cover}" alt="Artwork" style="width:100%;height:100%;border-radius:10px;object-fit:cover;" onerror="this.outerHTML='🎵'" />`;
+      const coverUrl = state.currentSong.cover;
+      const isSafeCover = coverUrl && (coverUrl.startsWith('http://') || coverUrl.startsWith('https://') || coverUrl.startsWith('data:') || coverUrl.startsWith('/'));
+      if (isSafeCover) {
+        thumbEl.innerHTML = `<img src="${escapeHtmlAttr(coverUrl)}" alt="Artwork" style="width:100%;height:100%;border-radius:10px;object-fit:cover;" onerror="this.outerHTML='🎵'" />`;
       } else {
         thumbEl.textContent = '🎵';
       }

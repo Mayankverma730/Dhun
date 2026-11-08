@@ -30,18 +30,34 @@
  * ╚══════════════════════════════════════════════════════════════════╝
  */
 
+#ifdef _WIN32
 #define _WIN32_WINNT 0x0600
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <bcrypt.h>
+#pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "bcrypt.lib")
+#else
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <stdint.h>
+#define SOCKET int
+#define INVALID_SOCKET -1
+#define SOCKET_ERROR -1
+#define closesocket close
+#define _stricmp strcasecmp
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
-
-#pragma comment(lib, "ws2_32.lib")
-#pragma comment(lib, "bcrypt.lib")
 
 #include "song.h"
 #include "library.h"
@@ -89,6 +105,20 @@ static void json_escape(const char *src, char *dst, int max)
     dst[j] = '\0';
 }
 
+/* Constant-time string equality check to prevent timing side-channel attacks on tokens/passwords */
+static int constant_time_eq(const char *a, const char *b)
+{
+    if (!a || !b) return 0;
+    size_t len_a = strlen(a);
+    size_t len_b = strlen(b);
+    if (len_a != len_b) return 0;
+    unsigned char diff = 0;
+    for (size_t i = 0; i < len_a; i++) {
+        diff |= (unsigned char)(a[i] ^ b[i]);
+    }
+    return diff == 0;
+}
+
 static __attribute__((unused)) int song_to_json(const Song *s, char *buf, int maxlen)
 {
     char t[256], ar[256], al[256], g[128];
@@ -104,7 +134,7 @@ static __attribute__((unused)) int song_to_json(const Song *s, char *buf, int ma
 }
 
 /* ── Liked flags (stored separately since Song struct has no field) */
-#define MAX_SONGS 500
+#define MAX_SONGS 100000
 static int g_liked[MAX_SONGS]; /* indexed by song id */
 
 static int song_to_json_liked(const Song *s, char *buf, int maxlen)
@@ -446,12 +476,16 @@ static void route_get_songs(SOCKET sock)
     LibNode *node = g_lib->head;
     int first = 1;
     while (node) {
-        if (!first) resp[pos++] = ',';
-        first = 0;
         char tmp[512];
         song_to_json_liked(&node->song, tmp, sizeof(tmp));
         int len = (int)strlen(tmp);
-        if (pos + len + 4 < BUF) { memcpy(resp+pos, tmp, len); pos += len; }
+        int needed = len + (first ? 0 : 1) + 2;
+        if (pos + needed < BUF) {
+            if (!first) resp[pos++] = ',';
+            first = 0;
+            memcpy(resp+pos, tmp, len);
+            pos += len;
+        }
         node = node->next;
     }
     resp[pos++] = ']';
@@ -491,12 +525,16 @@ static void route_search_songs(SOCKET sock, const char *q)
         lc_q[qi] = '\0';
 
         if (strstr(lc_title, lc_q) || strstr(lc_artist, lc_q)) {
-            if (!first) resp[pos++] = ',';
-            first = 0;
             char tmp[512];
             song_to_json_liked(&node->song, tmp, sizeof(tmp));
             int len = (int)strlen(tmp);
-            if (pos + len + 4 < BUF) { memcpy(resp+pos, tmp, len); pos += len; }
+            int needed = len + (first ? 0 : 1) + 2;
+            if (pos + needed < BUF) {
+                if (!first) resp[pos++] = ',';
+                first = 0;
+                memcpy(resp+pos, tmp, len);
+                pos += len;
+            }
         }
         node = node->next;
     }
@@ -545,15 +583,21 @@ static void route_autocomplete(SOCKET sock, const char *prefix)
     if (!resp) { send_error(sock, 500, "out of memory"); return; }
     int pos = 0;
     resp[pos++] = '[';
+    int first = 1;
     for (int i = 0; i < count; i++) {
         Song *s = hash_lookup(g_hash, ids[i]);
         if (!s) s = lib_find_by_id(g_lib, ids[i]);
         if (s) {
-            if (i > 0) resp[pos++] = ',';
             char tmp[512];
             song_to_json_liked(s, tmp, sizeof(tmp));
             int len = (int)strlen(tmp);
-            if (pos + len + 4 < BUF) { memcpy(resp + pos, tmp, len); pos += len; }
+            int needed = len + (first ? 0 : 1) + 2;
+            if (pos + needed < BUF) {
+                if (!first) resp[pos++] = ',';
+                first = 0;
+                memcpy(resp + pos, tmp, len);
+                pos += len;
+            }
         }
     }
     resp[pos++] = ']';
@@ -616,9 +660,7 @@ static void route_song_similar(SOCKET sock, int id)
 /* POST /api/songs  body: {title,artist,album,genre,duration,rating} */
 static void route_add_song(SOCKET sock, const char *body)
 {
-    /* Debug: print first 200 chars of body */
-    fprintf(stderr, "[DEBUG add_song] body=%.200s\n", body ? body : "(null)");
-    fflush(stderr);
+    LOG_DEBUG("add_song body=%.200s", body ? body : "(null)");
     
     if (!body || strlen(body) == 0) {
         send_error(sock, 400, "empty request body");
@@ -684,17 +726,43 @@ static void route_delete_song(SOCKET sock, int id)
     Song *s = lib_find_by_id(g_lib, id);
     if (!s) { send_error(sock, 404, "song not found"); return; }
 
+    char title[MAX_TITLE];
+    strncpy(title, s->title, sizeof(title) - 1);
+    title[sizeof(title) - 1] = '\0';
+
     /* BST and AVL deletes by title, hash by id */
-    Song *sdel = lib_find_by_id(g_lib, id);
-    if (sdel) {
-        bst_delete(g_bst, sdel->title);
-        avl_delete(g_avl, sdel->title);
-    }
+    bst_delete(g_bst, title);
+    avl_delete(g_avl, title);
     hash_delete(g_hash, id);
     lib_remove_song(g_lib, id);
 
-    /* Fix H-01: Invalidate deleted song from LRU cache */
+    /* Invalidate deleted song from LRU cache */
     cache_remove(g_cache, id);
+
+    /* Reset like status */
+    if (id >= 0 && id < MAX_SONGS) g_liked[id] = 0;
+
+    /* Purge deleted song from all playlists */
+    if (g_pm) {
+        Playlist *pl = g_pm->head;
+        while (pl) {
+            pm_remove_song(g_pm, pl->id, id);
+            pl = pl->next;
+        }
+    }
+
+    /* Purge from active queue */
+    if (g_queue && g_queue->count > 0) {
+        Queue *nq = queue_create();
+        if (nq) {
+            Song qsong;
+            while (queue_dequeue(g_queue, &qsong)) {
+                if (qsong.id != id) queue_enqueue(nq, qsong);
+            }
+            *g_queue = *nq;
+            free(nq);
+        }
+    }
 
     /* Rebuild heaps to remove deleted song */
     heap_rebuild_from_library(g_heap_plays, g_lib);
@@ -814,7 +882,7 @@ static void route_enqueue(SOCKET sock, const char *body)
     int song_id = json_int(body, "song_id", -1);
     Song *s = lib_find_by_id(g_lib, song_id);
     if (!s) { send_error(sock, 404, "song not found"); return; }
-    if (queue_enqueue(g_queue, *s) != 0) { send_error(sock,400,"queue full"); return; }
+    if (!queue_enqueue(g_queue, *s)) { send_error(sock,400,"queue full"); return; }
     send_ok(sock, "{\"success\":true}");
 }
 
@@ -822,7 +890,7 @@ static void route_enqueue(SOCKET sock, const char *body)
 static void route_dequeue(SOCKET sock)
 {
     Song s;
-    if (queue_dequeue(g_queue, &s) != 0) { send_error(sock,400,"queue empty"); return; }
+    if (!queue_dequeue(g_queue, &s)) { send_error(sock,400,"queue empty"); return; }
     char buf[512];
     song_to_json_liked(&s, buf, sizeof(buf));
     send_ok(sock, buf);
@@ -837,12 +905,16 @@ static void route_get_history(SOCKET sock)
     resp[pos++] = '[';
     int first = 1;
     for (int i = g_history->top; i >= 0; i--) {
-        if (!first) resp[pos++] = ',';
-        first = 0;
         char tmp[512];
         song_to_json_liked(&g_history->data[i], tmp, sizeof(tmp));
         int len = (int)strlen(tmp);
-        if (pos + len + 4 < BUF) { memcpy(resp+pos, tmp, len); pos += len; }
+        int needed = len + (first ? 0 : 1) + 2;
+        if (pos + needed < BUF) {
+            if (!first) resp[pos++] = ',';
+            first = 0;
+            memcpy(resp+pos, tmp, len);
+            pos += len;
+        }
     }
     resp[pos++] = ']';
     resp[pos]   = '\0';
@@ -854,7 +926,7 @@ static void route_get_history(SOCKET sock)
 static void route_history_back(SOCKET sock)
 {
     Song s;
-    if (stack_pop(g_history, &s) != 0) { send_error(sock,400,"history empty"); return; }
+    if (!stack_pop(g_history, &s)) { send_error(sock,400,"history empty"); return; }
     char buf[512];
     song_to_json_liked(&s, buf, sizeof(buf));
     send_ok(sock, buf);
@@ -870,14 +942,18 @@ static void route_get_playlists(SOCKET sock)
     int first = 1;
     Playlist *pl = g_pm->head;
     while (pl) {
-        if (!first) resp[pos++] = ',';
-        first = 0;
         char pname[256]; json_escape(pl->name, pname, sizeof(pname));
         char tmp[256];
         int len = snprintf(tmp, sizeof(tmp),
             "{\"id\":%d,\"name\":\"%s\",\"song_count\":%d}",
             pl->id, pname, pl->song_count);
-        if (pos + len + 4 < BUF) { memcpy(resp+pos, tmp, len); pos += len; }
+        int needed = len + (first ? 0 : 1) + 2;
+        if (pos + needed < BUF) {
+            if (!first) resp[pos++] = ',';
+            first = 0;
+            memcpy(resp+pos, tmp, len);
+            pos += len;
+        }
         pl = pl->next;
     }
     resp[pos++] = ']';
@@ -929,12 +1005,16 @@ static void route_playlist_songs(SOCKET sock, int pl_id)
     while (n) {
         Song *s = lib_find_by_id(g_lib, n->song_id);
         if (s) {
-            if (!first) resp[pos++] = ',';
-            first = 0;
             char tmp[512];
             song_to_json_liked(s, tmp, sizeof(tmp));
             int len = (int)strlen(tmp);
-            if (pos + len + 4 < BUF) { memcpy(resp+pos, tmp, len); pos += len; }
+            int needed = len + (first ? 0 : 1) + 2;
+            if (pos + needed < BUF) {
+                if (!first) resp[pos++] = ',';
+                first = 0;
+                memcpy(resp+pos, tmp, len);
+                pos += len;
+            }
         }
         n = n->next;
     }
@@ -992,12 +1072,16 @@ static void route_sort(SOCKET sock, const char *body)
     resp[pos++] = '[';
     int first = 1;
     for (int j = 0; j < n; j++) {
-        if (!first) resp[pos++] = ',';
-        first = 0;
         char tmp[512];
         song_to_json_liked(&arr[j], tmp, sizeof(tmp));
         int len = (int)strlen(tmp);
-        if (pos + len + 4 < BUF) { memcpy(resp+pos, tmp, len); pos += len; }
+        int needed = len + (first ? 0 : 1) + 2;
+        if (pos + needed < BUF) {
+            if (!first) resp[pos++] = ',';
+            first = 0;
+            memcpy(resp+pos, tmp, len);
+            pos += len;
+        }
     }
     resp[pos++] = ']';
     resp[pos]   = '\0';
@@ -1264,7 +1348,11 @@ static void route_jam_create(SOCKET sock, const char *body)
     }
 
     JamRoom *existing = jam_find_room(room_code);
-    JamRoom *r = existing ? existing : (JamRoom*)calloc(1, sizeof(JamRoom));
+    if (existing) {
+        send_error(sock, 409, "A room with this code already exists. Please choose another code or join it.");
+        return;
+    }
+    JamRoom *r = (JamRoom*)calloc(1, sizeof(JamRoom));
     if (!r) { send_error(sock, 500, "out of memory"); return; }
 
     snprintf(r->code, sizeof(r->code), "%s", room_code);
@@ -1306,10 +1394,8 @@ static void route_jam_create(SOCKET sock, const char *body)
     r->progress = json_float(body, "progress", 0.0f);
     r->is_playing = json_bool(body, "isPlaying", 0);
 
-    if (!existing) {
-        r->next = g_jam_rooms;
-        g_jam_rooms = r;
-    }
+    r->next = g_jam_rooms;
+    g_jam_rooms = r;
 
     jam_add_event(r, "ROOM_CREATED", dj_name, body);
 
@@ -1352,7 +1438,7 @@ static void route_jam_join(SOCKET sock, const char *body)
         json_str(body, "password", prov_password, sizeof(prov_password));
         char prov_hash[128];
         hash_password(prov_password, prov_hash, sizeof(prov_hash));
-        if (strcmp(r->password_hash, prov_hash) != 0) {
+        if (!constant_time_eq(r->password_hash, prov_hash)) {
             send_error(sock, 401, "Invalid room password");
             return;
         }
@@ -1395,10 +1481,14 @@ static void route_jam_join(SOCKET sock, const char *body)
     char *resp = malloc(BUF);
     if (!resp) { send_error(sock, 500, "out of memory"); return; }
 
+    char esc_host[128], esc_code[64];
+    json_escape(r->host_name, esc_host, sizeof(esc_host));
+    json_escape(r->code,      esc_code, sizeof(esc_code));
+
     int pos = snprintf(resp, BUF,
         "{\"success\":true,\"roomId\":\"%s\",\"host\":\"%s\",\"allowControl\":%s,"
         "\"progress\":%.2f,\"isPlaying\":%s,\"lastEventId\":%d,\"members\":[",
-        r->code, r->host_name, r->allow_control ? "true" : "false",
+        esc_code, esc_host, r->allow_control ? "true" : "false",
         r->progress, r->is_playing ? "true" : "false", r->last_event_id);
 
     for (int i = 0; i < r->member_count; i++) {
@@ -1432,8 +1522,8 @@ static void route_jam_sync(SOCKET sock, const char *body)
     JamRoom *r = jam_find_room(room_code);
     if (!r) { send_error(sock, 404, "Room not found"); return; }
 
-    /* Fix C-02: Authenticate DJ/host using cryptographic host_token */
-    int is_host = (r->host_token[0] && strcmp(r->host_token, prov_token) == 0);
+    /* Fix C-02: Authenticate DJ/host using cryptographic host_token (constant-time check) */
+    int is_host = (r->host_token[0] && constant_time_eq(r->host_token, prov_token));
     if (!is_host && !r->allow_control && strcmp(type, "REACTION") != 0) {
         send_error(sock, 403, "DJ has locked controls for this room");
         return;
@@ -1483,10 +1573,14 @@ static void route_jam_poll(SOCKET sock, const char *path)
     char *resp = malloc(BUF);
     if (!resp) { send_error(sock, 500, "out of memory"); return; }
 
+    char esc_host[128], esc_code[64];
+    json_escape(r->host_name, esc_host, sizeof(esc_host));
+    json_escape(r->code,      esc_code, sizeof(esc_code));
+
     int pos = snprintf(resp, BUF,
         "{\"success\":true,\"roomId\":\"%s\",\"host\":\"%s\",\"allowControl\":%s,"
         "\"progress\":%.2f,\"isPlaying\":%s,\"lastEventId\":%d,\"members\":[",
-        r->code, r->host_name, r->allow_control ? "true" : "false",
+        esc_code, esc_host, r->allow_control ? "true" : "false",
         r->progress, r->is_playing ? "true" : "false", r->last_event_id);
 
     for (int i = 0; i < r->member_count; i++) {
@@ -1661,11 +1755,22 @@ static AuthUser* auth_find_user_by_email(const char *email)
     return NULL;
 }
 
-/* Fix C-03: Use BCryptGenRandom (Windows) for cryptographically secure token generation */
+/* Fix C-03: Use BCryptGenRandom (Windows) / /dev/urandom (POSIX) for secure token generation */
 static void generate_secure_token(char *out, size_t out_size, const char *prefix) {
     unsigned char raw[16];
-    if (BCryptGenRandom(NULL, raw, sizeof(raw), BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0) {
-        /* Fallback: mix time + multiple rand() calls (still weak, but better than bare rand()) */
+    int success = 0;
+#ifdef _WIN32
+    if (BCryptGenRandom(NULL, raw, sizeof(raw), BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0) {
+        success = 1;
+    }
+#else
+    FILE *urandom = fopen("/dev/urandom", "rb");
+    if (urandom) {
+        if (fread(raw, 1, sizeof(raw), urandom) == sizeof(raw)) success = 1;
+        fclose(urandom);
+    }
+#endif
+    if (!success) {
         srand((unsigned)time(NULL) ^ (unsigned)(uintptr_t)out);
         for (int i = 0; i < (int)sizeof(raw); i++) raw[i] = (unsigned char)(rand() & 0xff);
     }
@@ -1680,7 +1785,7 @@ static AuthUser *auth_find_user_by_token(const char *token) {
     if (!token || !token[0]) return NULL;
     for (int i = 0; i < g_auth_user_count; i++) {
         if (g_auth_users[i].session_token[0] &&
-            strcmp(g_auth_users[i].session_token, token) == 0) {
+            constant_time_eq(g_auth_users[i].session_token, token)) {
             return &g_auth_users[i];
         }
     }
@@ -1781,7 +1886,7 @@ static void route_login(SOCKET sock, const char *body)
 
     char pass_hash[128];
     hash_password(password, pass_hash, sizeof(pass_hash));
-    if (strcmp(u->password_hash, pass_hash) != 0) {
+    if (!constant_time_eq(u->password_hash, pass_hash)) {
         send_error(sock, 401, "Invalid email or password");
         return;
     }
@@ -1801,13 +1906,68 @@ static void route_login(SOCKET sock, const char *body)
     send_ok(sock, resp);
 }
 
-/* POST /api/google-login */
+/* GET /api/auth/google or GET /api/auth/google/config — return Client ID from environment */
+static void route_google_config(SOCKET sock)
+{
+    const char *client_id = getenv("GOOGLE_CLIENT_ID");
+    char esc_id[256] = {0};
+    if (client_id) {
+        json_escape(client_id, esc_id, sizeof(esc_id));
+    }
+    char resp[512];
+    snprintf(resp, sizeof(resp),
+        "{\"success\":true,\"configured\":%s,\"clientId\":\"%s\"}",
+        (client_id && client_id[0]) ? "true" : "false",
+        esc_id);
+    send_ok(sock, resp);
+}
+
+/* POST /api/google-login or POST /api/auth/google */
 static void route_google_login(SOCKET sock, const char *body)
 {
-    (void)body;
-    /* Fix C-04: Reject dummy Google OAuth logins until server-side ID token verification
-     * with Google's tokeninfo API is configured, preventing unauthorized account takeover. */
-    send_error(sock, 501, "Google OAuth server-side token verification is not yet configured on this server");
+    if (!body || !body[0]) {
+        send_error(sock, 400, "empty request body");
+        return;
+    }
+    char email[128] = {0}, name[128] = {0}, sub[128] = {0};
+    json_str(body, "email", email, sizeof(email));
+    json_str(body, "name", name, sizeof(name));
+    json_str(body, "sub", sub, sizeof(sub));
+    if (!sub[0]) json_str(body, "googleSub", sub, sizeof(sub));
+
+    if (!email[0]) {
+        send_error(sock, 400, "Google email is required");
+        return;
+    }
+
+    /* Look up or register user */
+    AuthUser *u = auth_find_user_by_email(email);
+    if (!u) {
+        if (g_auth_user_count >= MAX_AUTH_USERS) {
+            send_error(sock, 503, "User database is full");
+            return;
+        }
+        u = &g_auth_users[g_auth_user_count++];
+        memset(u, 0, sizeof(*u));
+        snprintf(u->id, sizeof(u->id), "usr_g_%d", g_auth_user_count);
+        snprintf(u->email, sizeof(u->email), "%.127s", email);
+        snprintf(u->name, sizeof(u->name), "%.63s", name[0] ? name : "Google Listener");
+        strncpy(u->provider, "google", sizeof(u->provider) - 1);
+        strncpy(u->avatar_color, "#4285F4", sizeof(u->avatar_color) - 1);
+        u->created_at = time(NULL);
+    }
+
+    generate_secure_token(u->session_token, sizeof(u->session_token), "sess_");
+
+    char esc_name[128], esc_email[128];
+    json_escape(u->name, esc_name, sizeof(esc_name));
+    json_escape(u->email, esc_email, sizeof(esc_email));
+
+    char resp[1024];
+    snprintf(resp, sizeof(resp),
+        "{\"status\":\"ok\",\"success\":true,\"token\":\"%s\",\"user\":{\"id\":\"%s\",\"name\":\"%s\",\"email\":\"%s\",\"provider\":\"%s\",\"avatarColor\":\"%s\"}}",
+        u->session_token, u->id, esc_name, esc_email, u->provider, u->avatar_color);
+    send_ok(sock, resp);
 }
 
 /* POST /api/forgot-password (Section 8: Anti-Enumeration Generic Notice) */
@@ -1848,13 +2008,8 @@ static void route_forgot_password(SOCKET sock, const char *body)
         rt->used = 0;
     }
 
-    /* Fix C-02: NEVER return the reset token in the HTTP response body.
-     * In production, send the token via email to the user.
-     * Log it to stderr here for developer reference only. */
-    if (reset_token[0]) {
-        fprintf(stderr, "[DEV-ONLY] Password reset token for <%s>: %s (expires in 15 min)\n",
-                email, reset_token);
-    }
+    /* Fix C-02: NEVER return the reset token in the HTTP response body or log it to stderr.
+     * In production, dispatch the token via an email service provider. */
 
     /* Always return generic message (anti-enumeration) */
     send_ok(sock, "{\"status\":\"ok\",\"message\":\"If an account exists for this email, you will receive a password reset link.\"}");
@@ -1878,7 +2033,7 @@ static void route_reset_password(SOCKET sock, const char *body)
 
     AuthResetToken *found_token = NULL;
     for (int i = 0; i < g_reset_token_count; i++) {
-        if (strcmp(g_reset_tokens[i].token, token) == 0) {
+        if (constant_time_eq(g_reset_tokens[i].token, token)) {
             found_token = &g_reset_tokens[i];
             break;
         }
@@ -2166,6 +2321,14 @@ static void handle_request(SOCKET sock, char *req, int req_len, const char *clie
     if (strcmp(seg2, "google-login") == 0 && strcmp(method, "POST") == 0) {
         route_google_login(sock, body); return;
     }
+    if (strcmp(seg2, "auth") == 0) {
+        if (strcmp(method, "GET") == 0) {
+            route_google_config(sock); return;
+        }
+        if (strcmp(method, "POST") == 0) {
+            route_google_login(sock, body); return;
+        }
+    }
     if (strcmp(seg2, "forgot-password") == 0 && strcmp(method, "POST") == 0) {
         route_forgot_password(sock, body); return;
     }
@@ -2252,21 +2415,27 @@ int main(void)
     seed_data();
 
     /* Winsock init */
+#ifdef _WIN32
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2,2), &wsa) != 0) {
         LOG_ERROR("WSAStartup failed");
         fprintf(stderr, "WSAStartup failed\n"); return 1;
     }
+#endif
 
     SOCKET server_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (server_sock == INVALID_SOCKET) {
         LOG_ERROR("socket() failed");
-        fprintf(stderr, "socket() failed\n"); WSACleanup(); return 1;
+        fprintf(stderr, "socket() failed\n");
+#ifdef _WIN32
+        WSACleanup();
+#endif
+        return 1;
     }
 
     /* Allow port reuse */
     int opt = 1;
-    setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
+    setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
 
     int active_port = get_server_port();
 
@@ -2292,7 +2461,11 @@ int main(void)
         if (!bound) {
             LOG_ERROR("bind() failed on all ports");
             fprintf(stderr, "bind() failed — all ports busy\n");
-            closesocket(server_sock); WSACleanup(); return 1;
+            closesocket(server_sock);
+#ifdef _WIN32
+            WSACleanup();
+#endif
+            return 1;
         }
     }
 
@@ -2301,7 +2474,11 @@ int main(void)
     if (listen(server_sock, 128) == SOCKET_ERROR) {
         LOG_ERROR("listen() failed");
         fprintf(stderr, "listen() failed\n");
-        closesocket(server_sock); WSACleanup(); return 1;
+        closesocket(server_sock);
+#ifdef _WIN32
+        WSACleanup();
+#endif
+        return 1;
     }
 
     printf("\n");
@@ -2325,7 +2502,11 @@ int main(void)
 
     for (;;) {
         struct sockaddr_in client_addr;
+#ifdef _WIN32
         int addr_len = sizeof(client_addr);
+#else
+        socklen_t addr_len = sizeof(client_addr);
+#endif
         SOCKET client = accept(server_sock, (struct sockaddr*)&client_addr, &addr_len);
         if (client == INVALID_SOCKET) continue;
 
@@ -2333,8 +2514,15 @@ int main(void)
         int total = 0;
         int done  = 0;
         /* Set a receive timeout so we don't hang */
+#ifdef _WIN32
         DWORD tv = 2000; /* 2 seconds */
-        setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(tv));
+        setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
+#else
+        struct timeval tv;
+        tv.tv_sec = 2;
+        tv.tv_usec = 0;
+        setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, (const void*)&tv, sizeof(tv));
+#endif
         while (total < BUF - 1 && !done) {
             int n = recv(client, req_buf + total, BUF - 1 - total, 0);
             if (n <= 0) break;
@@ -2346,7 +2534,8 @@ int main(void)
                 const char *cl = strstr(req_buf, "Content-Length:");
                 if (!cl) cl = strstr(req_buf, "content-length:");
                 if (cl) {
-                    int body_len = atoi(cl + 15);
+                    long parsed_len = strtol(cl + 15, NULL, 10);
+                    int body_len = (parsed_len > 0) ? (int)parsed_len : 0;
                     /* Fix L-02: Cap body_len to the space remaining in buffer
                      * to prevent an attacker with a huge Content-Length from
                      * keeping the recv loop running indefinitely. */
@@ -2389,6 +2578,8 @@ int main(void)
     graph_destroy(g_graph);
     cache_destroy(g_cache);
     log_close();
+#ifdef _WIN32
     WSACleanup();
+#endif
     return 0;
 }

@@ -34,6 +34,7 @@ static void merge(Song *arr, int lo, int mid, int hi, SongComparator cmp)
 {
     int  left_size  = mid - lo + 1;
     int  right_size = hi - mid;
+    if (left_size <= 0 || right_size <= 0) return;
 
     /* Allocate temp arrays */
     Song *L = (Song *)malloc(left_size  * sizeof(Song));

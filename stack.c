@@ -39,7 +39,8 @@ void stack_destroy(Stack *s)
 /* ── Push — O(1) ─────────────────────────────── */
 int stack_push(Stack *s, Song song)
 {
-    if (!s || s->top >= STACK_MAX_SIZE - 1) {
+    if (!s) return 0;
+    if (s->top >= STACK_MAX_SIZE - 1) {
         printf("  [Stack] History is full! Oldest entry dropped.\n");
         /* Shift everything down to make room (oldest dropped) */
         for (int i = 0; i < STACK_MAX_SIZE - 1; i++)

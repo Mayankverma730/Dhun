@@ -10,8 +10,14 @@ function escapeHTML(str) {
 }
 
 function escapeAttribute(str) {
-    if (!str) return '';
-    return String(str).replace(/"/g, '&quot;');
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/[&<>"']/g, (match) => {
+        const escapeMap = {
+            '&': '&amp;', '<': '&lt;', '>': '&gt;',
+            '"': '&quot;', "'": '&#39;'
+        };
+        return escapeMap[match];
+    });
 }
 
 function preloadImages(urls) {

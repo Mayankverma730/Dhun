@@ -11,7 +11,7 @@
 #   make serve    → build and start API server on :3000
 
 CC      = gcc
-CFLAGS  = -Wall -Wextra -std=c99 -pedantic
+CFLAGS  = -Wall -Wextra -std=c99 -pedantic -fstack-protector-strong -Wformat-security
 DBGFLAGS= -g -DDEBUG
 TARGET  = music_mgr
 SERVER  = vibe_server

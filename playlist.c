@@ -94,6 +94,7 @@ int pm_delete_playlist(PlaylistManager *pm, int playlist_id)
 /* ── Find playlist by ID ─────────────────────── */
 Playlist *pm_find(PlaylistManager *pm, int playlist_id)
 {
+    if (!pm) return NULL;
     Playlist *cur = pm->head;
     while (cur) {
         if (cur->id == playlist_id) return cur;

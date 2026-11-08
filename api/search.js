@@ -79,8 +79,8 @@ module.exports = async (req, res) => {
     return res.status(200).json([]);
   }
 
-  // Fix N-C-03: Strict query sanitization against SSRF and injection
-  const q = rawQuery.replace(/[^\w\s\u0900-\u097F\u0A00-\u0A7F\-']/g, ' ').trim().slice(0, 100);
+  // Fix N-C-03: Strict query sanitization against SSRF and injection with full international Unicode support
+  const q = rawQuery.replace(/[^\p{L}\p{M}\p{N}\s\-']/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 100);
   if (!q) {
     return res.status(200).json([]);
   }

@@ -27,10 +27,16 @@ jobs:
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
 
+      - name: Stage static frontend assets only
+        run: |
+          mkdir -p public_site
+          cp -r index.html presentation.html style.css app.js ytmusic_api.js recommend.js js public_site/
+          cp -r *.jpg *.png *.svg public_site/ 2>/dev/null || true
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '.'
+          path: 'public_site'
 
       - name: Deploy to GitHub Pages
         id: deployment

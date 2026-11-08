@@ -127,19 +127,22 @@ void heap_build(Heap *h, Song *arr, int n)
 void heap_display_top(Heap *h, int k)
 {
     if (!h || h->size == 0) { printf("  (No songs in charts)\n"); return; }
-    /* Work on a copy so we don't destroy the heap */
-    Heap copy = *h;
-    int  limit = (k < copy.size) ? k : copy.size;
+    /* Work on a heap-allocated copy so we don't blow up the call stack (~364KB) */
+    Heap *copy = (Heap *)malloc(sizeof(Heap));
+    if (!copy) return;
+    *copy = *h;
+    int  limit = (k < copy->size) ? k : copy->size;
     const char *label = (h->mode == HEAP_BY_RATING) ? "Rating" : "Play Count";
     printf("\n  [Top %d Songs by %s]\n", limit, label);
     song_print_header();
     for (int rank = 1; rank <= limit; rank++) {
         Song top;
-        if (!heap_extract_max(&copy, &top)) break;
+        if (!heap_extract_max(copy, &top)) break;
         printf("  #%-2d", rank);
         song_print(&top);
     }
     printf("\n");
+    free(copy);
 }
 
 int heap_size(const Heap *h) { return h ? h->size : 0; }

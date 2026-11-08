@@ -35,8 +35,8 @@ module.exports = async (req, res) => {
   }
 
   const rawQuery = req.query.q || '';
-  // Sanitize and limit query length
-  const query = String(rawQuery).replace(/[^\w\s\u0900-\u097F\u0A00-\u0A7F\-']/g, ' ').trim().slice(0, 80);
+  // Sanitize and limit query length with international Unicode support
+  const query = String(rawQuery).replace(/[^\p{L}\p{M}\p{N}\s\-']/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
 
   if (!query || query.length < 2) {
     return res.status(200).json([]);

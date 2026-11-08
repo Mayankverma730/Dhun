@@ -289,13 +289,16 @@ function render(tracks, seedTitle) {
       : '';
     const previewBtn = previewUrl
       ? `<button class="rec-btn rec-btn-preview"
-              onclick="_recPlayPreview(this,'${_escAttr(previewUrl)}',event)"
+              data-preview="${_escAttr(previewUrl)}"
+              onclick="_recPlayPreview(this, this.dataset.preview, event)"
               title="30s Preview">
            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
            Preview
          </button>`
       : `<button class="rec-btn rec-btn-search"
-              onclick="_recSearchTrack('${_escAttr(t.name)}','${_escAttr(t.artist)}',event)"
+              data-name="${_escAttr(t.name)}"
+              data-artist="${_escAttr(t.artist)}"
+              onclick="_recSearchTrack(this.dataset.name, this.dataset.artist, event)"
               title="Search on Dhun">
            🔍 Search
          </button>`;
@@ -315,7 +318,10 @@ function render(tracks, seedTitle) {
         </div>
         <div class="rec-actions">
           <button class="rec-btn rec-btn-queue"
-                  onclick="_recAddToQueue('${_escAttr(t.name)}','${_escAttr(t.artist)}','${_escAttr(artwork)}',event)"
+                  data-name="${_escAttr(t.name)}"
+                  data-artist="${_escAttr(t.artist)}"
+                  data-art="${_escAttr(artwork)}"
+                  onclick="_recAddToQueue(this.dataset.name, this.dataset.artist, this.dataset.art, event)"
                   title="Search and Queue">＋ Queue</button>
           ${t.url ? `<a class="rec-btn rec-btn-lastfm" href="${_escAttr(t.url)}"
                target="_blank" rel="noopener noreferrer" title="View on Last.fm">🎵 Last.fm</a>` : ''}
