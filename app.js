@@ -6787,7 +6787,7 @@ function setTheme(theme, showNotice = true) {
         <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="2"/>
         <path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
       </svg>`;
-      btn.title = 'Theme: Cloud Garden (Sage & Ivory) (Click to change)';
+      btn.title = 'Theme: Default (Sage & Ivory) (Click to change)';
     }
   }
 
@@ -6797,7 +6797,7 @@ function setTheme(theme, showNotice = true) {
   if (btn) btn.setAttribute('aria-expanded', 'false');
 
   if (showNotice && typeof showToast === 'function') {
-    const titles = { default: 'Cloud Garden (Sage & Ivory)', dark: 'Midnight Forest', light: 'Sunlit Peach' };
+    const titles = { default: 'Default (Sage & Ivory)', dark: 'Midnight Forest', light: 'Sunlit Peach' };
     showToast(`🎨 Mode: ${titles[theme] || theme}`);
   }
 

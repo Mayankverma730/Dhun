@@ -10,7 +10,7 @@
 
 :root {
   /* ═══════════════════════════════════════════════
-     DHUN — CLOUD GARDEN DESIGN SYSTEM TOKENS
+     DHUN — DESIGN SYSTEM TOKENS
      Warm Ivory, Soft Sage, Dusty Lilac & Earthy Neutrals
   ═══════════════════════════════════════════════ */
 
@@ -185,7 +185,7 @@ body, .sidebar, .topbar, .player-bar, .glass-card,
 html, body { height: 100%; background: var(--bg); font-family: var(--font); color: var(--text-1); overflow: hidden; }
 
 
-/* ── Ambient Background (Cloud Garden Sunlit Mist) ──────── */
+/* ── Ambient Background (Botanical Sunlit Mist) ──────── */
 .ambient-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
 .orb { position: absolute; border-radius: 50%; filter: blur(110px); opacity: var(--orb-opacity, 0.08); animation: orbFloat 14s ease-in-out infinite alternate; transition: background 0.5s ease; }
 .orb-1 { width: 620px; height: 620px; background: radial-gradient(circle, var(--light-sage, #DDE6D5), transparent 70%); top: -200px; left: -100px; }
