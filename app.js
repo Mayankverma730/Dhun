@@ -375,6 +375,13 @@ function fallbackToLocalDemoAudio() {
 
 function embedDirectYTFrame(videoId) {
   if (!videoId) return;
+
+  // Stop any HTML5 audio playback immediately so 2 songs never play together
+  if (globalAudioPlayer && !globalAudioPlayer.paused) {
+    globalAudioPlayer.pause();
+    globalAudioPlayer.currentTime = 0;
+  }
+
   const container = document.getElementById('yt-hidden-player');
   if (!container) return;
   console.log('[YT] Using direct embed iframe for video:', videoId);
@@ -473,6 +480,12 @@ function isCurrentSongYT() {
 
 function playYTVideo(videoId) {
   if (!videoId) return;
+
+  // Stop any HTML5 audio playback immediately so 2 songs never play together
+  if (globalAudioPlayer && !globalAudioPlayer.paused) {
+    globalAudioPlayer.pause();
+    globalAudioPlayer.currentTime = 0;
+  }
 
   if (!ytPlayerReady || !ytPlayer || !ytPlayer.loadVideoById) {
     ytPendingVideoId = videoId;

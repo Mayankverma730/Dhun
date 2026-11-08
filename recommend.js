@@ -391,23 +391,6 @@ function render(tracks, seedTitle) {
            title="Click to play ${safeTitle} directly on Dhun">
         <div class="rec-art" style="background:${gradient}">
           ${artImg}
-          <div class="rec-art-overlay">
-            <button class="rec-btn rec-btn-play-overlay"
-                    data-name="${_escAttr(t.name)}"
-                    data-artist="${_escAttr(t.artist)}"
-                    data-art="${_escAttr(artwork)}"
-                    onclick="_recPlayDirect(this.dataset.name, this.dataset.artist, this.dataset.art, event)"
-                    title="Play on Dhun">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Play
-            </button>
-            ${previewUrl ? `
-            <button class="rec-btn rec-btn-preview"
-                    data-preview="${_escAttr(previewUrl)}"
-                    onclick="_recPlayPreview(this, this.dataset.preview, event)"
-                    title="30s Audio Preview">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg> Preview
-            </button>` : ''}
-          </div>
           ${matchPct > 0 ? `<span class="rec-match-badge">${matchPct}% match</span>` : ''}
         </div>
         <div class="rec-info">
@@ -473,6 +456,20 @@ window._recPlayDirect = async function(title, artist, artwork, e) {
     try { e.stopPropagation(); e.preventDefault(); } catch(err) {}
   }
   if (!title) return;
+
+  // CRITICAL: Stop ANY audio currently playing across all engines so 2 songs NEVER play simultaneously
+  if (typeof stopPlaying === 'function') stopPlaying();
+  if (typeof globalAudioPlayer !== 'undefined' && globalAudioPlayer && !globalAudioPlayer.paused) {
+    globalAudioPlayer.pause();
+    globalAudioPlayer.currentTime = 0;
+  }
+  if (typeof ytPlayer !== 'undefined' && ytPlayer && ytPlayer.pauseVideo) {
+    try { ytPlayer.pauseVideo(); } catch(err) {}
+  }
+  if (typeof _recAudio !== 'undefined' && _recAudio) {
+    try { _recAudio.pause(); _recAudio.src = ''; } catch(err) {}
+  }
+
   if (typeof showToast === 'function') {
     showToast(`▶ Finding exact track "${title}" on YouTube...`);
   }
@@ -976,7 +973,7 @@ function _injectRecommendationsSection() {
     <div class="section-header rec-section-header">
       <h2 class="section-title">
         🌐 Recommended For You
-        <span class="rec-badge">AI Discovery</span>
+        
       </h2>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span id="rec-seed-label"></span>
