@@ -474,39 +474,68 @@ window._recPlayDirect = async function(title, artist, artwork, e) {
   }
   if (!title) return;
   if (typeof showToast === 'function') {
-    showToast(`▶ Playing "${title}" by ${artist || ''}...`);
+    showToast(`▶ Finding exact track "${title}" on YouTube...`);
   }
 
-  // 1. Check if song already exists in state.songs
+  const cleanTitle = title.trim();
+  const cleanArtist = (artist || '').trim();
+  const query = `${cleanTitle} ${cleanArtist}`.trim();
+
+  // 1. Search YouTube Music for the exact official track
+  let ytTrack = null;
+  try {
+    if (typeof YTMusicAPI !== 'undefined' && YTMusicAPI.search) {
+      const results = await YTMusicAPI.search(query, 3);
+      if (Array.isArray(results) && results.length > 0 && results[0].videoId) {
+        ytTrack = results[0];
+      }
+    }
+  } catch (err) {}
+
+  if (!ytTrack) {
+    try {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0 && data[0].videoId) {
+          ytTrack = data[0];
+        }
+      }
+    } catch(err) {}
+  }
+
+  // 2. If track resolved with valid YouTube videoId, play it directly
+  if (ytTrack && ytTrack.videoId) {
+    if (typeof playYTMusicTrack === 'function') {
+      await playYTMusicTrack(ytTrack);
+      return;
+    }
+    if (typeof autoAddTrackToLibrary === 'function' && typeof openPlayerById === 'function') {
+      const s = await autoAddTrackToLibrary(ytTrack);
+      if (s && s.id !== undefined) {
+        openPlayerById(s.id);
+        return;
+      }
+    }
+  }
+
+  // 3. Check if song already exists in state.songs WITH a valid videoId
   const allSongs = (window.state && window.state.songs) || [];
-  const found = allSongs.find(s =>
-    s && s.title &&
-    s.title.toLowerCase().trim() === title.toLowerCase().trim() &&
-    (!artist || !s.artist || s.artist.toLowerCase().trim() === artist.toLowerCase().trim())
-  );
+  const found = allSongs.find(s => {
+    if (!s || !s.title) return false;
+    const sameTitle = s.title.toLowerCase().trim() === cleanTitle.toLowerCase();
+    if (!sameTitle) return false;
+    const audio = (typeof pcSongAudioMap !== 'undefined') ? pcSongAudioMap.get(s.id) : null;
+    return (audio && audio.videoId) || s.videoId;
+  });
   if (found && typeof openPlayerById === 'function') {
     openPlayerById(found.id);
     return;
   }
 
-  // 2. Play directly via YouTube Music track resolver
-  if (typeof playYTMusicTrack === 'function') {
-    try {
-      await playYTMusicTrack({
-        title: title,
-        artist: artist || '',
-        thumbnail: artwork || '',
-        id: 'yt_rec_' + Date.now()
-      });
-      return;
-    } catch (err) {
-      console.warn('[Recommend] playYTMusicTrack error:', err);
-    }
-  }
-
-  // 3. Fallback: Search on Dhun
+  // 4. Fallback: Search on Dhun
   if (typeof _recSearchTrack === 'function') {
-    _recSearchTrack(title, artist, null);
+    _recSearchTrack(cleanTitle, cleanArtist, null);
   }
 };
 
@@ -529,40 +558,39 @@ window._recAddToQueue = async function(title, artist, artwork, e) {
   }
   if (!title) return;
   if (typeof showToast === 'function') {
-    showToast(`⏳ Adding "${title}" to queue...`);
+    showToast(`⏳ Resolving "${title}" for queue...`);
   }
 
-  // 1. Check existing song in state.songs
-  const allSongs = (window.state && window.state.songs) || [];
-  const found = allSongs.find(s =>
-    s && s.title &&
-    s.title.toLowerCase().trim() === title.toLowerCase().trim() &&
-    (!artist || !s.artist || s.artist.toLowerCase().trim() === artist.toLowerCase().trim())
-  );
-  if (found && typeof enqueueSong === 'function') {
-    await enqueueSong(String(found.id));
-    if (typeof showToast === 'function') showToast(`Queued: "${title}" ✅`);
-    return;
-  }
+  const query = `${title} ${artist || ''}`.trim();
+  let ytTrack = null;
 
-  // 2. Resolve via YTMusicAPI
-  if (typeof YTMusicAPI !== 'undefined' && YTMusicAPI.resolveVideoIdForTrack) {
+  try {
+    if (typeof YTMusicAPI !== 'undefined' && YTMusicAPI.search) {
+      const results = await YTMusicAPI.search(query, 3);
+      if (Array.isArray(results) && results.length > 0 && results[0].videoId) {
+        ytTrack = results[0];
+      }
+    }
+  } catch(err) {}
+
+  if (!ytTrack) {
     try {
-      const vid = await YTMusicAPI.resolveVideoIdForTrack(title, artist || '');
-      if (vid && typeof autoAddTrackToLibrary === 'function' && typeof enqueueSong === 'function') {
-        const song = await autoAddTrackToLibrary({
-          title, artist: artist || '', videoId: vid, thumbnail: artwork || ''
-        });
-        if (song && song.id !== undefined) {
-          await enqueueSong(song.id);
-          if (typeof showToast === 'function') showToast(`Queued: "${title}" ✅`);
-          return;
+      const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0 && data[0].videoId) {
+          ytTrack = data[0];
         }
       }
     } catch(err) {}
   }
 
-  // 3. Fallback: Search & Queue
+  if (ytTrack && ytTrack.videoId && typeof enqueueYTMusicSong === 'function') {
+    await enqueueYTMusicSong(ytTrack);
+    return;
+  }
+
+  // Fallback: Search & Queue
   _recSearchTrack(title, artist, null);
 };
 

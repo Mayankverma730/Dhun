@@ -920,7 +920,16 @@ function resolveAudioSource(song) {
   }
   const local = pcSongAudioMap.get(song.id);
   if (local && local.url) return local;
-  return { url: 'tujhko.mp3', durationSec: (song.duration || 3.5) * 60 };
+  if (local && local.previewUrl) return { url: local.previewUrl, durationSec: 30 };
+  if (song.previewUrl) return { url: song.previewUrl, durationSec: 30 };
+
+  // Only use tujhko.mp3 if this is literally the seed song Tujhko Jo Paaya
+  if ((song.title || '').toLowerCase().includes('tujhko')) {
+    return { url: 'tujhko.mp3', durationSec: (song.duration || 3.5) * 60 };
+  }
+
+  // Otherwise, mark as YouTube song and resolve dynamically
+  return { isYT: true, videoId: null, durationSec: (song.duration || 3.5) * 60 };
 }
 
 globalAudioPlayer.addEventListener('ended', () => {

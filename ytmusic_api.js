@@ -447,6 +447,19 @@ const YTMusicAPI = (() => {
     if (direct) return direct;
 
     const term = `${cleanSongTitle(title)} ${cleanArtistName(artist)}`.trim();
+
+    // 1. Primary: Serverless /api/search YouTube Music resolver
+    try {
+      const results = await search(term, 3);
+      if (Array.isArray(results) && results.length > 0) {
+        for (const item of results) {
+          const vid = item.videoId || (item.id && item.id.replace(/^yt_/, ''));
+          if (vid && vid.length === 11) return vid;
+        }
+      }
+    } catch(e) {}
+
+    // 2. Secondary fallback: Invidious instances
     for (const base of INVIDIOUS_INSTANCES) {
       try {
         const endpoint = `${base}/api/v1/search?q=${encodeURIComponent(term)}&type=video`;
