@@ -952,6 +952,7 @@ const audioEngine = {
   previousVolume: 0.75,
 
   init() {
+    sanitizeStoredAuthData();
     if (this.ctx) return;
     const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtxClass) return;
@@ -2321,6 +2322,7 @@ const DhunAuth = {
   },
 
   init() {
+    sanitizeStoredAuthData();
     // 1. Purge legacy mock data & stale guest sessions
     try {
       const staleActiveId = localStorage.getItem('dhun_auth_active_user');
@@ -2826,13 +2828,16 @@ const DhunAuth = {
   enterApp(user, isModal = false) {
     if (!user) return;
     user.lastLoginAt = Date.now();
-    authState.currentUser = user;
+    const safeUser = { ...user };
+    delete safeUser.password;
+    delete safeUser.passwordHash;
+    authState.currentUser = safeUser;
     const isGuest = (user.provider === 'guest' || user.id === 'guest');
 
     if (!isGuest) {
       try {
         localStorage.setItem('dhun_auth_active_user', user.id);
-        localStorage.setItem('dhun_active_profile', JSON.stringify(user));
+        localStorage.setItem('dhun_active_profile', JSON.stringify(safeUser));
         if (user.email) {
           localStorage.setItem('dhun_saved_credentials', JSON.stringify({ email: user.email }));
         }
@@ -3222,6 +3227,99 @@ function openResetPasswordWithToken(t, isGate) { DhunAuth.openResetWithToken(t, 
 function enterAppFromGate(u) { DhunAuth.enterApp(u, false); }
 function switchToUser(u) { DhunAuth.enterApp(u, true); }
 
+
+/* ── Safe Clipboard Sharing & Credential Protection ──────────── */
+function shareUserProfile() {
+  const url = `${window.location.origin}${window.location.pathname}#profile`;
+  fallbackCopyText(url, 'Profile link');
+}
+
+function shareCurrentSong() {
+  const song = state.currentSong;
+  const url = song && song.id
+    ? `${window.location.origin}${window.location.pathname}#song=${encodeURIComponent(song.id)}`
+    : `${window.location.origin}${window.location.pathname}`;
+  fallbackCopyText(url, 'Song link');
+}
+
+function fallbackCopyText(text, label = 'Link') {
+  if (!text) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast(`📋 ${label} copied to clipboard! (Safe link: ${text})`);
+    }).catch(() => {
+      execCopyFallback(text, label);
+    });
+  } else {
+    execCopyFallback(text, label);
+  }
+}
+
+function execCopyFallback(text, label) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '-9999px';
+    ta.setAttribute('readonly', '');
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast(`📋 ${label} copied to clipboard!`);
+  } catch (err) {
+    showToast(`📋 Link: ${text}`);
+  }
+}
+
+function sanitizeStoredAuthData() {
+  try {
+    // 1. Scrub active profile in localStorage (never store password or hash in session)
+    const rawActive = localStorage.getItem('dhun_active_profile');
+    if (rawActive) {
+      const active = JSON.parse(rawActive);
+      if (active && typeof active === 'object') {
+        let changed = false;
+        if ('password' in active) { delete active.password; changed = true; }
+        if ('passwordHash' in active) { delete active.passwordHash; changed = true; }
+        if (changed) {
+          localStorage.setItem('dhun_active_profile', JSON.stringify(active));
+        }
+      }
+    }
+
+    // 2. Ensure saved credentials only holds email, never passwords
+    const rawCreds = localStorage.getItem('dhun_saved_credentials');
+    if (rawCreds) {
+      const creds = JSON.parse(rawCreds);
+      if (creds && typeof creds === 'object') {
+        const clean = { email: creds.email || '' };
+        localStorage.setItem('dhun_saved_credentials', JSON.stringify(clean));
+      }
+    }
+
+    // 3. Scrub any legacy plaintext passwords from registry users
+    const rawUsers = localStorage.getItem('dhun_auth_users');
+    if (rawUsers) {
+      const users = JSON.parse(rawUsers);
+      if (Array.isArray(users)) {
+        let changed = false;
+        users.forEach(u => {
+          if (u && typeof u === 'object' && 'password' in u) {
+            delete u.password;
+            changed = true;
+          }
+        });
+        if (changed) {
+          localStorage.setItem('dhun_auth_users', JSON.stringify(users));
+        }
+      }
+    }
+  } catch(e) {}
+}
+
 // Export to window
 if (typeof window !== 'undefined') {
   window.DhunAuth = DhunAuth;
@@ -3252,6 +3350,8 @@ if (typeof window !== 'undefined') {
   window.openResetPasswordWithToken = openResetPasswordWithToken;
   window.enterAppFromGate = enterAppFromGate;
   window.switchToUser = switchToUser;
+  window.shareUserProfile = shareUserProfile;
+  window.shareCurrentSong = shareCurrentSong;
 }
 
 function getUserStorageKey(suffix) {
@@ -3516,20 +3616,25 @@ function updateAuthUI() {
 function switchToUser(user) {
   if (!user) return;
   user.lastLoginAt = Date.now();
-  authState.currentUser = user;
+  const safeUser = { ...user };
+  delete safeUser.password;
+  delete safeUser.passwordHash;
+  authState.currentUser = safeUser;
 
   try {
     localStorage.setItem('dhun_auth_active_user', user.id);
-    localStorage.setItem('dhun_active_profile', JSON.stringify(user));
+    localStorage.setItem('dhun_active_profile', JSON.stringify(safeUser));
     const users = getStoredUsers();
     const idx = users.findIndex(u => u.id === user.id);
     if (idx !== -1) {
       users[idx] = { ...users[idx], ...user };
+      delete users[idx].password;
     } else {
-      users.push(user);
+      const toAdd = { ...user };
+      delete toAdd.password;
+      users.push(toAdd);
     }
     saveStoredUsers(users);
-    if (user.email) saveCredentials(user.email, user.password || '');
   } catch(e) {}
 
   const gateScreen = document.getElementById('login-gate-screen');

@@ -1124,7 +1124,7 @@
                   <button class="social-btn" aria-label="Add to Queue" onclick="if(state.currentSong) enqueueSong(state.currentSong.id, event)">＋ <span>Queue</span></button>
                   <button class="social-btn" id="player-add-playlist-btn" aria-label="Add to Playlist" onclick="if(state.currentSong) addToPlaylistPrompt(state.currentSong.id, event)" title="Add to Playlist">⋯ <span>Playlist</span></button>
                   <button class="social-btn social-del-btn" id="player-delete-song-btn" onclick="if(state.currentSong) deleteSong(state.currentSong.id, event)" aria-label="Remove from library" title="Remove song from library">🗑️ <span>Remove</span></button>
-                  <button class="social-btn" aria-label="Share" onclick="showToast('Share link copied to clipboard 🔗')">🔗 <span>Share</span></button>
+                  <button class="social-btn" aria-label="Share" onclick="shareCurrentSong()" title="Share clean song link">🔗 <span>Share</span></button>
                 </div>
 
                 <!-- Live Reaction Dock -->
@@ -1182,7 +1182,7 @@
               <button class="btn-secondary" onclick="openProfileCoverModal()" id="pcover-action-btn" title="Customize Profile Banner">🎨 Change Cover</button>
               <button class="btn-secondary" onclick="autoGenerateUserProfileLibrary(authState.currentUser, true)" id="auto-gen-profile-lib-btn" title="Auto-Generate / Refresh Profile Library via YouTube Music Suggestions" style="display:inline-flex;align-items:center;gap:6px">⚡ Auto-Generate Library (YT)</button>
               <button class="btn-secondary" onclick="triggerProfileCloudSync(this)" id="sync-profile-btn" title="Sync Profile & Playlists Across Devices">☁️ Sync Devices</button>
-              <button class="btn-secondary" onclick="showToast('Profile link copied 🔗')" aria-label="Share profile">🔗 Share</button>
+              <button class="btn-secondary" onclick="shareUserProfile()" aria-label="Share profile" title="Share clean profile link">🔗 Share</button>
             </div>
 
             <!-- Edit Form -->
