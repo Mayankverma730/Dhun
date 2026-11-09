@@ -1,6 +1,13 @@
 {
   "version": 2,
   "rewrites": [
+    { "source": "/api/register",          "destination": "/api/auth?action=register" },
+    { "source": "/api/login",             "destination": "/api/auth?action=login" },
+    { "source": "/api/logout",            "destination": "/api/auth?action=logout" },
+    { "source": "/api/forgot-password",   "destination": "/api/auth?action=forgot-password" },
+    { "source": "/api/reset-password",    "destination": "/api/auth?action=reset-password" },
+    { "source": "/api/auth/google/config","destination": "/api/auth?action=google-config" },
+    { "source": "/api/auth/google",       "destination": "/api/auth?action=google" },
     { "source": "/api/songs/:id/play",    "destination": "/api/songs/[id]?action=play" },
     { "source": "/api/songs/:id/like",    "destination": "/api/songs/[id]?action=like" },
     { "source": "/api/songs/:id/dislike", "destination": "/api/songs/[id]?action=dislike" },
