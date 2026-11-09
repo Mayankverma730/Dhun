@@ -40,6 +40,7 @@ module.exports = async (req, res) => {
     if (queue.length >= 200) {
       return res.status(400).json({ error: 'Queue full: maximum 200 items allowed' });
     }
+    // Avoid persisting queue entries that cannot resolve to a catalog song.
     if (!(store.songs || []).some(song => song && Number(song.id) === songId)) {
       return res.status(404).json({ error: 'Song not found' });
     }

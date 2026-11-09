@@ -56,6 +56,7 @@ function loadStore() {
         if (!Array.isArray(data.playlists)) data.playlists = [...INITIAL_PLAYLISTS];
         const maxSongId = data.songs.reduce((max, song) =>
           Number.isSafeInteger(song?.id) && song.id > max ? song.id : max, 0);
+        // Repair missing or stale counters before endpoints use post-increment.
         if (!Number.isSafeInteger(data.nextSongId) || data.nextSongId <= maxSongId) {
           data.nextSongId = maxSongId + 1;
         }

@@ -15,7 +15,7 @@ class DhunDB {
     }
 
     _open() {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
             if (typeof window === 'undefined' || !window.indexedDB) {
                 console.warn('[DhunDB] IndexedDB unavailable; using localStorage when available');
                 resolve(null);
@@ -143,6 +143,11 @@ class DhunDB {
                 }
             }
 
+        } catch (e) {
+            console.debug('[DhunDB] Legacy likes migration skipped:', e);
+        }
+
+        try {
             // Fix N-M-05: Migrate legacy playlists with schema validation
             const legacyPlaylists = localStorage.getItem('vibe_playlists');
             if (legacyPlaylists) {
@@ -166,7 +171,7 @@ class DhunDB {
                 }
             }
         } catch (e) {
-            console.debug('[DhunDB] No localStorage data needed migration');
+            console.debug('[DhunDB] Legacy playlists migration skipped:', e);
         }
     }
 
@@ -218,7 +223,8 @@ class DhunDB {
         if (!db) {
             const removed = this._fallbackStore(storeName).delete(key);
             if (removed) this._persistFallbackStore(storeName);
-            return removed;
+            // Match IndexedDB: a successful delete request resolves true even if absent.
+            return true;
         }
         return new Promise((resolve, reject) => {
             const tx = db.transaction(storeName, 'readwrite');

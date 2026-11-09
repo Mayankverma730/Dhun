@@ -60,7 +60,7 @@ module.exports = async (req, res) => {
 
     store.resetTokens[tokenHash] = {
       email: cleanEmail,
-      rawToken: rawToken, // Kept in server storage for backend validation
+      rawToken: rawToken, // Kept in server storage for email delivery / test simulation
       expiresAt: now + 15 * 60 * 1000, // 15 minutes
       used: false
     };
