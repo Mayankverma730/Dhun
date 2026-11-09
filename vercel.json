@@ -1,8 +1,8 @@
 {
   "version": 2,
   "redirects": [
-    { "source": "/(.*\\.(?:c|h|exe|o|obj|sh|bat|cmd|log|env|yml|yaml))", "destination": "/", "permanent": false },
-    { "source": "/(Makefile|Dockerfile|docker-compose.*)", "destination": "/", "permanent": false }
+    { "source": "/:path*(\\.(c|h|exe|o|obj|sh|bat|cmd|log|env|yml|yaml))", "destination": "/", "permanent": false },
+    { "source": "/:file(Makefile|Dockerfile|docker-compose.*)", "destination": "/", "permanent": false }
   ],
   "rewrites": [
     { "source": "/api/songs/:id/play",    "destination": "/api/songs/[id]?action=play" },

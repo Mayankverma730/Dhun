@@ -1274,9 +1274,52 @@ const ALBUM_IMGS = ['album1.jpg','album2.jpg','album3.jpg'];
 const ytCoverArtCache = new Map();
 const _pendingArtFetches = new Set();
 
+const STALE_VIDEO_IDS = new Set([
+  'd5gf9dXHeG4', 'edZZ0mFwZ-M', 'bO69qXl6R4g', '47dwt3_yC3s',
+  'm4rU4Xk2h5s', '8nK_4VfFpYc', 'cl34XmaN4U8', 'bfIqG8a1sHY',
+  'mt9xg0mmt68', 'Grr0Exhy-lQ', '4K-V-n7D_b0', 'GxldQ9GyXfY'
+]);
+
 function isValidYouTubeVideoId(v) {
-  return typeof v === 'string' && /^[a-zA-Z0-9_-]{11}$/.test(v.trim());
+  if (typeof v !== 'string') return false;
+  const trimmed = v.trim();
+  if (STALE_VIDEO_IDS.has(trimmed)) return false;
+  return /^[a-zA-Z0-9_-]{11}$/.test(trimmed);
 }
+
+function getValidThumbnailUrl(thumbnail, videoId) {
+  if (thumbnail && typeof thumbnail === 'string') {
+    if (thumbnail.includes('/vi/undefined') || thumbnail.includes('/vi//') || thumbnail.includes('undefined.jpg')) {
+      // invalid
+    } else if (thumbnail.includes('/vi/')) {
+      const m = thumbnail.match(/\/vi\/([a-zA-Z0-9_-]{11})\b/);
+      if (m && m[1] && isValidYouTubeVideoId(m[1])) return `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg`;
+    } else if (thumbnail.startsWith('http://') || thumbnail.startsWith('https://') || thumbnail.startsWith('blob:') || thumbnail.startsWith('data:') || thumbnail.endsWith('.jpg') || thumbnail.endsWith('.png')) {
+      return thumbnail;
+    }
+  }
+  if (videoId && isValidYouTubeVideoId(videoId)) {
+    return `https://i.ytimg.com/vi/${videoId.trim()}/hqdefault.jpg`;
+  }
+  return ALBUM_IMGS[0];
+}
+
+// Automatically sanitize any stale video IDs from cached storage
+try {
+  if (typeof localStorage !== 'undefined') {
+    const rawYt = localStorage.getItem('dhun_yt_songs');
+    if (rawYt && (rawYt.includes('cl34XmaN4U8') || [...STALE_VIDEO_IDS].some(id => rawYt.includes(id)))) {
+      const parsed = JSON.parse(rawYt);
+      for (const k in parsed) {
+        if (parsed[k] && (parsed[k].videoId === 'cl34XmaN4U8' || STALE_VIDEO_IDS.has(parsed[k].videoId))) {
+          parsed[k].videoId = 'cl0a3i2wFcc';
+          parsed[k].thumbnail = 'https://i.ytimg.com/vi/cl0a3i2wFcc/hqdefault.jpg';
+        }
+      }
+      localStorage.setItem('dhun_yt_songs', JSON.stringify(parsed));
+    }
+  }
+} catch (e) {}
 
 function imgFor(id) {
   if (!id && id !== 0) return ALBUM_IMGS[0];
@@ -3586,7 +3629,7 @@ function loadUserProfileLibrary(user, autoGenerateIfEmpty = true) {
         const ytData = {
           isYT: true,
           videoId: s.videoId,
-          thumbnail: s.thumbnail || `https://i.ytimg.com/vi/${s.videoId}/hqdefault.jpg`,
+          thumbnail: getValidThumbnailUrl(s.thumbnail, s.videoId),
           durationSec: s.durationSec || 210,
           title: s.title,
           artist: s.artist,
@@ -3676,7 +3719,7 @@ async function autoGenerateUserProfileLibrary(user, force = false) {
       genre: track.genre || 'Popular',
       duration: durMin,
       durationSec: durSec,
-      thumbnail: track.thumbnail || `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg`,
+      thumbnail: getValidThumbnailUrl(track.thumbnail, track.videoId),
       rating: 4.9,
       play_count: Math.floor(Math.random() * 20) + 5,
       liked: 0,
@@ -6729,7 +6772,7 @@ function getAutoRecommendations(currentSong, limit = 6) {
       const ytData = {
         isYT: true,
         videoId: track.videoId,
-        thumbnail: track.thumbnail || `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg`,
+        thumbnail: getValidThumbnailUrl(track.thumbnail, track.videoId),
         durationSec: track.durationSec || 210,
         title: track.title,
         artist: track.artist,
@@ -8695,7 +8738,7 @@ function applyRemoteSong(song, shouldPlay, progress) {
     const ytData = {
       isYT: true,
       videoId: song.videoId,
-      thumbnail: song.thumbnail || `https://i.ytimg.com/vi/${song.videoId}/hqdefault.jpg`,
+      thumbnail: getValidThumbnailUrl(song.thumbnail, song.videoId),
       durationSec: song.durationSec || ((song.duration || 3.5) * 60),
       title: song.title,
       artist: song.artist
@@ -11401,7 +11444,7 @@ function calculateSimilarDhun(currentSong) {
       const ytData = {
         isYT: true,
         videoId: track.videoId,
-        thumbnail: track.thumbnail || `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg`,
+        thumbnail: getValidThumbnailUrl(track.thumbnail, track.videoId),
         durationSec: track.durationSec || 210,
         title: track.title,
         artist: track.artist,
@@ -11901,7 +11944,7 @@ async function autoSeedLibraryWithOnlineMedia() {
           const ytData = {
             isYT: true,
             videoId: track.videoId,
-            thumbnail: track.thumbnail || `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg`,
+            thumbnail: getValidThumbnailUrl(track.thumbnail, track.videoId),
             durationSec: track.durationSec || 210,
             title: track.title,
             artist: track.artist
@@ -11941,7 +11984,7 @@ async function autoSeedLibraryWithOnlineMedia() {
       const ytData = {
         isYT: true,
         videoId: track.videoId,
-        thumbnail: track.thumbnail || `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg`,
+        thumbnail: getValidThumbnailUrl(track.thumbnail, track.videoId),
         durationSec: track.durationSec || 210,
         title: track.title,
         artist: track.artist
