@@ -32,6 +32,7 @@ typedef struct {
 SongGraph *graph_create(void);
 void       graph_destroy(SongGraph *g);
 int        graph_add_song(SongGraph *g, const Song *song);
+int        graph_remove_song(SongGraph *g, int song_id);
 void       graph_add_edge(SongGraph *g, int id1, int id2, float similarity);
 float      graph_calculate_similarity(const Song *s1, const Song *s2);
 int        graph_get_similar(const SongGraph *g, int song_id, int out_ids[], float out_scores[], int max_results);

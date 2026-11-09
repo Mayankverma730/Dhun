@@ -815,11 +815,32 @@ static void route_delete_song(SOCKET sock, int id)
     strncpy(title, s->title, sizeof(title) - 1);
     title[sizeof(title) - 1] = '\0';
 
-    /* BST and AVL deletes by title, hash by id */
-    bst_delete(g_bst, title);
-    avl_delete(g_avl, title);
+    /* Title indexes hold one entry per title. Delete only when this ID owns the
+     * indexed entry, then restore a remaining same-title song if one exists. */
+    BSTNode *bst_entry = bst_search(g_bst, title);
+    int remove_bst_entry = bst_entry && bst_entry->song.id == id;
+    AVLNode *avl_entry = avl_search(g_avl, title);
+    int remove_avl_entry = avl_entry && avl_entry->song.id == id;
+    if (remove_bst_entry) bst_delete(g_bst, title);
+    if (remove_avl_entry) avl_delete(g_avl, title);
     hash_delete(g_hash, id);
     lib_remove_song(g_lib, id);
+
+    if (remove_bst_entry || remove_avl_entry) {
+        for (LibNode *node = g_lib->head; node; node = node->next) {
+            if (remove_bst_entry && strcmp(node->song.title, title) == 0) {
+                bst_insert(g_bst, node->song);
+                remove_bst_entry = 0;
+            }
+            if (remove_avl_entry && _stricmp(node->song.title, title) == 0) {
+                avl_insert(g_avl, node->song);
+                remove_avl_entry = 0;
+            }
+            if (!remove_bst_entry && !remove_avl_entry) break;
+        }
+    }
+
+    graph_remove_song(g_graph, id);
 
     /* Invalidate deleted song from LRU cache */
     cache_remove(g_cache, id);

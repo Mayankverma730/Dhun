@@ -71,6 +71,45 @@ int graph_add_song(SongGraph *g, const Song *song) {
     return 1;
 }
 
+/* Remove deleted songs and their edges so recommendations and graph capacity
+ * stay aligned with the live library. */
+int graph_remove_song(SongGraph *g, int song_id) {
+    if (!g) return 0;
+    int index = -1;
+    for (int i = 0; i < g->count; i++) {
+        if (g->nodes[i] && g->nodes[i]->song_id == song_id) {
+            index = i;
+            break;
+        }
+    }
+    if (index < 0) return 0;
+
+    GraphNode *removed = g->nodes[index];
+    for (int i = 0; i < g->count; i++) {
+        if (!g->nodes[i] || i == index) continue;
+        GraphEdge **edge = &g->nodes[i]->edges;
+        while (*edge) {
+            if ((*edge)->target_song_id == song_id) {
+                GraphEdge *stale = *edge;
+                *edge = stale->next;
+                free(stale);
+            } else {
+                edge = &(*edge)->next;
+            }
+        }
+    }
+    GraphEdge *edge = removed->edges;
+    while (edge) {
+        GraphEdge *next = edge->next;
+        free(edge);
+        edge = next;
+    }
+    free(removed);
+    for (int i = index; i < g->count - 1; i++) g->nodes[i] = g->nodes[i + 1];
+    g->nodes[--g->count] = NULL;
+    return 1;
+}
+
 void graph_add_edge(SongGraph *g, int id1, int id2, float similarity) {
     if (!g || id1 == id2) return;
     GraphNode *n1 = find_node(g, id1);
