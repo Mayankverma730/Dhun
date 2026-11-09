@@ -8,5 +8,8 @@
   },
   "scripts": {
     "start": "node -e \"console.log('Dhun static site — served by Vercel')\""
+  },
+  "dependencies": {
+    "@vercel/speed-insights": "^2.1.0"
   }
 }
