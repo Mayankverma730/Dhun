@@ -3,6 +3,12 @@
  * Dhun Music Management System (C + DSA)
  */
 
+#if !defined(_WIN32) && !defined(_WIN64)
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#include <strings.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -65,6 +71,13 @@ static int song_title_cmp(const char *t1, const char *t2) {
 #endif
 }
 
+/* The ID tie-breaker keeps duplicate titles as separate deterministic keys. */
+static int song_key_cmp(const char *title, int id, const Song *song) {
+    int cmp = song_title_cmp(title, song->title);
+    if (cmp == 0) cmp = (id > song->id) - (id < song->id);
+    return cmp;
+}
+
 static AVLNode *insert_rec(AVLNode *node, Song song, int *inserted) {
     if (!node) {
         AVLNode *created = create_node(song);
@@ -73,13 +86,13 @@ static AVLNode *insert_rec(AVLNode *node, Song song, int *inserted) {
         return created;
     }
 
-    int cmp = song_title_cmp(song.title, node->song.title);
+    int cmp = song_key_cmp(song.title, song.id, &node->song);
     if (cmp < 0) {
         node->left = insert_rec(node->left, song, inserted);
     } else if (cmp > 0) {
         node->right = insert_rec(node->right, song, inserted);
     } else {
-        /* Duplicate title — update song */
+        /* Only an identical title and ID is an update to the same record. */
         node->song = song;
         *inserted = 0;
         return node;
@@ -89,21 +102,21 @@ static AVLNode *insert_rec(AVLNode *node, Song song, int *inserted) {
     int balance = get_balance(node);
 
     /* Left-Left Case */
-    if (balance > 1 && song_title_cmp(song.title, node->left->song.title) < 0)
+    if (balance > 1 && song_key_cmp(song.title, song.id, &node->left->song) < 0)
         return rotate_right(node);
 
     /* Right-Right Case */
-    if (balance < -1 && song_title_cmp(song.title, node->right->song.title) > 0)
+    if (balance < -1 && song_key_cmp(song.title, song.id, &node->right->song) > 0)
         return rotate_left(node);
 
     /* Left-Right Case */
-    if (balance > 1 && song_title_cmp(song.title, node->left->song.title) > 0) {
+    if (balance > 1 && song_key_cmp(song.title, song.id, &node->left->song) > 0) {
         node->left = rotate_left(node->left);
         return rotate_right(node);
     }
 
     /* Right-Left Case */
-    if (balance < -1 && song_title_cmp(song.title, node->right->song.title) < 0) {
+    if (balance < -1 && song_key_cmp(song.title, song.id, &node->right->song) < 0) {
         node->right = rotate_right(node->right);
         return rotate_left(node);
     }
@@ -143,14 +156,14 @@ static AVLNode *min_node(AVLNode *node) {
     return cur;
 }
 
-static AVLNode *delete_rec(AVLNode *root, const char *title, int *deleted) {
+static AVLNode *delete_rec(AVLNode *root, const char *title, int id, int *deleted) {
     if (!root) return NULL;
 
-    int cmp = song_title_cmp(title, root->song.title);
+    int cmp = song_key_cmp(title, id, &root->song);
     if (cmp < 0) {
-        root->left = delete_rec(root->left, title, deleted);
+        root->left = delete_rec(root->left, title, id, deleted);
     } else if (cmp > 0) {
-        root->right = delete_rec(root->right, title, deleted);
+        root->right = delete_rec(root->right, title, id, deleted);
     } else {
         *deleted = 1;
         if (!root->left || !root->right) {
@@ -165,7 +178,7 @@ static AVLNode *delete_rec(AVLNode *root, const char *title, int *deleted) {
         } else {
             AVLNode *temp = min_node(root->right);
             root->song = temp->song;
-            root->right = delete_rec(root->right, temp->song.title, deleted);
+            root->right = delete_rec(root->right, temp->song.title, temp->song.id, deleted);
         }
     }
 
@@ -195,8 +208,14 @@ static AVLNode *delete_rec(AVLNode *root, const char *title, int *deleted) {
 
 int avl_delete(AVLTree *tree, const char *title) {
     if (!tree || !title) return 0;
+    AVLNode *match = avl_search(tree, title);
+    return match ? avl_delete_id(tree, match->song.title, match->song.id) : 0;
+}
+
+int avl_delete_id(AVLTree *tree, const char *title, int id) {
+    if (!tree || !title) return 0;
     int deleted = 0;
-    tree->root = delete_rec(tree->root, title, &deleted);
+    tree->root = delete_rec(tree->root, title, id, &deleted);
     if (deleted) tree->size--;
     return deleted;
 }

@@ -24,6 +24,8 @@ AVLTree *avl_create(void);
 void     avl_destroy(AVLTree *tree);
 int      avl_insert(AVLTree *tree, Song song);
 int      avl_delete(AVLTree *tree, const char *title);
+/* Delete one exact library record when titles are shared. */
+int      avl_delete_id(AVLTree *tree, const char *title, int id);
 AVLNode *avl_search(const AVLTree *tree, const char *title);
 int      avl_height(const AVLNode *node);
 int      avl_size(const AVLTree *tree);

@@ -5,15 +5,17 @@
  * POST /api/playlists        → create playlist
  */
 
-const { loadStore, saveStore, setCORS, getUserPlaylistBucket } = require('./_store');
+// Change note: playlist IDs and edits are protected from concurrent lost updates.
+const { loadStore, saveStore, setCORS, getUserPlaylistBucket, withStoreLock } = require('./_store');
 
-module.exports = async (req, res) => {
+module.exports = withStoreLock(async (req, res) => {
   setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const store = loadStore();
+  const store = await loadStore();
   if (!store.nextPlaylistId) store.nextPlaylistId = 1;
-  const { playlists } = getUserPlaylistBucket(req, store);
+  const { playlists, migrated } = getUserPlaylistBucket(req, store);
+  if (migrated) await saveStore(store);
 
   if (req.method === 'GET') {
     return res.status(200).json(playlists);
@@ -40,10 +42,10 @@ module.exports = async (req, res) => {
       createdAt: Date.now()
     };
     playlists.push(pl);
-    saveStore(store);
+    await saveStore(store);
 
     return res.status(201).json(pl);
   }
 
   return res.status(405).json({ error: 'Method not allowed' });
-};
+});

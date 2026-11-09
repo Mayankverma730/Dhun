@@ -7,7 +7,8 @@
  * Findings 11 & 12: Uses persistent store and isolates anonymous guest queues.
  */
 
-const { loadStore, saveStore, setCORS, getCallerIdentity, parsePositiveId } = require('./_store');
+// Change note: queues are isolated by the validated session and saved under a store lock.
+const { loadStore, saveStore, setCORS, getCallerIdentity, parsePositiveId, withStoreLock } = require('./_store');
 
 function resolveQueue(store, queue) {
   return queue.map(item => {
@@ -17,14 +18,13 @@ function resolveQueue(store, queue) {
   }).filter(Boolean);
 }
 
-module.exports = async (req, res) => {
+module.exports = withStoreLock(async (req, res) => {
   setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const identity = getCallerIdentity(req);
-  const userId = identity.authenticated ? identity.user.id : (identity.guestId || 'guest_default');
-
-  const store = loadStore();
+  const store = await loadStore();
+  const identity = getCallerIdentity(req, store);
+  const userId = identity.authenticated ? identity.user.id : identity.guestId;
   if (!store.queues || typeof store.queues !== 'object' || Array.isArray(store.queues)) {
     store.queues = Object.create(null);
   }
@@ -54,14 +54,14 @@ module.exports = async (req, res) => {
     }
 
     queue.push({ song_id: songId, addedAt: Date.now() });
-    saveStore(store);
+    await saveStore(store);
     return res.status(200).json(resolveQueue(store, queue));
   }
 
   if (req.method === 'DELETE') {
     if (req.query.action === 'clear') {
       queue.length = 0;
-      saveStore(store);
+      await saveStore(store);
       return res.status(200).json({ cleared: true, queue: [] });
     }
     let body = req.body;
@@ -79,17 +79,17 @@ module.exports = async (req, res) => {
       }
       const idx = queue.findIndex(item => item && item.song_id === removeId);
       const removed = idx !== -1 ? queue.splice(idx, 1)[0] : null;
-      saveStore(store);
+      await saveStore(store);
       return res.status(200).json({
         removed: removed ? resolveQueue(store, [removed])[0] || null : null,
         queue: resolveQueue(store, queue)
       });
     }
     const next = queue.shift() || null;
-    saveStore(store);
+    await saveStore(store);
     // Match the C backend: DELETE returns the song that should play next.
     return res.status(200).json(next ? resolveQueue(store, [next])[0] || {} : {});
   }
 
   return res.status(405).json({ error: 'Method not allowed' });
-};
+});

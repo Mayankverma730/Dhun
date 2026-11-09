@@ -4,7 +4,8 @@
  */
 
 const crypto = require('crypto');
-const { loadStore, saveStore, hashPassword, setCORS } = require('./_store');
+// Change note: registration is serialized so concurrent requests cannot create duplicate accounts.
+const { loadStore, saveStore, hashPassword, setCORS, withStoreLock } = require('./_store');
 
 function isValidEmail(email) {
   if (typeof email !== 'string') return false;
@@ -17,7 +18,7 @@ function isValidEmail(email) {
   return true;
 }
 
-module.exports = async (req, res) => {
+module.exports = withStoreLock(async (req, res) => {
   setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ success: false, error: 'Method not allowed' });
@@ -33,13 +34,13 @@ module.exports = async (req, res) => {
     return res.status(400).json({ success: false, error: 'Invalid email address format' });
   }
 
-  if (typeof password !== 'string' || password.length < 6) {
-    return res.status(400).json({ success: false, error: 'Password must be at least 6 characters' });
+  if (typeof password !== 'string' || password.length < 6 || password.length > 1024) {
+    return res.status(400).json({ success: false, error: 'Password must be 6 to 1024 characters' });
   }
 
-  const store = loadStore();
+  const store = await loadStore();
 
-  const existing = store.users.find(u => u.email === cleanEmail);
+  const existing = store.users.find(account => account && account.email === cleanEmail);
   if (existing) {
     return res.status(409).json({ success: false, error: 'An account with this email already exists' });
   }
@@ -47,7 +48,7 @@ module.exports = async (req, res) => {
   const salt = crypto.randomBytes(16).toString('hex');
   const passwordHash = hashPassword(password, salt);
   const userId = 'usr_' + crypto.randomBytes(8).toString('hex');
-  const userName = name && typeof name === 'string' ? name.trim() : cleanEmail.split('@')[0];
+  const userName = (typeof name === 'string' && name.trim() ? name.trim() : cleanEmail.split('@')[0]).slice(0, 100);
 
   const newUser = {
     id: userId,
@@ -55,6 +56,7 @@ module.exports = async (req, res) => {
     name: userName,
     salt,
     passwordHash,
+    passwordIterations: 100000,
     provider: 'email',
     avatarColor: '#829779',
     createdAt: Date.now()
@@ -70,7 +72,7 @@ module.exports = async (req, res) => {
     expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days
   };
 
-  saveStore(store);
+  await saveStore(store);
 
   return res.status(201).json({
     success: true,
@@ -78,5 +80,5 @@ module.exports = async (req, res) => {
     token,
     user: store.sessions[token].user
   });
-};
+});
 

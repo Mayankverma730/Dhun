@@ -5,9 +5,8 @@
  * Fix N-H-01: collect_suggestions converted from recursive DFS to iterative
  * using an explicit stack to prevent stack overflow on long song titles.
  *
- * Fix N-L-01: Non-ASCII characters (c >= 128) are now mapped to index 0
- * (a reserved "other" bucket) instead of being silently aliased to space
- * (ASCII 32), preventing incorrect autocomplete collisions.
+ * Fix N-L-01: Non-ASCII bytes use a reserved bucket and candidates are checked
+ * against their original title to avoid collisions with other Unicode titles.
  */
 
 #include <stdio.h>
@@ -23,6 +22,21 @@
 static TrieNode *trie_create_node(void) {
     TrieNode *node = (TrieNode *)calloc(1, sizeof(TrieNode));
     return node;
+}
+
+/* The compact trie shares one bucket for non-ASCII UTF-8 bytes; filter hits
+ * against their original title so distinct Unicode prefixes never cross-match. */
+static int title_has_prefix(const char *title, const char *prefix) {
+    if (!title || !prefix) return 0;
+    while (*prefix) {
+        unsigned char a = (unsigned char)*title++;
+        unsigned char b = (unsigned char)*prefix++;
+        if (!a) return 0;
+        if (a < 128 && b < 128) {
+            if (tolower(a) != tolower(b)) return 0;
+        } else if (a != b) return 0;
+    }
+    return 1;
 }
 
 Trie *trie_create(void) {
@@ -41,6 +55,12 @@ static void trie_destroy_node(TrieNode *node) {
         if (node->children[i]) {
             trie_destroy_node(node->children[i]);
         }
+    }
+    TrieSong *song = node->songs;
+    while (song) {
+        TrieSong *next = song->next;
+        free(song);
+        song = next;
     }
     free(node);
 }
@@ -66,13 +86,37 @@ void trie_insert(Trie *trie, const char *word, int song_id, const char *title) {
         curr = curr->children[c];
     }
     /* Re-inserting a word updates its song but not the unique-word count. */
-    if (!curr->is_end_of_word) trie->word_count++;
-    curr->is_end_of_word = 1;
-    curr->song_id = song_id;
-    if (title) {
-        strncpy(curr->title, title, sizeof(curr->title) - 1);
-        curr->title[sizeof(curr->title) - 1] = '\0';
+    for (TrieSong *entry = curr->songs; entry; entry = entry->next) {
+        if (entry->song_id == song_id) {
+            snprintf(entry->title, sizeof(entry->title), "%s", title ? title : word);
+            return;
+        }
     }
+    TrieSong *entry = (TrieSong *)calloc(1, sizeof(*entry));
+    if (!entry) return;
+    entry->song_id = song_id;
+    snprintf(entry->title, sizeof(entry->title), "%s", title ? title : word);
+    entry->next = curr->songs;
+    if (!curr->songs) trie->word_count++;
+    curr->songs = entry;
+}
+
+int trie_delete(Trie *trie, const char *word, int song_id) {
+    if (!trie || !trie->root || !word || !word[0]) return 0;
+    TrieNode *curr = trie->root;
+    for (int i = 0; word[i]; i++) {
+        unsigned int c = TRIE_VALID_INDEX((unsigned char)tolower((unsigned char)word[i]));
+        if (!curr->children[c]) return 0;
+        curr = curr->children[c];
+    }
+    TrieSong **entry = &curr->songs;
+    while (*entry && (*entry)->song_id != song_id) entry = &(*entry)->next;
+    if (!*entry) return 0;
+    TrieSong *removed = *entry;
+    *entry = removed->next;
+    free(removed);
+    if (!curr->songs) trie->word_count--;
+    return 1;
 }
 
 /* ── Iterative DFS using an explicit stack ────────────────────────────────
@@ -83,6 +127,7 @@ void trie_insert(Trie *trie, const char *word, int song_id, const char *title) {
 typedef struct { TrieNode *node; } DfsFrame;
 
 static void collect_suggestions(TrieNode *root,
+                                const char *prefix,
                                 int       out_ids[],
                                 char      out_titles[][128],
                                 int       max_results,
@@ -100,9 +145,10 @@ static void collect_suggestions(TrieNode *root,
     while (top > 0 && *count < max_results) {
         TrieNode *node = stack[--top].node;
 
-        if (node->is_end_of_word) {
-            out_ids[*count] = node->song_id;
-            snprintf(out_titles[*count], 128, "%s", node->title);
+        for (TrieSong *song = node->songs; song && *count < max_results; song = song->next) {
+            if (!title_has_prefix(song->title, prefix)) continue;
+            out_ids[*count] = song->song_id;
+            snprintf(out_titles[*count], 128, "%s", song->title);
             (*count)++;
         }
 
@@ -138,6 +184,6 @@ int trie_autocomplete(const Trie *trie, const char *prefix,
     }
 
     int count = 0;
-    collect_suggestions(curr, out_ids, out_titles, max_results, &count);
+    collect_suggestions(curr, prefix, out_ids, out_titles, max_results, &count);
     return count;
 }

@@ -39,6 +39,10 @@
 #pragma comment(lib, "bcrypt.lib")
 #define strncasecmp _strnicmp
 #else
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#include <strings.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -682,6 +686,25 @@ static void route_autocomplete(SOCKET sock, const char *prefix)
 }
 
 /* GET /api/songs/avl/search?q=... [T5-01] */
+static void append_avl_title_matches(const AVLNode *node, const char *q, char *resp, int *pos, int *first)
+{
+    if (!node || *pos >= BUF - 600) return;
+    int cmp = _stricmp(q, node->song.title);
+    if (cmp <= 0) append_avl_title_matches(node->left, q, resp, pos, first);
+    if (cmp == 0) {
+        char item[512];
+        song_to_json_liked(&node->song, item, sizeof(item));
+        int len = (int)strlen(item);
+        if (*pos + len + 2 < BUF) {
+            if (!*first) resp[(*pos)++] = ',';
+            memcpy(resp + *pos, item, (size_t)len);
+            *pos += len;
+            *first = 0;
+        }
+    }
+    if (cmp >= 0) append_avl_title_matches(node->right, q, resp, pos, first);
+}
+
 static void route_avl_search(SOCKET sock, const char *q)
 {
     if (!q || !q[0]) {
@@ -689,17 +712,16 @@ static void route_avl_search(SOCKET sock, const char *q)
         return;
     }
 
-    AVLNode *n = avl_search(g_avl, q);
-    if (!n) {
-        send_ok(sock, "[]");
-        return;
-    }
-
-    char tmp[512];
-    song_to_json_liked(&n->song, tmp, sizeof(tmp));
-    char resp[600];
-    snprintf(resp, sizeof(resp), "[%s]", tmp);
+    char *resp = (char *)malloc(BUF);
+    if (!resp) { send_error(sock, 500, "out of memory"); return; }
+    int pos = 0, first = 1;
+    resp[pos++] = '[';
+    /* The AVL key includes ID; return every exact-title match. */
+    append_avl_title_matches(g_avl ? g_avl->root : NULL, q, resp, &pos, &first);
+    resp[pos++] = ']';
+    resp[pos] = '\0';
     send_ok(sock, resp);
+    free(resp);
 }
 
 /* GET /api/songs/:id/similar [T5-03] */
@@ -818,30 +840,12 @@ static void route_delete_song(SOCKET sock, int id)
     strncpy(title, s->title, sizeof(title) - 1);
     title[sizeof(title) - 1] = '\0';
 
-    /* Title indexes hold one entry per title. Delete only when this ID owns the
-     * indexed entry, then restore a remaining same-title song if one exists. */
-    BSTNode *bst_entry = bst_search(g_bst, title);
-    int remove_bst_entry = bst_entry && bst_entry->song.id == id;
-    AVLNode *avl_entry = avl_search(g_avl, title);
-    int remove_avl_entry = avl_entry && avl_entry->song.id == id;
-    if (remove_bst_entry) bst_delete(g_bst, title);
-    if (remove_avl_entry) avl_delete(g_avl, title);
+    /* Title+ID keys keep duplicate-title records independent in every index. */
+    bst_delete_id(g_bst, title, id);
+    avl_delete_id(g_avl, title, id);
+    trie_delete(g_trie, title, id);
     hash_delete(g_hash, id);
     lib_remove_song(g_lib, id);
-
-    if (remove_bst_entry || remove_avl_entry) {
-        for (LibNode *node = g_lib->head; node; node = node->next) {
-            if (remove_bst_entry && strcmp(node->song.title, title) == 0) {
-                bst_insert(g_bst, node->song);
-                remove_bst_entry = 0;
-            }
-            if (remove_avl_entry && _stricmp(node->song.title, title) == 0) {
-                avl_insert(g_avl, node->song);
-                remove_avl_entry = 0;
-            }
-            if (!remove_bst_entry && !remove_avl_entry) break;
-        }
-    }
 
     graph_remove_song(g_graph, id);
 
@@ -1295,6 +1299,7 @@ static int validate_email_syntax(const char *email) {
 }
 
 static int generate_secure_token(char *out, size_t out_size, const char *prefix);
+static int generate_secure_room_code(char *out, size_t out_size);
 
 /* ═══════════════════════════════════════════════
    LISTEN TOGETHER / JAM SESSION DSA & ROUTES [T1-06]
@@ -1456,8 +1461,15 @@ static void route_jam_create(SOCKET sock, const char *body)
 
     char room_code[32];
     json_str(body, "roomId", room_code, sizeof(room_code));
-    if (!room_code[0] || strncmp(room_code, "DHUN-", 5) != 0) {
-        snprintf(room_code, sizeof(room_code), "DHUN-%04d", 1000 + (rand() % 9000));
+    size_t code_len = strlen(room_code);
+    int valid_code = code_len >= 9 && code_len <= 11 && strncmp(room_code, "DHUN-", 5) == 0;
+    for (size_t i = 5; valid_code && i < code_len; i++) {
+        if (!((room_code[i] >= 'A' && room_code[i] <= 'Z') ||
+              (room_code[i] >= '0' && room_code[i] <= '9'))) valid_code = 0;
+    }
+    if (!valid_code && !generate_secure_room_code(room_code, sizeof(room_code))) {
+        send_error(sock, 500, "secure random generator unavailable");
+        return;
     }
 
     JamRoom *existing = jam_find_room(room_code);
@@ -1485,8 +1497,9 @@ static void route_jam_create(SOCKET sock, const char *body)
     }
 
     /* Optional room password protection [T1-06] */
-    char raw_password[128] = {0};
+    char raw_password[1026] = {0};
     json_str(body, "password", raw_password, sizeof(raw_password));
+    if (strlen(raw_password) > 1024) { free(r); send_error(sock, 400, "room password is too long"); return; }
     if (raw_password[0]) {
         if (!generate_secure_token(r->password_salt, sizeof(r->password_salt), "s_") ||
             !hash_password_salted(raw_password, r->password_salt, r->password_hash, sizeof(r->password_hash))) {
@@ -1556,8 +1569,9 @@ static void route_jam_join(SOCKET sock, const char *body)
 
     /* Check room password if protected [T1-06] */
     if (r->has_password) {
-        char prov_password[128] = {0};
+        char prov_password[1026] = {0};
         json_str(body, "password", prov_password, sizeof(prov_password));
+        if (strlen(prov_password) > 1024) { send_error(sock, 400, "room password is too long"); return; }
         char prov_hash[128];
         if (!hash_password_salted(prov_password, r->password_salt, prov_hash, sizeof(prov_hash))) {
             send_error(sock, 500, "password hashing unavailable");
@@ -1850,6 +1864,7 @@ typedef struct {
     char avatar_color[16];
     char provider[16];
     char session_token[64];
+    time_t session_expires_at;
     time_t created_at;
 } AuthUser;
 
@@ -1862,6 +1877,7 @@ typedef struct {
 
 #define MAX_AUTH_USERS 256
 #define MAX_RESET_TOKENS 256
+#define SESSION_TTL_SEC (7 * 24 * 60 * 60)
 
 static AuthUser g_auth_users[MAX_AUTH_USERS];
 static int g_auth_user_count = 0;
@@ -1897,11 +1913,29 @@ static int generate_secure_token(char *out, size_t out_size, const char *prefix)
     return written > 0 && (size_t)written < out_size;
 }
 
+/* Match the browser's six-character room code format without using rand(). */
+static int generate_secure_room_code(char *out, size_t out_size) {
+    static const char alphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    unsigned char raw[6];
+    if (!out || out_size < 12) return 0;
+#ifdef _WIN32
+    if (BCryptGenRandom(NULL, raw, sizeof(raw), BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0) return 0;
+#else
+    if (RAND_bytes(raw, (int)sizeof(raw)) != 1) return 0;
+#endif
+    memcpy(out, "DHUN-", 5);
+    for (size_t i = 0; i < sizeof(raw); i++) out[5 + i] = alphabet[raw[i] & 31u];
+    out[11] = '\0';
+    memset(raw, 0, sizeof(raw));
+    return 1;
+}
+
 /* Helper: find a user by their session token */
 static AuthUser *auth_find_user_by_token(const char *token) {
     if (!token || !token[0]) return NULL;
     for (int i = 0; i < g_auth_user_count; i++) {
         if (g_auth_users[i].session_token[0] &&
+            time(NULL) < g_auth_users[i].session_expires_at &&
             constant_time_eq(g_auth_users[i].session_token, token)) {
             return &g_auth_users[i];
         }
@@ -1928,7 +1962,7 @@ static void extract_bearer_token(const char *req, char *out, int maxlen) {
 
 static void route_register(SOCKET sock, const char *body)
 {
-    char name[64] = {0}, email[128] = {0}, password[128] = {0};
+    char name[64] = {0}, email[128] = {0}, password[1026] = {0};
     json_str(body, "name", name, sizeof(name));
     json_str(body, "email", email, sizeof(email));
     json_str(body, "password", password, sizeof(password));
@@ -1945,8 +1979,8 @@ static void route_register(SOCKET sock, const char *body)
         send_error(sock, 400, "invalid email address format");
         return;
     }
-    if (strlen(password) < 6) {
-        send_error(sock, 400, "password must be at least 6 characters");
+    if (strlen(password) < 6 || strlen(password) > 1024) {
+        send_error(sock, 400, "password must be between 6 and 1024 characters");
         return;
     }
 
@@ -1980,6 +2014,7 @@ static void route_register(SOCKET sock, const char *body)
         send_error(sock, 500, "secure random generator unavailable"); return;
     }
     u->created_at = time(NULL);
+    u->session_expires_at = u->created_at + SESSION_TTL_SEC;
 
     /* Fix M-04: Escape user fields in JSON responses */
     char esc_name[128], esc_email[128];
@@ -1996,7 +2031,7 @@ static void route_register(SOCKET sock, const char *body)
 /* POST /api/login */
 static void route_login(SOCKET sock, const char *body)
 {
-    char email[128] = {0}, password[128] = {0};
+    char email[128] = {0}, password[1026] = {0};
     json_str(body, "email", email, sizeof(email));
     json_str(body, "password", password, sizeof(password));
 
@@ -2004,6 +2039,7 @@ static void route_login(SOCKET sock, const char *body)
         send_error(sock, 400, "email and password required");
         return;
     }
+    if (strlen(password) > 1024) { send_error(sock, 400, "password is too long"); return; }
 
     AuthUser *u = auth_find_user_by_email(email);
     if (!u) {
@@ -2026,6 +2062,7 @@ static void route_login(SOCKET sock, const char *body)
         send_error(sock, 500, "secure random generator unavailable"); return;
     }
     snprintf(u->session_token, sizeof(u->session_token), "%s", new_session);
+    u->session_expires_at = time(NULL) + SESSION_TTL_SEC;
 
     /* Fix M-04: Escape user fields in JSON responses */
     char esc_name[128], esc_email[128];
@@ -2075,7 +2112,7 @@ static void route_forgot_password(SOCKET sock, const char *body)
 /* POST /api/reset-password */
 static void route_reset_password(SOCKET sock, const char *body)
 {
-    char token[64] = {0}, password[128] = {0};
+    char token[64] = {0}, password[1026] = {0};
     json_str(body, "token", token, sizeof(token));
     json_str(body, "newPassword", password, sizeof(password));
     if (!password[0]) json_str(body, "password", password, sizeof(password)); /* Keep older clients compatible. */
@@ -2084,8 +2121,8 @@ static void route_reset_password(SOCKET sock, const char *body)
         send_error(sock, 400, "token and new password required");
         return;
     }
-    if (strlen(password) < 6) {
-        send_error(sock, 400, "password must be at least 6 characters");
+    if (strlen(password) < 6 || strlen(password) > 1024) {
+        send_error(sock, 400, "password must be between 6 and 1024 characters");
         return;
     }
 
@@ -2123,7 +2160,8 @@ static void route_reset_password(SOCKET sock, const char *body)
     }
     snprintf(u->salt, sizeof(u->salt), "%s", new_salt);
     snprintf(u->password_hash, sizeof(u->password_hash), "%s", new_hash);
-    memset(u->session_token, 0, sizeof(u->session_token)); /* Finding 15: Revoke all active sessions on password reset */
+    memset(u->session_token, 0, sizeof(u->session_token)); /* Password reset revokes all active sessions. */
+    u->session_expires_at = 0;
     found_token->used = 1;
 
     char esc_email[256], response[512];
@@ -2145,6 +2183,7 @@ static void route_logout(SOCKET sock, const char *req)
     if (u) {
         /* Overwrite session token so it can never match again */
         memset(u->session_token, 0, sizeof(u->session_token));
+        u->session_expires_at = 0;
     }
     send_ok(sock, "{\"status\":\"ok\",\"message\":\"Logged out successfully\"}");
 }

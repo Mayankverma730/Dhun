@@ -9,41 +9,8 @@
  */
 
 const crypto = require('crypto');
-const { loadStore, saveStore, verifyPasswordHash, setCORS } = require('./_store');
-
-// In-memory rate limiter per IP / email to prevent brute-force attacks
-const loginAttempts = new Map();
-const MAX_LOGIN_ATTEMPT_KEYS = 10000;
-
-function isThrottled(key) {
-  const now = Date.now();
-  const record = loginAttempts.get(key);
-  if (!record) return false;
-  if (now > record.resetAt) {
-    loginAttempts.delete(key);
-    return false;
-  }
-  return record.count >= 5;
-}
-
-function recordAttempt(key, success) {
-  const now = Date.now();
-  if (success) {
-    loginAttempts.delete(key);
-    return;
-  }
-  if (!loginAttempts.has(key) && loginAttempts.size >= MAX_LOGIN_ATTEMPT_KEYS) {
-    for (const [oldKey, record] of loginAttempts) {
-      if (now > record.resetAt) loginAttempts.delete(oldKey);
-    }
-    if (loginAttempts.size >= MAX_LOGIN_ATTEMPT_KEYS) {
-      loginAttempts.delete(loginAttempts.keys().next().value);
-    }
-  }
-  const record = loginAttempts.get(key) || { count: 0, resetAt: now + 5 * 60 * 1000 };
-  record.count++;
-  loginAttempts.set(key, record);
-}
+// Change note: shared throttling and a store lock keep login safe across serverless instances.
+const { loadStore, saveStore, hashPassword, verifyPasswordHash, setCORS, withStoreLock, consumeRateLimit, clearRateLimit } = require('./_store');
 
 function isValidEmail(email) {
   if (typeof email !== 'string') return false;
@@ -56,14 +23,14 @@ function isValidEmail(email) {
   return true;
 }
 
-module.exports = (req, res) => {
+module.exports = withStoreLock(async (req, res) => {
   setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ success: false, error: 'Method not allowed' });
 
   const { email, password } = req.body || {};
 
-  if (!email || !password) {
+  if (!email || typeof password !== 'string' || password.length > 1024) {
     return res.status(400).json({ success: false, error: 'Email and password are required' });
   }
 
@@ -75,25 +42,39 @@ module.exports = (req, res) => {
   const clientIp = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'ip').split(',')[0].trim();
   const throttleKey = `${clientIp}_${cleanEmail}`;
 
-  if (isThrottled(throttleKey)) {
+  const rateLimit = await consumeRateLimit(`login:${throttleKey}`, 5, 5 * 60 * 1000);
+  if (!rateLimit.allowed) {
     return res.status(429).json({ success: false, error: 'Too many failed login attempts. Please try again in 5 minutes.' });
   }
 
-  const store = loadStore();
-  const user = store.users.find(u => u.email === cleanEmail);
+  const store = await loadStore();
+  const user = store.users.find(account => account && account.email === cleanEmail);
 
   if (!user) {
-    recordAttempt(throttleKey, false);
     return res.status(401).json({ success: false, error: 'Invalid email or password' });
   }
 
-  const isValid = verifyPasswordHash(password, user.salt, user.passwordHash);
-  if (!isValid) {
-    recordAttempt(throttleKey, false);
+  // Existing records may predate the iteration marker; accept both known formats once.
+  const candidates = Number.isSafeInteger(user.passwordIterations) ? [user.passwordIterations] : [10000, 100000];
+  let matchedIterations = 0;
+  for (const rounds of candidates) {
+    if (verifyPasswordHash(password, user.salt, user.passwordHash, rounds)) {
+      matchedIterations = rounds;
+      break;
+    }
+  }
+  if (!matchedIterations) {
     return res.status(401).json({ success: false, error: 'Invalid email or password' });
   }
 
-  recordAttempt(throttleKey, true);
+  // Upgrade older password hashes on successful login so all future checks use the stronger cost.
+  if (matchedIterations < 100000) {
+    user.salt = crypto.randomBytes(16).toString('hex');
+    user.passwordHash = hashPassword(password, user.salt);
+  }
+  user.passwordIterations = 100000;
+
+  await clearRateLimit(`login:${throttleKey}`);
 
   // Issue 7-day expiring session token
   const token = 'sess_' + crypto.randomBytes(24).toString('hex');
@@ -109,7 +90,7 @@ module.exports = (req, res) => {
     expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000
   };
 
-  saveStore(store);
+  await saveStore(store);
 
   return res.status(200).json({
     success: true,
@@ -117,4 +98,4 @@ module.exports = (req, res) => {
     token,
     user: store.sessions[token].user
   });
-};
+});

@@ -9,11 +9,16 @@
 #define TRIE_ALPHABET 128
 #define TRIE_MAX_RESULTS 20
 
-typedef struct TrieNode {
-    struct TrieNode *children[TRIE_ALPHABET];
-    int is_end_of_word;
+typedef struct TrieSong {
     int song_id;
     char title[128];
+    struct TrieSong *next;
+} TrieSong;
+
+typedef struct TrieNode {
+    struct TrieNode *children[TRIE_ALPHABET];
+    /* Several song IDs can share one autocomplete title. */
+    TrieSong *songs;
 } TrieNode;
 
 typedef struct {
@@ -24,6 +29,7 @@ typedef struct {
 Trie *trie_create(void);
 void  trie_destroy(Trie *trie);
 void  trie_insert(Trie *trie, const char *word, int song_id, const char *title);
+int   trie_delete(Trie *trie, const char *word, int song_id);
 int   trie_autocomplete(const Trie *trie, const char *prefix, int out_ids[], char out_titles[][128], int max_results);
 
 #endif /* TRIE_H */

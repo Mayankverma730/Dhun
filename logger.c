@@ -3,6 +3,11 @@
  * Dhun Music Management System (C + DSA)
  */
 
+#if !defined(_WIN32) && !defined(_WIN64)
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>

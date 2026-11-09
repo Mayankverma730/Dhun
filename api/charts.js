@@ -6,14 +6,15 @@
  * Finding 12: Reads from shared persistent store.
  */
 
-const { loadStore, setCORS, getUserSongLikes } = require('./_store');
+// Change note: await shared reads and use the same store for caller-specific likes.
+const { loadStore, setCORS, getUserSongLikes, withStoreLock } = require('./_store');
 
-module.exports = async (req, res) => {
+module.exports = withStoreLock(async (req, res) => {
   setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
-  const store = loadStore();
+  const store = await loadStore();
   const songs = [...(store.songs || [])];
   const { songIds } = getUserSongLikes(req, store);
   const likedIds = new Set(songIds.map(String));
@@ -30,4 +31,4 @@ module.exports = async (req, res) => {
     ...song,
     liked: likedIds.has(String(song.id)) ? 1 : 0
   })));
-};
+});

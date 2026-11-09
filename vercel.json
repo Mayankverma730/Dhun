@@ -1,9 +1,26 @@
 {
   "version": 2,
   "redirects": [
-    { "source": "/:file.c", "destination": "/", "permanent": false },
-    { "source": "/:file.h", "destination": "/", "permanent": false },
-    { "source": "/:file.exe", "destination": "/", "permanent": false }
+    { "source": "/test_dsa.c", "destination": "/", "permanent": false },
+    { "source": "/server.c", "destination": "/", "permanent": false },
+    { "source": "/benchmark.c", "destination": "/", "permanent": false },
+    { "source": "/main.c", "destination": "/", "permanent": false },
+    { "source": "/avl.c", "destination": "/", "permanent": false },
+    { "source": "/bst.c", "destination": "/", "permanent": false },
+    { "source": "/hash.c", "destination": "/", "permanent": false },
+    { "source": "/heap.c", "destination": "/", "permanent": false },
+    { "source": "/queue.c", "destination": "/", "permanent": false },
+    { "source": "/stack.c", "destination": "/", "permanent": false },
+    { "source": "/trie.c", "destination": "/", "permanent": false },
+    { "source": "/graph.c", "destination": "/", "permanent": false },
+    { "source": "/cache.c", "destination": "/", "permanent": false },
+    { "source": "/logger.c", "destination": "/", "permanent": false },
+    { "source": "/library.c", "destination": "/", "permanent": false },
+    { "source": "/song.c", "destination": "/", "permanent": false },
+    { "source": "/sort.c", "destination": "/", "permanent": false },
+    { "source": "/playlist.c", "destination": "/", "permanent": false },
+    { "source": "/Makefile", "destination": "/", "permanent": false },
+    { "source": "/Dockerfile", "destination": "/", "permanent": false }
   ],
   "rewrites": [
     { "source": "/api/songs/:id/play",    "destination": "/api/songs/[id]?action=play" },

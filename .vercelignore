@@ -1,0 +1,15 @@
+*.c
+*.h
+*.exe
+*.o
+*.obj
+*.log
+Makefile
+Dockerfile
+docker-compose*
+test_dsa
+bench
+benchmark
+music_mgr
+server
+.github

@@ -19,7 +19,7 @@ TEST_BIN = test_dsa
 BENCH_BIN = benchmark
 
 # Detect OS
-# The C server uses native sockets on POSIX and links Winsock/BCrypt on Windows.
+# POSIX uses OpenSSL for PBKDF2 and secure random generation; Windows uses BCrypt.
 ifeq ($(OS),Windows_NT)
     EXE_EXT = .exe
     RM      = del /Q
@@ -29,7 +29,7 @@ else
     EXE_EXT =
     RM      = rm -f
     SLASH   = /
-    SERVER_LIBS =
+    SERVER_LIBS = -lcrypto
 endif
 
 COMMON_SRCS = song.c library.c stack.c queue.c bst.c heap.c hash.c sort.c playlist.c avl.c trie.c graph.c cache.c logger.c

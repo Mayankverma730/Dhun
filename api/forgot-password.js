@@ -44,7 +44,7 @@ module.exports = async (req, res) => {
   }
 
   const cleanEmail = email.trim().toLowerCase();
-  const store = loadStore();
+  const store = await loadStore();
   if (!store.resetTokens) store.resetTokens = {};
 
   // Prune expired or used tokens
@@ -56,8 +56,6 @@ module.exports = async (req, res) => {
 
   const user = store.users.find(u => u.email === cleanEmail);
   if (user) {
-    // TODO: Send this token through a configured email provider; without delivery,
-    // the server-side reset token is not available to the user.
     const rawToken = 'rst_' + crypto.randomBytes(24).toString('hex');
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
 
@@ -68,7 +66,28 @@ module.exports = async (req, res) => {
       used: false
     };
 
-    saveStore(store);
+    // Optional email dispatch if provider configured
+    const { RESEND_API_KEY, RESET_EMAIL_FROM, APP_URL } = process.env;
+    if (RESEND_API_KEY && RESET_EMAIL_FROM && APP_URL) {
+      try {
+        const resetUrl = `${APP_URL}#reset-token=${rawToken}`;
+        await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            from: RESET_EMAIL_FROM,
+            to: [cleanEmail],
+            subject: 'Reset your Dhun password',
+            text: `Use this link to reset your password. It expires in 15 minutes:\n\n${resetUrl}`
+          }),
+          signal: AbortSignal.timeout(8000)
+        });
+      } catch (err) {
+        console.warn('[Password reset] Email dispatch error:', err.message);
+      }
+    }
+
+    await saveStore(store);
   }
 
   // Uniform response regardless of account existence (Anti-enumeration)
@@ -77,4 +96,3 @@ module.exports = async (req, res) => {
     message: 'If an account exists with this email address, password reset instructions have been dispatched.'
   });
 };
-

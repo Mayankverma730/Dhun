@@ -40,10 +40,12 @@ static BSTNode *insert_rec(BSTNode *node, Song song, int *added)
         if (created) *added = 1;
         return created;
     }
+    /* Title is not unique; ID preserves same-title songs as separate keys. */
     int cmp = strcmp(song.title, node->song.title);
+    if (cmp == 0) cmp = (song.id > node->song.id) - (song.id < node->song.id);
     if (cmp < 0) node->left  = insert_rec(node->left,  song, added);
     else if (cmp > 0) node->right = insert_rec(node->right, song, added);
-    /* duplicate titles: update in place */
+    /* An identical title and ID is an update to the same record. */
     else node->song = song;
     return node;
 }
@@ -64,14 +66,15 @@ static BSTNode *min_node(BSTNode *node)
     return node;
 }
 
-static BSTNode *delete_rec(BSTNode *node, const char *title, int *deleted)
+static BSTNode *delete_rec(BSTNode *node, const char *title, int id, int *deleted)
 {
     if (!node) return NULL;
     int cmp = strcmp(title, node->song.title);
+    if (cmp == 0) cmp = (id > node->song.id) - (id < node->song.id);
     if (cmp < 0) {
-        node->left  = delete_rec(node->left,  title, deleted);
+        node->left  = delete_rec(node->left,  title, id, deleted);
     } else if (cmp > 0) {
-        node->right = delete_rec(node->right, title, deleted);
+        node->right = delete_rec(node->right, title, id, deleted);
     } else {
         /* Found the node to delete */
         *deleted = 1;
@@ -88,7 +91,7 @@ static BSTNode *delete_rec(BSTNode *node, const char *title, int *deleted)
         /* Two children: replace with in-order successor */
         BSTNode *succ = min_node(node->right);
         node->song    = succ->song;
-        node->right   = delete_rec(node->right, succ->song.title, deleted);
+        node->right   = delete_rec(node->right, succ->song.title, succ->song.id, deleted);
     }
     return node;
 }
@@ -175,9 +178,16 @@ BSTNode *bst_search(BST *tree, const char *title)
 
 int bst_delete(BST *tree, const char *title)
 {
-    if (!tree) return 0;
+    if (!tree || !title) return 0;
+    BSTNode *match = search_rec(tree->root, title);
+    return match ? bst_delete_id(tree, match->song.title, match->song.id) : 0;
+}
+
+int bst_delete_id(BST *tree, const char *title, int id)
+{
+    if (!tree || !title) return 0;
     int deleted = 0;
-    tree->root = delete_rec(tree->root, title, &deleted);
+    tree->root = delete_rec(tree->root, title, id, &deleted);
     if (deleted) tree->size--;
     return deleted;
 }

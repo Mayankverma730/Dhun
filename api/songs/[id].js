@@ -6,9 +6,10 @@
  * DELETE /api/songs/:id       → delete song (requires authorization)
  */
 
-const { loadStore, saveStore, setCORS, getCallerIdentity, getUserSongLikes, parsePositiveId } = require('../_store');
+// Change note: play, like, and delete operations now use validated identities and atomic saves.
+const { loadStore, saveStore, setCORS, getCallerIdentity, getUserSongLikes, parsePositiveId, withStoreLock } = require('../_store');
 
-module.exports = async (req, res) => {
+module.exports = withStoreLock(async (req, res) => {
   setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
@@ -18,7 +19,7 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'Valid positive integer song ID required' });
   }
 
-  const store = loadStore();
+  const store = await loadStore();
   const songs = store.songs;
   const idx = songs.findIndex(s => s.id === songId);
 
@@ -35,7 +36,7 @@ module.exports = async (req, res) => {
 
   // PUT /api/songs/:id/play — increment play count (Finding 02: Authorization check)
   if (req.method === 'PUT' && action === 'play') {
-    const identity = getCallerIdentity(req);
+    const identity = getCallerIdentity(req, store);
     if (!identity.authenticated) {
       return res.status(401).json({ error: 'Unauthorized: Sign in required to record play' });
     }
@@ -51,7 +52,7 @@ module.exports = async (req, res) => {
     if (!Array.isArray(store.histories[userId])) store.histories[userId] = [];
     store.histories[userId].push({ song_id: songId, playedAt: Date.now() });
     if (store.histories[userId].length > 50) store.histories[userId].shift();
-    saveStore(store);
+    await saveStore(store);
     const { songIds } = getUserSongLikes(req, store);
     const liked = songIds.some(id => String(id) === String(songId));
     return res.status(200).json({ ...songs[idx], liked: liked ? 1 : 0 });
@@ -59,7 +60,7 @@ module.exports = async (req, res) => {
 
   // PUT /api/songs/:id/like — toggle like (Finding 02: Authorization check)
   if (req.method === 'PUT' && action === 'like') {
-    const identity = getCallerIdentity(req);
+    const identity = getCallerIdentity(req, store);
     if (!identity.authenticated) {
       return res.status(401).json({ error: 'Unauthorized: Sign in required to like songs' });
     }
@@ -67,13 +68,13 @@ module.exports = async (req, res) => {
     const likedIndex = songIds.findIndex(id => String(id) === String(songId));
     if (likedIndex === -1) songIds.push(songId);
     else songIds.splice(likedIndex, 1);
-    saveStore(store);
+    await saveStore(store);
     return res.status(200).json({ ...songs[idx], liked: likedIndex === -1 ? 1 : 0 });
   }
 
   // DELETE /api/songs/:id (Finding 02: Authorization check)
   if (req.method === 'DELETE') {
-    const identity = getCallerIdentity(req);
+    const identity = getCallerIdentity(req, store);
     if (!identity.authenticated) {
       return res.status(401).json({ error: 'Unauthorized: Sign in required to delete songs' });
     }
@@ -102,9 +103,9 @@ module.exports = async (req, res) => {
         store.userLikes[userId] = likes.filter(id => String(id) !== String(songId));
       }
     }
-    saveStore(store);
+    await saveStore(store);
     return res.status(200).json(removed);
   }
 
   return res.status(405).json({ error: 'Method not allowed' });
-};
+});

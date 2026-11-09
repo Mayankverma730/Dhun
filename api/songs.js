@@ -8,7 +8,8 @@
  * ══════════════════════════════════════════════════════════════════
  */
 
-const { loadStore, saveStore, setCORS, getCallerIdentity, getUserSongLikes } = require('./_store');
+// Change note: catalog writes are serialized and authorization reads the validated session.
+const { loadStore, saveStore, setCORS, getCallerIdentity, getUserSongLikes, withStoreLock } = require('./_store');
 
 function finiteNumber(value) {
   if (typeof value !== 'number' && typeof value !== 'string') return NaN;
@@ -19,11 +20,11 @@ function finiteNumber(value) {
   return Number.isFinite(number) ? number : NaN;
 }
 
-module.exports = async (req, res) => {
+module.exports = withStoreLock(async (req, res) => {
   setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const store = loadStore();
+  const store = await loadStore();
   const songs = store.songs;
 
   if (req.method === 'GET') {
@@ -45,7 +46,7 @@ module.exports = async (req, res) => {
 
   if (req.method === 'POST') {
     // Finding 02: Authorization check for catalog mutations
-    const identity = getCallerIdentity(req);
+    const identity = getCallerIdentity(req, store);
     if (!identity.authenticated) {
       return res.status(401).json({ error: 'Unauthorized: Sign in required to add songs to library' });
     }
@@ -99,10 +100,10 @@ module.exports = async (req, res) => {
       liked: 0
     };
     songs.push(song);
-    saveStore(store);
+    await saveStore(store);
 
     return res.status(201).json(song);
   }
 
   return res.status(405).json({ error: 'Method not allowed' });
-};
+});

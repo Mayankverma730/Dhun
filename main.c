@@ -96,7 +96,7 @@ static int add_song_all(const char *title, const char *artist,
 
     /* 3. Hash Table — O(1) lookup */
     if (!hash_insert(g_hash, *s)) {
-        bst_delete(g_bst, s->title);
+        bst_delete_id(g_bst, s->title, id);
         lib_remove_song(g_lib, id);
         return -1;
     }
@@ -130,8 +130,9 @@ static void remove_song_all(int id)
     strncpy(title, s->title, sizeof(title) - 1);
     title[sizeof(title) - 1] = '\0';
 
+    /* Delete by title and ID so another track with the same title stays indexed. */
+    bst_delete_id(g_bst, title, id);
     lib_remove_song(g_lib, id);
-    bst_delete(g_bst, title);
     hash_delete(g_hash, id);
 
     /* Purge song ID from all playlists */

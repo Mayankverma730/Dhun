@@ -6,7 +6,40 @@
  */
 
 const crypto = require('crypto');
-const { loadStore, saveStore } = require('../_store');
+// Change note: OAuth network calls happen before a short, locked session write.
+const { loadStore, saveStore, runWithStoreLock } = require('../_store');
+
+async function issueSession(profile) {
+  return runWithStoreLock(async () => {
+    const store = await loadStore();
+    const email = profile.email.toLowerCase();
+    const sessionToken = 'sess_' + crypto.randomBytes(24).toString('hex');
+    const userId = 'usr_g_' + crypto.createHash('sha256').update(profile.sub || email).digest('hex').slice(0, 16);
+    if (!store.sessions) store.sessions = Object.create(null);
+
+    let user = store.users.find(account => account && account.email === email);
+    if (!user) {
+      user = {
+        id: userId, email, name: profile.name || email.split('@')[0], avatar: profile.picture || '',
+        provider: 'google', googleSub: profile.sub, avatarColor: '#4285F4', createdAt: Date.now()
+      };
+      store.users.push(user);
+    } else {
+      user.googleSub = profile.sub;
+      user.provider = 'google';
+    }
+
+    const sessionUser = { id: user.id, email, name: user.name };
+    store.sessions[sessionToken] = {
+      user: sessionUser, createdAt: Date.now(), expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000
+    };
+    await saveStore(store);
+    return {
+      token: sessionToken,
+      user: { ...sessionUser, avatar: profile.picture || '', provider: 'google', googleSub: profile.sub, avatarColor: '#4285F4' }
+    };
+  });
+}
 
 function loadEnv() {
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) return;
@@ -79,16 +112,37 @@ module.exports = async (req, res) => {
   // POST: Verify Google token / credentials server-side
   if (req.method === 'POST') {
     const body = req.body || {};
-    const { credential, code, redirectUri } = body;
+    const { credential, accessToken, code, redirectUri } = body;
 
     const configuredClientId = process.env.GOOGLE_CLIENT_ID || '193302703008-0ph67s6q60gt2tp72j704981fon32qm0.apps.googleusercontent.com';
     const configuredClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+    // Verify OAuth access tokens server-side too; the browser never creates a local-only Google session.
+    if (typeof accessToken === 'string' && accessToken.length > 0 && accessToken.length <= 4096) {
+      try {
+        const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          signal: AbortSignal.timeout(8000)
+        });
+        if (!response.ok) return res.status(401).json({ success: false, error: 'Invalid Google access token' });
+        const profile = await response.json();
+        if (profile.email_verified !== true && profile.email_verified !== 'true') {
+          return res.status(401).json({ success: false, error: 'Google email is not verified' });
+        }
+        const email = (profile.email || '').toLowerCase().trim();
+        if (!email) return res.status(400).json({ success: false, error: 'No email returned by Google' });
+        const session = await issueSession({ email, name: profile.name, picture: profile.picture, sub: profile.sub });
+        return res.status(200).json({ success: true, status: 'ok', token: session.token, user: session.user });
+      } catch (err) {
+        return res.status(502).json({ success: false, error: 'Failed to verify Google access token' });
+      }
+    }
 
     // 1. Google Identity Services ID Token (JWT) verification
     if (credential) {
       try {
         const verifyUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`;
-        const gRes = await fetch(verifyUrl);
+        const gRes = await fetch(verifyUrl, { signal: AbortSignal.timeout(8000) });
         if (!gRes.ok) {
           const errText = await gRes.text().catch(() => '');
           return res.status(401).json({ success: false, error: 'Invalid Google ID token', details: errText });
@@ -110,53 +164,13 @@ module.exports = async (req, res) => {
           return res.status(400).json({ success: false, error: 'No email returned in Google token' });
         }
 
-        const sessionToken = 'sess_' + crypto.randomBytes(16).toString('hex');
-        const userId = 'usr_g_' + crypto.createHash('sha256').update(info.sub || email).digest('hex').slice(0, 16);
-
-        // Finding 13: Register user and session in persistent store so protected APIs accept the token
-        const store = loadStore();
-        if (!store.sessions) store.sessions = {};
-        if (!store.users) store.users = [];
-
-        let user = store.users.find(u => u.email === email);
-        if (!user) {
-          user = {
-            id: userId,
-            email: email,
-            name: info.name || email.split('@')[0],
-            avatar: info.picture || '',
-            provider: 'google',
-            googleSub: info.sub,
-            avatarColor: '#4285F4',
-            createdAt: Date.now()
-          };
-          store.users.push(user);
-        } else {
-          user.googleSub = info.sub;
-          user.provider = 'google';
-        }
-
-        store.sessions[sessionToken] = {
-          user: { id: user.id, email: user.email, name: user.name },
-          createdAt: Date.now(),
-          expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days
-        };
-        saveStore(store);
+        const session = await issueSession({ email, name: info.name, picture: info.picture, sub: info.sub });
 
         return res.status(200).json({
           success: true,
           status: 'ok',
-          token: sessionToken,
-          user: {
-            // The returned identity must match the ID saved in the session for existing accounts.
-            id: user.id,
-            email: email,
-            name: user.name,
-            avatar: info.picture || '',
-            provider: 'google',
-            googleSub: info.sub,
-            avatarColor: '#4285F4'
-          }
+          token: session.token,
+          user: session.user
         });
       } catch (err) {
         return res.status(500).json({ success: false, error: 'Failed to verify Google credential', message: err.message });
@@ -172,6 +186,7 @@ module.exports = async (req, res) => {
         const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          signal: AbortSignal.timeout(8000),
           body: new URLSearchParams({
             code: code,
             client_id: configuredClientId,
@@ -188,7 +203,8 @@ module.exports = async (req, res) => {
 
         const tokens = await tokenRes.json();
         const userinfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-          headers: { Authorization: `Bearer ${tokens.access_token}` }
+          headers: { Authorization: `Bearer ${tokens.access_token}` },
+          signal: AbortSignal.timeout(8000)
         });
 
         if (!userinfoRes.ok) {
@@ -203,59 +219,20 @@ module.exports = async (req, res) => {
         if (!email) {
           return res.status(400).json({ success: false, error: 'No email returned in Google profile' });
         }
-        const sessionToken = 'sess_' + crypto.randomBytes(16).toString('hex');
-        const userId = 'usr_g_' + crypto.createHash('sha256').update(profile.sub || email).digest('hex').slice(0, 16);
-
-        const store = loadStore();
-        if (!store.sessions) store.sessions = {};
-        if (!store.users) store.users = [];
-
-        let user = store.users.find(u => u.email === email);
-        if (!user) {
-          user = {
-            id: userId,
-            email: email,
-            name: profile.name || email.split('@')[0],
-            avatar: profile.picture || '',
-            provider: 'google',
-            googleSub: profile.sub,
-            avatarColor: '#4285F4',
-            createdAt: Date.now()
-          };
-          store.users.push(user);
-        } else {
-          user.googleSub = profile.sub;
-          user.provider = 'google';
-        }
-
-        store.sessions[sessionToken] = {
-          user: { id: user.id, email: user.email, name: user.name },
-          createdAt: Date.now(),
-          expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days
-        };
-        saveStore(store);
+        const session = await issueSession({ email, name: profile.name, picture: profile.picture, sub: profile.sub });
 
         return res.status(200).json({
           success: true,
           status: 'ok',
-          token: sessionToken,
-          user: {
-            // The returned identity must match the ID saved in the session for existing accounts.
-            id: user.id,
-            email: email,
-            name: user.name,
-            avatar: profile.picture || '',
-            provider: 'google',
-            googleSub: profile.sub,
-            avatarColor: '#4285F4'
-          }
+          token: session.token,
+          user: session.user
         });
       } catch (err) {
         return res.status(500).json({ success: false, error: 'OAuth code exchange exception', message: err.message });
       }
     }
 
-    return res.status(400).json({ success: false, error: 'Missing credential or code in request body' });
+    return res.status(400).json({ success: false, error: 'Missing Google credential, access token, or code' });
   }
 
   return res.status(405).json({ success: false, error: 'Method not allowed' });

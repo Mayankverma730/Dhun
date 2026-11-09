@@ -6,16 +6,16 @@
  * Findings 11 & 12: Uses persistent store and isolates anonymous guest history.
  */
 
-const { loadStore, saveStore, setCORS, getCallerIdentity, parsePositiveId } = require('./_store');
+// Change note: pass the loaded session store to identity checks and serialize updates.
+const { loadStore, saveStore, setCORS, getCallerIdentity, parsePositiveId, withStoreLock } = require('./_store');
 
-module.exports = async (req, res) => {
+module.exports = withStoreLock(async (req, res) => {
   setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const identity = getCallerIdentity(req);
-  const userId = identity.authenticated ? identity.user.id : (identity.guestId || 'guest_default');
-
-  const store = loadStore();
+  const store = await loadStore();
+  const identity = getCallerIdentity(req, store);
+  const userId = identity.authenticated ? identity.user.id : identity.guestId;
   if (!store.histories || typeof store.histories !== 'object' || Array.isArray(store.histories)) {
     store.histories = Object.create(null);
   }
@@ -41,7 +41,7 @@ module.exports = async (req, res) => {
           previous = (store.songs || []).find(song => song && String(song.id) === String(entry.song_id)) || null;
         }
       }
-      saveStore(store);
+      await saveStore(store);
       return res.status(200).json(previous || {});
     }
 
@@ -54,10 +54,10 @@ module.exports = async (req, res) => {
 
       history.push({ song_id: songId, playedAt: Date.now() });
       if (history.length > 50) history.shift();
-      saveStore(store);
+      await saveStore(store);
     }
     return res.status(200).json(history);
   }
 
   return res.status(405).json({ error: 'Method not allowed' });
-};
+});

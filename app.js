@@ -18,6 +18,7 @@ const API = (function() {
   // Production: use same origin (assuming backend served from same domain)
   return location.origin + '/api';
 })();
+const STATIC_ONLY_HOST = typeof location !== 'undefined' && location.hostname.endsWith('.github.io');
 
 /* ── HTML Sanitization & XSS Prevention (T1-02) ─────────────────── */
 function escapeHTML(str) {
@@ -1280,6 +1281,13 @@ const STALE_VIDEO_IDS = new Set([
   'mt9xg0mmt68', 'Grr0Exhy-lQ', '4K-V-n7D_b0', 'GxldQ9GyXfY'
 ]);
 
+const STALE_REPLACEMENTS = {
+  'cl34XmaN4U8': 'cl0a3i2wFcc',
+  'bfIqG8a1sHY': 'cl0a3i2wFcc',
+  '8nK_4VfFpYc': 'cl0a3i2wFcc',
+  'm4rU4Xk2h5s': 'cl0a3i2wFcc'
+};
+
 function isValidYouTubeVideoId(v) {
   if (typeof v !== 'string') return false;
   const trimmed = v.trim();
@@ -1293,15 +1301,38 @@ function getValidThumbnailUrl(thumbnail, videoId) {
       // invalid
     } else if (thumbnail.includes('/vi/')) {
       const m = thumbnail.match(/\/vi\/([a-zA-Z0-9_-]{11})\b/);
-      if (m && m[1] && isValidYouTubeVideoId(m[1])) return `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg`;
+      if (m && m[1]) {
+        if (isValidYouTubeVideoId(m[1])) return `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg`;
+        const rep = STALE_REPLACEMENTS[m[1]] || 'cl0a3i2wFcc';
+        return `https://i.ytimg.com/vi/${rep}/hqdefault.jpg`;
+      }
     } else if (thumbnail.startsWith('http://') || thumbnail.startsWith('https://') || thumbnail.startsWith('blob:') || thumbnail.startsWith('data:') || thumbnail.endsWith('.jpg') || thumbnail.endsWith('.png')) {
       return thumbnail;
     }
   }
-  if (videoId && isValidYouTubeVideoId(videoId)) {
-    return `https://i.ytimg.com/vi/${videoId.trim()}/hqdefault.jpg`;
+  if (videoId) {
+    const trimmed = typeof videoId === 'string' ? videoId.trim() : '';
+    if (isValidYouTubeVideoId(trimmed)) {
+      return `https://i.ytimg.com/vi/${trimmed}/hqdefault.jpg`;
+    }
+    const rep = STALE_REPLACEMENTS[trimmed] || (STALE_VIDEO_IDS.has(trimmed) ? 'cl0a3i2wFcc' : null);
+    if (rep) return `https://i.ytimg.com/vi/${rep}/hqdefault.jpg`;
   }
   return ALBUM_IMGS[0];
+}
+
+function sanitizeSongObject(s) {
+  if (!s || typeof s !== 'object') return s;
+  if (s.videoId && (STALE_VIDEO_IDS.has(s.videoId) || STALE_REPLACEMENTS[s.videoId])) {
+    s.videoId = STALE_REPLACEMENTS[s.videoId] || 'cl0a3i2wFcc';
+    s.thumbnail = `https://i.ytimg.com/vi/${s.videoId}/hqdefault.jpg`;
+  }
+  if (s.thumbnail && typeof s.thumbnail === 'string') {
+    if (s.thumbnail.includes('cl34XmaN4U8') || [...STALE_VIDEO_IDS].some(id => s.thumbnail.includes(id))) {
+      s.thumbnail = 'https://i.ytimg.com/vi/cl0a3i2wFcc/hqdefault.jpg';
+    }
+  }
+  return s;
 }
 
 // Automatically sanitize any stale video IDs from cached storage
@@ -1318,6 +1349,14 @@ try {
       }
       localStorage.setItem('dhun_yt_songs', JSON.stringify(parsed));
     }
+    const rawClient = localStorage.getItem('dhun_client_songs');
+    if (rawClient && (rawClient.includes('cl34XmaN4U8') || [...STALE_VIDEO_IDS].some(id => rawClient.includes(id)))) {
+      const parsed = JSON.parse(rawClient);
+      if (Array.isArray(parsed)) {
+        parsed.forEach(sanitizeSongObject);
+        localStorage.setItem('dhun_client_songs', JSON.stringify(parsed));
+      }
+    }
   }
 } catch (e) {}
 
@@ -1329,14 +1368,20 @@ function imgFor(id) {
     if (id.includes('/vi/undefined') || id.includes('/vi//') || id.includes('undefined.jpg')) {
       return ALBUM_IMGS[0];
     }
-    if (id.startsWith('https://i.ytimg.com') || id.startsWith('https://img.youtube.com') || id.startsWith('blob:') || id.startsWith('data:')) {
-      return id;
-    }
-    // If a relative /vi/ or third-party Invidious URL is passed, extract videoId and convert to YouTube CDN
+    // Intercept any YouTube /vi/ thumbnail to guard against stale video IDs
     if (id.includes('/vi/')) {
       const m = id.match(/\/vi\/([a-zA-Z0-9_-]{11})\b/);
-      if (m && m[1] && isValidYouTubeVideoId(m[1])) return `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg`;
+      if (m && m[1]) {
+        if (!isValidYouTubeVideoId(m[1])) {
+          const rep = STALE_REPLACEMENTS[m[1]] || 'cl0a3i2wFcc';
+          return `https://i.ytimg.com/vi/${rep}/hqdefault.jpg`;
+        }
+        return `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg`;
+      }
       return ALBUM_IMGS[0];
+    }
+    if (id.startsWith('https://i.ytimg.com') || id.startsWith('https://img.youtube.com') || id.startsWith('blob:') || id.startsWith('data:')) {
+      return id;
     }
     // If YouTube ID prefix:
     if (id.startsWith('yt_')) {
@@ -2333,7 +2378,7 @@ async function fetchServerGoogleClientId() {
   if (_googleConfigPromise) return _googleConfigPromise;
   _googleConfigPromise = (async () => {
     try {
-      const res = await fetch('/api/auth/google');
+      const res = await fetch(`${API}/auth/google`);
       if (res.ok) {
         const data = await res.json();
         if (data && data.clientId) {
@@ -2749,6 +2794,36 @@ const DhunAuth = {
   },
 
   // 1. SIGN IN (Strict: Zero Silent Auto-Creation on Failure)
+  async authenticateServer(email, password, { name = '', create = false } = {}) {
+    // GitHub Pages has no API runtime; keep its existing browser-only account flow.
+    if (STATIC_ONLY_HOST) return { offline: true, user: { email, name, provider: 'email' } };
+    const request = async (route, body) => {
+      const response = await fetch(`${API}/${route}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      return { response, data: await response.json().catch(() => ({})) };
+    };
+
+    let result = create
+      ? await request('register', { name, email, password })
+      : await request('login', { email, password });
+
+    // A prior request may have created the account before the browser saved its profile.
+    if (create && result.response.status === 409) {
+      result = await request('login', { email, password });
+    }
+
+    if (!result.response.ok || !result.data.token) {
+      const error = new Error(result.data.error || 'Could not verify your account with the server. Please try again.');
+      error.status = result.response.status;
+      throw error;
+    }
+    localStorage.setItem('dhun_session_token', result.data.token);
+    return result.data;
+  },
+
   async signIn(isModal = false) {
     if (!checkAuthThrottle()) return;
     const prefix = isModal ? 'auth' : 'gate';
@@ -2771,66 +2846,73 @@ const DhunAuth = {
       return;
     }
 
-    const user = this.findUser(identifier);
+    let user = this.findUser(identifier);
+    if (!user && (!identifier.includes('@') || STATIC_ONLY_HOST)) {
+      this.showError(errorId, `No account found for "${identifier}".`, 'Create Account →', () => {
+        this.setTab('signup', isModal);
+        const signupEmail = document.getElementById(isModal ? 'signup-email' : 'gate-signup-email');
+        if (signupEmail) signupEmail.value = identifier;
+        document.getElementById(isModal ? 'signup-name' : 'gate-signup-name')?.focus();
+      });
+      return;
+    }
 
-    // STRICT CHECK: User does NOT exist in registry. Show error & prompt to sign up.
-    if (!user) {
-      this.showError(
-        errorId,
-        `No account found for "${identifier}".`,
-        'Create Account →',
-        () => {
-          this.setTab('signup', isModal);
-          const signupEmail = document.getElementById(isModal ? 'signup-email' : 'gate-signup-email');
-          if (signupEmail) signupEmail.value = identifier;
-          const signupName = document.getElementById(isModal ? 'signup-name' : 'gate-signup-name');
-          if (signupName) signupName.focus();
+    const enteredHash = user ? await hashClientPassword(password, user.id) : '';
+    const localPasswordMatches = Boolean(user && (
+      (user.passwordHash && user.passwordHash === enteredHash) || user.password === password
+    ));
+    if (STATIC_ONLY_HOST && user && !localPasswordMatches) {
+      this.showError(errorId, 'Incorrect password. Please check your credentials.', 'Forgot password?',
+        () => this.setTab('forgot', isModal));
+      if (passInput) { passInput.value = ''; passInput.focus(); }
+      return;
+    }
+
+    // The server is authoritative, allowing accounts to sign in on a new browser.
+    let serverData;
+    try {
+      serverData = await this.authenticateServer(user?.email || identifier, password, { name: user?.name || '' });
+    } catch (error) {
+      // Migrate a browser-only account only after checking its previously stored password.
+      if (user && localPasswordMatches && [401, 404].includes(error.status)) {
+        try { serverData = await this.authenticateServer(user.email || identifier, password, { name: user.name, create: true }); }
+        catch (migrationError) {
+          this.showError(errorId, migrationError.message || 'Sign in is unavailable. Please try again.');
+          return;
         }
-      );
-      return;
-    }
-
-    // Verify Password Hash
-    const enteredHash = await hashClientPassword(password, user.id);
-    const isValid = (user.passwordHash && user.passwordHash === enteredHash) ||
-                    (user.password && user.password === password);
-
-    if (!isValid) {
-      this.showError(
-        errorId,
-        'Incorrect password. Please check your credentials.',
-        'Forgot password?',
-        () => this.setTab('forgot', isModal)
-      );
-      if (passInput) {
-        passInput.value = '';
-        passInput.focus();
+      } else if (STATIC_ONLY_HOST && user && localPasswordMatches) {
+        serverData = { offline: true };
+      } else {
+        this.showError(errorId, error.message || 'Sign in is unavailable. Please try again.');
+        if (passInput) { passInput.value = ''; passInput.focus(); }
+        return;
       }
-      return;
     }
 
-    // Upgrade legacy plaintext password to secure cryptographic hash
-    user.passwordHash = enteredHash;
-    delete user.password;
-    const users = this.getUsers();
-    const idx = users.findIndex(u => u.id === user.id);
-    if (idx !== -1) users[idx] = user;
-    this.saveUsers(users);
+    if (!user) {
+      const profile = serverData.user || {};
+      const email = String(profile.email || identifier).toLowerCase();
+      const id = this.makeUserId(email);
+      user = {
+        id, email, name: profile.name || email.split('@')[0],
+        passwordHash: await hashClientPassword(password, id),
+        provider: profile.provider || 'email', avatarColor: profile.avatarColor || '#829779',
+        avatarUrl: profile.avatar || null, joinedAt: Date.now()
+      };
+      const users = this.getUsers();
+      users.push(user);
+      this.saveUsers(users);
+    } else if (localPasswordMatches || !serverData.offline) {
+      // Keep the browser hash aligned after server sign-in or successful local-only auth.
+      user.passwordHash = enteredHash;
+      delete user.password;
+      const users = this.getUsers();
+      const index = users.findIndex(account => account.id === user.id);
+      if (index !== -1) users[index] = user;
+      this.saveUsers(users);
+    }
 
     if (passInput) passInput.value = '';
-
-    // Synchronize session token with serverless authentication service
-    try {
-      fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: user.email || identifier, password })
-      }).then(r => r.json()).then(data => {
-        if (data && data.token) {
-          localStorage.setItem('dhun_session_token', data.token);
-        }
-      }).catch(() => {});
-    } catch(e) {}
 
     this.enterApp(user, isModal);
   },
@@ -2908,6 +2990,13 @@ const DhunAuth = {
       lastLoginAt: Date.now()
     };
 
+    try {
+      await this.authenticateServer(email, password, { name, create: true });
+    } catch (error) {
+      this.showError(errorId, error.message || 'Account creation failed. Please try again.');
+      return;
+    }
+
     const users = this.getUsers();
     users.push(newUser);
     this.saveUsers(users);
@@ -2915,20 +3004,13 @@ const DhunAuth = {
     if (passInput) passInput.value = '';
     if (confirmInput) confirmInput.value = '';
 
-    try {
-      fetch('/api/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password })
-      }).catch(() => {});
-    } catch(e) {}
-
     this.enterApp(newUser, isModal);
     showToast(`🎉 Welcome to Dhun, ${name}!`);
   },
 
   // 3. GUEST MODE
   guestLogin() {
+    this.revokeServerSession();
     const guestUser = {
       id: 'guest',
       name: 'Guest User',
@@ -2945,8 +3027,22 @@ const DhunAuth = {
   },
 
   // 4. SIGN OUT
+  revokeServerSession() {
+    let token = '';
+    try {
+      token = localStorage.getItem('dhun_session_token') || '';
+      localStorage.removeItem('dhun_session_token');
+    } catch (error) { return; }
+    if (!token) return;
+    fetch(`${API}/logout`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }
+    }).catch(() => {});
+  },
+
   signOut() {
     showAppConfirm('Sign Out?', 'Are you sure you want to sign out of your account?', 'Sign Out', true, () => {
+      this.revokeServerSession();
       localStorage.removeItem('dhun_auth_active_user');
       localStorage.removeItem('dhun_active_profile');
       authState.currentUser = null;
@@ -3014,6 +3110,7 @@ const DhunAuth = {
         }
       } catch(e) {}
     } else {
+      this.revokeServerSession();
       try {
         localStorage.removeItem('dhun_auth_active_user');
         localStorage.removeItem('dhun_active_profile');
@@ -3068,7 +3165,7 @@ const DhunAuth = {
     }
 
     try {
-      const response = await fetch('/api/forgot-password', {
+      const response = await fetch(`${API}/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
@@ -3134,7 +3231,7 @@ const DhunAuth = {
 
     let result;
     try {
-      const response = await fetch('/api/reset-password', {
+      const response = await fetch(`${API}/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, newPassword })
@@ -3159,6 +3256,10 @@ const DhunAuth = {
       user.passwordHash = await hashClientPassword(newPassword, user.id);
       delete user.password;
       this.saveUsers(users);
+    }
+    localStorage.removeItem('dhun_session_token'); // Reset invalidates every prior server session.
+    if (window.location.hash.includes('reset-token=')) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
     }
 
     if (statusEl) {
@@ -3207,7 +3308,7 @@ const DhunAuth = {
 
       // Server-side verification with backend
       try {
-        const verifyRes = await fetch('/api/auth/google', {
+        const verifyRes = await fetch(`${API}/auth/google`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ credential: token })
@@ -3254,13 +3355,24 @@ const DhunAuth = {
           callback: async (res) => {
             if (res && res.access_token) {
               try {
-                showToast('⏳ Loading Google account profile...');
-                const resp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                  headers: { Authorization: `Bearer ${res.access_token}` }
+                if (STATIC_ONLY_HOST) {
+                  const profileResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                    headers: { Authorization: `Bearer ${res.access_token}` }
+                  });
+                  if (!profileResponse.ok) throw new Error('Google profile could not be loaded');
+                  this.applyGoogleProfile(await profileResponse.json());
+                  return;
+                }
+                showToast('🔄 Verifying Google account with the server...');
+                const resp = await fetch(`${API}/auth/google`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ accessToken: res.access_token })
                 });
-                if (!resp.ok) throw new Error('userinfo error: ' + resp.status);
-                const profile = await resp.json();
-                this.applyGoogleProfile(profile);
+                const result = await resp.json().catch(() => ({}));
+                if (!resp.ok || !result.token || !result.user) throw new Error(result.error || 'Google verification failed');
+                localStorage.setItem('dhun_session_token', result.token);
+                this.applyGoogleProfile(result.user);
               } catch(err) {
                 showToast('⚠️ Failed to load Google profile.');
               }
@@ -3971,13 +4083,19 @@ function checkResetTokenInURL() {
       const token = hashParams.get('access_token');
       if (token) {
         history.replaceState(null, '', window.location.pathname + window.location.search);
-        fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-          .then(res => res.json())
-          .then(profile => {
-            if (profile && profile.email) {
-              DhunAuth.applyGoogleProfile(profile);
+        const profileRequest = STATIC_ONLY_HOST
+          ? fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: `Bearer ${token}` } })
+          : fetch(`${API}/auth/google`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accessToken: token })
+        });
+        profileRequest
+          .then(async res => ({ res, data: await res.json().catch(() => ({})) }))
+          .then(({ res, data }) => {
+            if (res.ok && (STATIC_ONLY_HOST ? data.email : data.token && data.user)) {
+              if (!STATIC_ONLY_HOST) localStorage.setItem('dhun_session_token', data.token);
+              DhunAuth.applyGoogleProfile(STATIC_ONLY_HOST ? data : data.user);
             }
           })
           .catch(e => console.warn('[Google OAuth] Token hash exchange failed:', e));
@@ -12233,7 +12351,7 @@ function renderYTMusicGrid(tracks, customGrid = null, customCount = null) {
       savedLibraryKeys.has(`${(t.title || '').toLowerCase().trim()}:::${(t.artist || '').toLowerCase().trim()}`);
 
     const dur = t.durationFormatted || fmtDur(t.durationMin || (t.durationSec / 60));
-    const thumb = t.thumbnail || (t.videoId ? `https://i.ytimg.com/vi/${t.videoId}/hqdefault.jpg` : 'album1.jpg');
+    const thumb = getValidThumbnailUrl(t.thumbnail, t.videoId);
     const badgeText = t.matchBadge || (isAlreadyInLib ? '✓ In Library' : '⚡ Auto-Add');
     const isVibeMatch = !!t.matchBadge;
 

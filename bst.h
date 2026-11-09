@@ -34,6 +34,8 @@ void     bst_destroy(BST *tree);
 int      bst_insert(BST *tree, Song song);          /* O(log n) avg */
 BSTNode *bst_search(BST *tree, const char *title);  /* O(log n) avg */
 int      bst_delete(BST *tree, const char *title);  /* O(log n) avg */
+/* Delete one exact library record when titles are shared. */
+int      bst_delete_id(BST *tree, const char *title, int id);
 
 /* Traversals */
 void     bst_inorder(const BST *tree);      /* sorted alphabetically */

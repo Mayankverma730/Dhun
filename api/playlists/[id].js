@@ -7,9 +7,10 @@
  * DELETE /api/playlists/:id/songs  → remove song from playlist
  */
 
-const { loadStore, saveStore, setCORS, getUserPlaylistBucket, parsePositiveId } = require('../_store');
+// Change note: shared mutations and legacy playlist migration now persist atomically.
+const { loadStore, saveStore, setCORS, getUserPlaylistBucket, parsePositiveId, withStoreLock } = require('../_store');
 
-module.exports = async (req, res) => {
+module.exports = withStoreLock(async (req, res) => {
   setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
@@ -19,10 +20,11 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'Valid positive integer playlist ID required' });
   }
 
-  const store = loadStore();
+  const store = await loadStore();
   if (!store.userPlaylists) store.userPlaylists = {};
 
-  const { playlists } = getUserPlaylistBucket(req, store);
+  const { playlists, migrated } = getUserPlaylistBucket(req, store);
+  if (migrated) await saveStore(store);
   const idx = playlists.findIndex(p => p.id === plId);
 
   if (idx === -1) {
@@ -64,14 +66,14 @@ module.exports = async (req, res) => {
       playlist.songs.push(songId);
       playlist.song_count = playlist.songs.length;
     }
-    saveStore(store);
+    await saveStore(store);
     return res.status(200).json(playlist);
   }
 
   // DELETE /api/playlists/:id
   if (req.method === 'DELETE' && !req.query.action) {
     const [removed] = playlists.splice(idx, 1);
-    saveStore(store);
+    await saveStore(store);
     return res.status(200).json(removed);
   }
 
@@ -84,9 +86,9 @@ module.exports = async (req, res) => {
     const songs = Array.isArray(playlist.songs) ? playlist.songs : [];
     playlist.songs = songs.filter(s => String(s) !== String(sid));
     playlist.song_count = playlist.songs.length;
-    saveStore(store);
+    await saveStore(store);
     return res.status(200).json(playlist);
   }
 
   return res.status(405).json({ error: 'Method not allowed' });
-};
+});
