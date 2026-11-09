@@ -1,54 +1,21 @@
 /**
  * ══════════════════════════════════════════════════════════════════
  *   DHUN — Vercel Serverless API  /api/songs
- *   In-memory song store (per cold-start) with full CRUD
+ *   Shared persistent store with authorization & validation
  *   GET  /api/songs          → list all songs
- *   POST /api/songs          → add song
+ *   POST /api/songs          → add song (requires authorization)
  *   GET  /api/songs?q=       → search by title/artist
  * ══════════════════════════════════════════════════════════════════
  */
 
-// Shared in-memory store (per Vercel instance / warm lambda)
-if (!global._dhunSongs) {
-  global._dhunSongs = [
-    { id: 1, title: 'Tujhko Jo Paaya', artist: 'Mohit Chauhan / Pritam', album: 'Crook', genre: 'Bollywood', duration: 5.72, play_count: 1, rating: 4.9, liked: 0 },
-    { id: 2, title: 'Kesariya', artist: 'Arijit Singh', album: 'Brahmastra', genre: 'Bollywood', duration: 4.6, play_count: 0, rating: 4.8, liked: 0 },
-    { id: 3, title: 'Raataan Lambiyan', artist: 'Jubin Nautiyal', album: 'Shershaah', genre: 'Bollywood', duration: 4.3, play_count: 0, rating: 4.7, liked: 0 },
-    { id: 4, title: 'Blinding Lights', artist: 'The Weeknd', album: 'After Hours', genre: 'Pop', duration: 3.7, play_count: 0, rating: 4.9, liked: 0 },
-    { id: 5, title: 'Levitating', artist: 'Dua Lipa', album: 'Future Nostalgia', genre: 'Pop', duration: 3.5, play_count: 0, rating: 4.6, liked: 0 }
-  ];
-  global._dhunNextId = 6;
-}
-
-function isAllowedOrigin(origin) {
-  if (!origin) return false;
-  const allowed = process.env.ALLOWED_ORIGIN;
-  if (allowed === '*' || origin === allowed) return true;
-  if (/^https?:\/\/localhost(:\d+)?$/.test(origin) || /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) return true;
-  if (/^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/.test(origin)) return true;
-  return false;
-}
-
-function setCORS(req, res) {
-  const origin = req.headers.origin;
-  if (origin && isAllowedOrigin(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  } else if (!origin) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-  } else {
-    const defaultOrigin = process.env.ALLOWED_ORIGIN || 'https://dhun-vk85.vercel.app';
-    res.setHeader('Access-Control-Allow-Origin', defaultOrigin);
-  }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-user-id');
-  res.setHeader('Content-Type', 'application/json');
-}
+const { loadStore, saveStore, setCORS, getCallerIdentity } = require('./_store');
 
 module.exports = async (req, res) => {
   setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const songs = global._dhunSongs;
+  const store = loadStore();
+  const songs = store.songs;
 
   if (req.method === 'GET') {
     const q = (req.query.q || '').toLowerCase().trim();
@@ -65,6 +32,12 @@ module.exports = async (req, res) => {
   }
 
   if (req.method === 'POST') {
+    // Finding 02: Authorization check for catalog mutations
+    const identity = getCallerIdentity(req);
+    if (!identity.authenticated) {
+      return res.status(401).json({ error: 'Unauthorized: Sign in required to add songs to library' });
+    }
+
     let body = req.body;
     if (typeof body === 'string') {
       try { body = JSON.parse(body); } catch { return res.status(400).json({ error: 'Invalid JSON' }); }
@@ -80,7 +53,7 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: 'Song store limit reached (max 1000 songs)' });
     }
 
-    // Fix N-M-03: Duplicate check matching C server behavior
+    // Duplicate check
     const isDuplicate = songs.some(s =>
       s.title.toLowerCase() === title.toLowerCase() &&
       s.artist.toLowerCase() === artist.toLowerCase()
@@ -89,7 +62,6 @@ module.exports = async (req, res) => {
       return res.status(409).json({ error: 'A song with this title and artist already exists' });
     }
 
-    // Fix N-L-02: Range validation for duration and rating
     let duration = parseFloat(body.duration);
     if (isNaN(duration) || duration <= 0 || duration > 600) {
       duration = 3.5;
@@ -101,7 +73,7 @@ module.exports = async (req, res) => {
     }
 
     const song = {
-      id: global._dhunNextId++,
+      id: store.nextSongId++,
       title,
       artist,
       album: String(body.album || '').trim().substring(0, 100),
@@ -112,6 +84,8 @@ module.exports = async (req, res) => {
       liked: 0
     };
     songs.push(song);
+    saveStore(store);
+
     return res.status(201).json(song);
   }
 

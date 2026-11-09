@@ -1,13 +1,11 @@
 /**
  * DHUN — /api/playlists
+ * Shared persistent user playlists
  * GET  /api/playlists        → list all playlists
  * POST /api/playlists        → create playlist
  */
 
-if (!global._dhunUserPlaylists) {
-  global._dhunUserPlaylists = {};
-  global._dhunPlaylistNextId = 1;
-}
+const { loadStore, saveStore, setCORS } = require('./_store');
 
 function getUserId(req) {
   const auth = req.headers.authorization || '';
@@ -16,47 +14,25 @@ function getUserId(req) {
     if (token && token.length >= 8) return token.slice(0, 64);
   }
   const clientHeader = req.headers['x-user-id'];
-  // Prevent unauthenticated callers from spoofing registered usr_ accounts
   if (clientHeader && typeof clientHeader === 'string' && clientHeader.startsWith('guest_')) {
     return clientHeader.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
   }
   return 'guest';
 }
 
-function isAllowedOrigin(origin) {
-  if (!origin) return false;
-  const allowed = process.env.ALLOWED_ORIGIN;
-  if (allowed === '*' || origin === allowed) return true;
-  if (/^https?:\/\/localhost(:\d+)?$/.test(origin) || /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) return true;
-  if (/^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/.test(origin)) return true;
-  return false;
-}
-
-function setCORS(req, res) {
-  const origin = req.headers.origin;
-  if (origin && isAllowedOrigin(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  } else if (!origin) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-  } else {
-    const defaultOrigin = process.env.ALLOWED_ORIGIN || 'https://dhun-vk85.vercel.app';
-    res.setHeader('Access-Control-Allow-Origin', defaultOrigin);
-  }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-user-id');
-  res.setHeader('Content-Type', 'application/json');
-}
-
 module.exports = async (req, res) => {
   setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // Fix N-C-02: User isolation prevents multi-tenant data leaks
+  const store = loadStore();
+  if (!store.userPlaylists) store.userPlaylists = {};
+  if (!store.nextPlaylistId) store.nextPlaylistId = 1;
+
   const userId = getUserId(req);
-  if (!global._dhunUserPlaylists[userId]) {
-    global._dhunUserPlaylists[userId] = [];
+  if (!store.userPlaylists[userId]) {
+    store.userPlaylists[userId] = [];
   }
-  const playlists = global._dhunUserPlaylists[userId];
+  const playlists = store.userPlaylists[userId];
 
   if (req.method === 'GET') {
     return res.status(200).json(playlists);
@@ -76,13 +52,15 @@ module.exports = async (req, res) => {
     }
 
     const pl = {
-      id: global._dhunPlaylistNextId++,
+      id: store.nextPlaylistId++,
       name: String(body.name).trim().substring(0, 100),
       songs: [],
       song_count: 0,
       createdAt: Date.now()
     };
     playlists.push(pl);
+    saveStore(store);
+
     return res.status(201).json(pl);
   }
 

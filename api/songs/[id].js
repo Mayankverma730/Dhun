@@ -3,43 +3,10 @@
  * GET    /api/songs/:id       → get one song
  * PUT    /api/songs/:id/play  → increment plays
  * PUT    /api/songs/:id/like  → toggle like
- * DELETE /api/songs/:id       → delete song
+ * DELETE /api/songs/:id       → delete song (requires authorization)
  */
 
-if (!global._dhunSongs) {
-  global._dhunSongs = [
-    { id: 1, title: 'Tujhko Jo Paaya', artist: 'Mohit Chauhan / Pritam', album: 'Crook', genre: 'Bollywood', duration: 5.72, play_count: 1, rating: 4.9, liked: 0 },
-    { id: 2, title: 'Kesariya', artist: 'Arijit Singh', album: 'Brahmastra', genre: 'Bollywood', duration: 4.6, play_count: 0, rating: 4.8, liked: 0 },
-    { id: 3, title: 'Raataan Lambiyan', artist: 'Jubin Nautiyal', album: 'Shershaah', genre: 'Bollywood', duration: 4.3, play_count: 0, rating: 4.7, liked: 0 },
-    { id: 4, title: 'Blinding Lights', artist: 'The Weeknd', album: 'After Hours', genre: 'Pop', duration: 3.7, play_count: 0, rating: 4.9, liked: 0 },
-    { id: 5, title: 'Levitating', artist: 'Dua Lipa', album: 'Future Nostalgia', genre: 'Pop', duration: 3.5, play_count: 0, rating: 4.6, liked: 0 }
-  ];
-  global._dhunNextId = 6;
-}
-
-function isAllowedOrigin(origin) {
-  if (!origin) return false;
-  const allowed = process.env.ALLOWED_ORIGIN;
-  if (allowed === '*' || origin === allowed) return true;
-  if (/^https?:\/\/localhost(:\d+)?$/.test(origin) || /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) return true;
-  if (/^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/.test(origin)) return true;
-  return false;
-}
-
-function setCORS(req, res) {
-  const origin = req.headers.origin;
-  if (origin && isAllowedOrigin(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  } else if (!origin) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-  } else {
-    const defaultOrigin = process.env.ALLOWED_ORIGIN || 'https://dhun-vk85.vercel.app';
-    res.setHeader('Access-Control-Allow-Origin', defaultOrigin);
-  }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-user-id');
-  res.setHeader('Content-Type', 'application/json');
-}
+const { loadStore, saveStore, setCORS, getCallerIdentity } = require('../_store');
 
 module.exports = async (req, res) => {
   setCORS(req, res);
@@ -51,7 +18,8 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'Valid positive integer song ID required' });
   }
 
-  const songs = global._dhunSongs;
+  const store = loadStore();
+  const songs = store.songs;
   const idx = songs.findIndex(s => s.id === songId);
 
   if (idx === -1) {
@@ -66,18 +34,26 @@ module.exports = async (req, res) => {
   // PUT /api/songs/:id/play — increment play count
   if (req.method === 'PUT' && action === 'play') {
     songs[idx].play_count = Math.min((songs[idx].play_count || 0) + 1, 100000000);
+    saveStore(store);
     return res.status(200).json(songs[idx]);
   }
 
   // PUT /api/songs/:id/like — toggle like
   if (req.method === 'PUT' && action === 'like') {
     songs[idx].liked = songs[idx].liked ? 0 : 1;
+    saveStore(store);
     return res.status(200).json(songs[idx]);
   }
 
-  // DELETE /api/songs/:id
+  // DELETE /api/songs/:id (Finding 02: Authorization check)
   if (req.method === 'DELETE') {
+    const identity = getCallerIdentity(req);
+    if (!identity.authenticated) {
+      return res.status(401).json({ error: 'Unauthorized: Sign in required to delete songs' });
+    }
+
     const [removed] = songs.splice(idx, 1);
+    saveStore(store);
     return res.status(200).json(removed);
   }
 

@@ -1203,6 +1203,10 @@ async function api(method, path, data, options = {}) {
       method,
       headers: { 'Content-Type': 'application/json' },
     };
+    const token = localStorage.getItem('dhun_session_token');
+    if (token) opts.headers['Authorization'] = 'Bearer ' + token;
+    const uid = (authState.currentUser && authState.currentUser.id) || localStorage.getItem('dhun_auth_active_user');
+    if (uid) opts.headers['X-User-Id'] = uid;
     if (data) opts.body = JSON.stringify(data);
     const res = await fetch(API + path, opts);
     if (!res.ok) {
@@ -2752,6 +2756,20 @@ const DhunAuth = {
     this.saveUsers(users);
 
     if (passInput) passInput.value = '';
+
+    // Synchronize session token with serverless authentication service
+    try {
+      fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: user.email || identifier, password })
+      }).then(r => r.json()).then(data => {
+        if (data && data.token) {
+          localStorage.setItem('dhun_session_token', data.token);
+        }
+      }).catch(() => {});
+    } catch(e) {}
+
     this.enterApp(user, isModal);
   },
 
@@ -3004,6 +3022,14 @@ const DhunAuth = {
       savePasswordResetTokens(tokens);
     }
 
+    try {
+      fetch('/api/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      }).catch(() => {});
+    } catch(e) {}
+
     if (statusEl) {
       let html = `<div class="auth-status-banner">✉️ <strong>Notice:</strong> If an account exists for <em>${escapeHtml(email)}</em>, a password reset link has been dispatched.</div>`;
       if (resetToken) {
@@ -3081,6 +3107,14 @@ const DhunAuth = {
 
     entry.used = true;
     savePasswordResetTokens(tokens);
+
+    try {
+      fetch('/api/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, newPassword })
+      }).catch(() => {});
+    } catch(e) {}
 
     if (statusEl) {
       statusEl.innerHTML = '<div class="auth-status-banner success">🎉 <strong>Password updated!</strong> Switching to sign in...</div>';

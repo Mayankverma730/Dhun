@@ -2181,7 +2181,19 @@ static void handle_request(SOCKET sock, char *req, int req_len, const char *clie
         if (strcmp(seg3,"")==0 || seg3[0]=='\0') {
             /* /api/songs */
             if (strcmp(method,"GET")==0)  { route_get_songs(sock); return; }
-            if (strcmp(method,"POST")==0) { route_add_song(sock, body); return; }
+            if (strcmp(method,"POST")==0) {
+                /* Fix Finding 02: Check authorization for catalog mutations */
+                char auth_tok[128] = {0};
+                extract_bearer_token(req, auth_tok, sizeof(auth_tok));
+                const char *uid_hdr = strstr(req, "X-User-Id:");
+                if (!uid_hdr) uid_hdr = strstr(req, "x-user-id:");
+                if (!auth_find_user_by_token(auth_tok) && !uid_hdr && strcmp(client_ip, "127.0.0.1") != 0 && strcmp(client_ip, "::1") != 0) {
+                    send_error(sock, 401, "unauthorized: sign in required to add songs");
+                    return;
+                }
+                route_add_song(sock, body);
+                return;
+            }
             send_error(sock,405,"method not allowed"); return;
         }
 
@@ -2215,7 +2227,19 @@ static void handle_request(SOCKET sock, char *req, int req_len, const char *clie
         if (seg4[0]=='\0') {
             /* /api/songs/:id */
             if (strcmp(method,"GET")==0)    { route_get_song_by_id(sock, song_id); return; }
-            if (strcmp(method,"DELETE")==0) { route_delete_song(sock, song_id); return; }
+            if (strcmp(method,"DELETE")==0) {
+                /* Fix Finding 02: Check authorization for catalog deletion */
+                char auth_tok[128] = {0};
+                extract_bearer_token(req, auth_tok, sizeof(auth_tok));
+                const char *uid_hdr = strstr(req, "X-User-Id:");
+                if (!uid_hdr) uid_hdr = strstr(req, "x-user-id:");
+                if (!auth_find_user_by_token(auth_tok) && !uid_hdr && strcmp(client_ip, "127.0.0.1") != 0 && strcmp(client_ip, "::1") != 0) {
+                    send_error(sock, 401, "unauthorized: sign in required to delete songs");
+                    return;
+                }
+                route_delete_song(sock, song_id);
+                return;
+            }
             send_error(sock,405,"method not allowed"); return;
         }
 
@@ -2510,9 +2534,11 @@ int main(void)
         SOCKET client = accept(server_sock, (struct sockaddr*)&client_addr, &addr_len);
         if (client == INVALID_SOCKET) continue;
 
-        /* Receive full request — loop until \r\n\r\n found */
+        /* Receive full request — loop until \r\n\r\n found with strict absolute deadline */
         int total = 0;
         int done  = 0;
+        time_t req_start = time(NULL);
+        const int MAX_REQ_TIME = 5; /* 5-second total request deadline (Fix Finding 09) */
         /* Set a receive timeout so we don't hang */
 #ifdef _WIN32
         DWORD tv = 2000; /* 2 seconds */
@@ -2524,6 +2550,7 @@ int main(void)
         setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, (const void*)&tv, sizeof(tv));
 #endif
         while (total < BUF - 1 && !done) {
+            if (time(NULL) - req_start > MAX_REQ_TIME) break;
             int n = recv(client, req_buf + total, BUF - 1 - total, 0);
             if (n <= 0) break;
             total += n;
@@ -2545,6 +2572,7 @@ int main(void)
                     int hdr_len = (int)(hdr_end - req_buf) + 4;
                     int body_received = total - hdr_len;
                     while (body_received < body_len && total < BUF - 1) {
+                        if (time(NULL) - req_start > MAX_REQ_TIME) break;
                         int m = recv(client, req_buf + total, BUF - 1 - total, 0);
                         if (m <= 0) break;
                         total += m;

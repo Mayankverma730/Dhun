@@ -1,0 +1,14 @@
+.env*
+.git
+.github
+.vercel
+node_modules
+*.exe
+*.o
+*.obj
+*.log
+scratch/
+test_*.js
+test_*.exe
+benchmark.exe
+media_*
