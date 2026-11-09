@@ -37,6 +37,7 @@
 #include <bcrypt.h>
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "bcrypt.lib")
+#define strncasecmp _strnicmp
 #else
 #include <sys/types.h>
 #include <sys/socket.h>
