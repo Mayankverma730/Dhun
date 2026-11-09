@@ -1547,8 +1547,8 @@
         <div class="jam-security-notice">
           <span class="jam-sec-badge-icon">🔒</span>
           <div>
-            <strong>End-to-End Encrypted (AES-256-GCM)</strong>
-            <p>Your room code generates a client-side cipher key. Music sync, live chat, and reactions are fully encrypted.</p>
+            <strong>Private & Synchronized Room</strong>
+            <p>Music playback, live chat, and reactions are shared privately with friends in this room.</p>
           </div>
         </div>
         <button type="submit" class="btn-primary jam-action-btn">
@@ -1582,8 +1582,8 @@
         <div class="jam-security-notice">
           <span class="jam-sec-badge-icon">🔒</span>
           <div>
-            <strong>End-to-End Encrypted (AES-256-GCM)</strong>
-            <p>Direct peer encryption ensures zero eavesdropping. Chats self-destruct once seen by participants.</p>
+            <strong>Private & Synchronized Room</strong>
+            <p>Join instantly with your room code. Chat messages disappear once read by both listeners.</p>
           </div>
         </div>
         <button type="submit" class="btn-primary jam-action-btn">
@@ -1603,7 +1603,7 @@
           </button>
         </div>
 
-        <!-- 🔒 PROMINENT VIEW-LEVEL E2E ENCRYPTED BADGE CARD -->
+        <!-- Private Room Card -->
         <div class="jam-e2e-card" id="jam-e2e-view-card">
           <div class="jam-e2e-card-inner">
             <div class="jam-e2e-shield-box">
@@ -1611,16 +1611,16 @@
             </div>
             <div class="jam-e2e-card-text">
               <div class="jam-e2e-card-title">
-                <span>End-to-End Encrypted Room</span>
-                <span class="jam-e2e-cipher-tag" id="jam-e2e-cipher-tag">AES-256-GCM</span>
+                <span>Private Jam Room</span>
+                <span class="jam-e2e-cipher-tag" id="jam-e2e-cipher-tag">Private</span>
               </div>
               <p class="jam-e2e-card-desc" id="jam-e2e-card-desc">
-                Derived locally via PBKDF2 (100,000 rounds). Music sync, disappearing chat & live reactions are cryptographically sealed.
+                Music sync, disappearing chat, and live reactions are shared privately in this room.
               </p>
             </div>
-            <div class="jam-e2e-status-indicator" id="jam-e2e-indicator" title="Active End-to-End Encryption">
+            <div class="jam-e2e-status-indicator" id="jam-e2e-indicator" title="Private Session Active">
               <span class="jam-e2e-pulse-ring"></span>
-              <span id="jam-e2e-status-text">SECURE</span>
+              <span id="jam-e2e-status-text">ACTIVE</span>
             </div>
           </div>
         </div>
@@ -1671,18 +1671,18 @@
               <span>💬 Live Jam Chat</span>
               <span class="jam-ephemeral-badge" title="Messages automatically self-destruct once seen by participants">🔥 Disappearing</span>
             </div>
-            <div class="jam-chat-e2e-tag active" id="jam-e2e-status" title="E2E Encrypted via AES-256-GCM">
+            <div class="jam-chat-e2e-tag active" id="jam-e2e-status" title="Private Room Chat">
               <span class="jam-lock-mini">🔒</span>
-              <span>E2E Encrypted</span>
+              <span>Private Chat</span>
             </div>
           </div>
           <div class="jam-chat-messages" id="jam-chat-messages">
             <div class="jam-chat-empty-state" id="jam-chat-empty">
-              🔒 <strong>E2E Encrypted Ephemeral Chat:</strong> Messages disappear automatically when seen by both listeners.
+              💬 <strong>Live Room Chat:</strong> Messages disappear automatically once read by both listeners.
             </div>
           </div>
           <div class="jam-chat-input-bar">
-            <input type="text" id="jam-chat-input" class="jam-chat-input" placeholder="Type an encrypted ephemeral message..." onkeydown="if(event.key==='Enter'){event.preventDefault();sendJamChatMessage();}" autocomplete="off" />
+            <input type="text" id="jam-chat-input" class="jam-chat-input" placeholder="Type a message..." onkeydown="if(event.key==='Enter'){event.preventDefault();sendJamChatMessage();}" autocomplete="off" />
             <button type="button" class="jam-chat-send-btn" onclick="sendJamChatMessage()" title="Send Message">
               <span>Send</span>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:4px;vertical-align:middle;">
@@ -1694,7 +1694,7 @@
         </div>
 
         <div class="jam-footer-actions">
-          <button type="button" class="btn-secondary jam-leave-btn" onclick="leaveJamSession()">
+          <button type="button" class="btn-secondary jam-leave-btn" id="jam-leave-btn" onclick="handleJamLeaveClick()">
             <span>Leave Session</span>
           </button>
         </div>

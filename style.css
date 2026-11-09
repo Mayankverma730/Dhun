@@ -3038,6 +3038,63 @@ html, body { height: 100%; background: var(--bg); font-family: var(--font); colo
   background: var(--grad-main);
   color: white;
 }
+.jam-member-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.jam-member-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.04);
+}
+[data-theme="dark"] .jam-member-status-badge {
+  background: rgba(255, 255, 255, 0.06);
+}
+.jam-member-status-badge.online {
+  color: #10b981;
+}
+.jam-member-status-badge.offline {
+  color: var(--text-3);
+}
+.jam-online-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.65);
+  display: inline-block;
+}
+.jam-offline-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #9ca3af;
+  display: inline-block;
+}
+.jam-kick-btn {
+  background: transparent;
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.jam-kick-btn:hover {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: #ef4444;
+}
 
 /* Reactions Bar inside Modal */
 .jam-reactions-bar {

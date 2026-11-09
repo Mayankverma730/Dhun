@@ -7482,13 +7482,13 @@ function updateJamE2EStatusUI(active) {
 
   if (active) {
     if (cardEl) cardEl.classList.remove('unencrypted');
-    if (statusTextEl) statusTextEl.textContent = 'SECURE';
-    if (cipherTagEl) cipherTagEl.textContent = 'AES-256-GCM';
-    if (cardDescEl) cardDescEl.textContent = 'Derived locally via PBKDF2 (100,000 rounds). Music sync, disappearing chat & live reactions are cryptographically sealed.';
+    if (statusTextEl) statusTextEl.textContent = 'ACTIVE';
+    if (cipherTagEl) cipherTagEl.textContent = 'Private';
+    if (cardDescEl) cardDescEl.textContent = 'Music sync, disappearing chat, and live reactions are shared privately in this room.';
     if (chatStatusEl) {
       chatStatusEl.className = 'jam-chat-e2e-tag active';
-      chatStatusEl.innerHTML = '<span class="jam-lock-mini">🔒</span><span>E2E Encrypted</span>';
-      chatStatusEl.title = 'AES-256-GCM encrypted. Zero central server inspection.';
+      chatStatusEl.innerHTML = '<span class="jam-lock-mini">🔒</span><span>Private Chat</span>';
+      chatStatusEl.title = 'Private room chat';
     }
   } else {
     if (cardEl) cardEl.classList.add('unencrypted');
@@ -7780,9 +7780,52 @@ function handleJamMessageData(data) {
   // Ignore messages from this exact tab/client instance (never drop based on display name!)
   if (data.senderId && data.senderId === jamState.peerId) return;
 
+  // Track sender presence & mark online
+  if (data.senderId) {
+    const existingSender = jamState.members.find(m => m.id === data.senderId || m.name === data.sender);
+    if (existingSender) {
+      existingSender.lastSeen = Date.now();
+      if (!existingSender.isOnline) {
+        existingSender.isOnline = true;
+        renderJamMembers();
+      }
+    }
+  }
+
   jamState._isRemoteSync = true;
   try {
     switch (data.type) {
+      case 'MEMBER_PING': {
+        const pMember = jamState.members.find(m => m.id === data.senderId || m.name === data.sender);
+        if (pMember) {
+          pMember.lastSeen = Date.now();
+          pMember.isOnline = true;
+          renderJamMembers();
+        }
+        break;
+      }
+
+      case 'KICK_MEMBER': {
+        if (data.targetId === jamState.peerId) {
+          showToast('⚠️ You were removed from the room by the host');
+          leaveJamSession();
+        } else {
+          jamState.members = jamState.members.filter(m => m.id !== data.targetId);
+          renderJamMembers();
+          updateJamUI();
+          if (data.targetName) {
+            showToast(`ℹ️ ${data.targetName} was removed from the room`);
+          }
+        }
+        break;
+      }
+
+      case 'ROOM_CLOSED': {
+        showToast('🔒 The host has ended this Jam session');
+        leaveJamSession();
+        break;
+      }
+
       case 'HOST_TAKEOVER':
         if (data.newHost) {
           jamState.hostName = data.newHost;
@@ -7842,22 +7885,51 @@ function handleJamMessageData(data) {
       case 'CHAT_MESSAGE':
         if (data.message) {
           const msgId = data.msgId || ('msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
-          addJamChatMessage(data.sender, data.message, false, msgId);
-          // Broadcast seen receipt back to room so sender knows both users have seen it!
-          broadcastJam({
-            type: 'CHAT_SEEN',
-            msgId: msgId,
-            reader: jamState.userName,
-            readerId: jamState.peerId
-          });
-          // Receiver has seen the message; start ephemeral burn countdown
-          startJamMessageBurn(msgId, 10, '🔥 Seen · Burns in');
+          let info = _jamActiveMessages.get(msgId);
+          if (!info) {
+            info = {
+              id: msgId,
+              senderId: data.senderId,
+              senderName: data.sender,
+              text: data.message,
+              readBy: new Set([data.senderId]),
+              isBurnStarted: false
+            };
+            _jamActiveMessages.set(msgId, info);
+          }
+
+          const isVisible = isJamChatVisible();
+          if (isVisible) {
+            info.readBy.add(jamState.peerId);
+            addJamChatMessage(data.sender, data.message, false, msgId, info.readBy.size >= 2);
+
+            // Broadcast read receipt so sender knows both listeners have read it
+            broadcastJam({
+              type: 'CHAT_READ',
+              msgId: msgId,
+              reader: jamState.userName,
+              readerId: jamState.peerId
+            });
+
+            if (info.readBy.size >= 2 && !info.isBurnStarted) {
+              info.isBurnStarted = true;
+              startJamMessageBurn(msgId, 10, '🔥 Read by both · Burns in');
+            }
+          } else {
+            // Recipient has not opened/viewed chat yet; render as unread and DO NOT burn
+            addJamChatMessage(data.sender, data.message, false, msgId, false);
+            const labelEl = document.getElementById(`burn-label-${msgId}`);
+            if (labelEl) {
+              labelEl.innerHTML = `<span class="jam-clock-icon">✉️</span><span>Unread message</span>`;
+            }
+          }
         }
         break;
 
       case 'CHAT_SEEN':
+      case 'CHAT_READ':
         if (data.msgId) {
-          handleJamChatSeen(data.msgId, data.reader);
+          handleJamChatRead(data.msgId, data.readerId || data.reader, data.reader);
         }
         break;
 
@@ -8021,6 +8093,9 @@ function openListenTogetherModal() {
       updateJamTrackCard();
       updateJamE2EStatusUI(!!jamState._e2eKey);
       updateJamUI();
+      if (typeof markAllUnreadJamChatAsRead === 'function') {
+        markAllUnreadJamChatAsRead();
+      }
     } else {
       showJamPanel('host');
       switchJamTab('host');
@@ -8143,7 +8218,7 @@ async function startJamSession() {
   // Real member list: ONLY Host with unique peerId
   jamState.peerId = 'peer_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
   jamState.members = [
-    { id: jamState.peerId, name: djName, avatar: djAvatar, color: djColor, isHost: true }
+    { id: jamState.peerId, name: djName, avatar: djAvatar, color: djColor, isHost: true, lastSeen: Date.now(), isOnline: true }
   ];
 
   showJamPanel('active');
@@ -8181,10 +8256,22 @@ async function startJamSession() {
     }
   });
 
-  // Host heartbeat (every 7 seconds)
+  // Host heartbeat (every 6 seconds) with presence status check
   if (jamState.heartbeatTimer) clearInterval(jamState.heartbeatTimer);
   jamState.heartbeatTimer = setInterval(() => {
     if (jamState.active && jamState.isHost && jamState.roomId) {
+      const now = Date.now();
+      let changed = false;
+      jamState.members.forEach(m => {
+        if (m.id !== jamState.peerId && m.lastSeen && (now - m.lastSeen > 20000)) {
+          if (m.isOnline !== false) {
+            m.isOnline = false;
+            changed = true;
+          }
+        }
+      });
+      if (changed) renderJamMembers();
+
       const songData = state.currentSong ? {
         ...state.currentSong,
         videoId: state.currentSong.videoId || (typeof getCurrentYTVideoId === 'function' ? getCurrentYTVideoId() : null),
@@ -8193,13 +8280,14 @@ async function startJamSession() {
       broadcastJam({
         type: 'HEARTBEAT',
         host: djName,
+        senderId: jamState.peerId,
         members: jamState.members,
         song: songData,
         progress: state.progress || 0,
         isPlaying: !!state.isPlaying
       });
     }
-  }, 7000);
+  }, 6000);
 
   // Fallback to local desktop server if present [T1-06]
   try {
@@ -8279,8 +8367,20 @@ async function joinJamSession(prefilledCode) {
   jamState._e2eKey = null;
   jamState.peerId = 'peer_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
   jamState.members = [
-    { id: jamState.peerId, name: guestName, avatar: guestAvatar, color: guestColor, isHost: false }
+    { id: jamState.peerId, name: guestName, avatar: guestAvatar, color: guestColor, isHost: false, lastSeen: Date.now(), isOnline: true }
   ];
+
+  // Guest presence ping loop
+  if (jamState.heartbeatTimer) clearInterval(jamState.heartbeatTimer);
+  jamState.heartbeatTimer = setInterval(() => {
+    if (jamState.active && jamState.roomId) {
+      broadcastJam({
+        type: 'MEMBER_PING',
+        sender: guestName,
+        senderId: jamState.peerId
+      });
+    }
+  }, 6000);
 
   // Derive same E2E key from room code before connecting
   jamState._e2eKey = await deriveJamE2EKey(code);
@@ -8314,9 +8414,15 @@ function leaveJamSession(isUnload) {
   if (jamState.active && jamState.roomId) {
     const room = jamState.roomId;
     const user = jamState.userName;
+    const wasHost = jamState.isHost;
 
-    // Broadcast leave event across all channels
-    broadcastJam({ type: 'LEAVE_ROOM' });
+    if (wasHost) {
+      // If host leaves, broadcast ROOM_CLOSED so all connected listeners cleanly exit and room terminates
+      broadcastJam({ type: 'ROOM_CLOSED', roomId: room, host: user });
+    } else {
+      // Broadcast leave event across all channels
+      broadcastJam({ type: 'LEAVE_ROOM', sender: user, senderId: jamState.peerId });
+    }
 
     // Disconnect MQTT
     disconnectJamMqtt();
@@ -8347,16 +8453,19 @@ function leaveJamSession(isUnload) {
   jamState.lastHostHeartbeat = null;
   jamState._hostWarningShown = false;
 
-  // Clear running message timers
+  // Clear running message timers & active messages store
   if (typeof _jamMessageTimers !== 'undefined') {
     _jamMessageTimers.forEach(t => {
       if (t && t.intervalId) clearInterval(t.intervalId);
     });
     _jamMessageTimers.clear();
   }
+  if (typeof _jamActiveMessages !== 'undefined') {
+    _jamActiveMessages.clear();
+  }
   const chatMsgs = document.getElementById('jam-chat-messages');
   if (chatMsgs) {
-    chatMsgs.innerHTML = `<div class="jam-chat-empty-state" id="jam-chat-empty">🔒 <strong>E2E Encrypted Ephemeral Chat:</strong> Messages disappear automatically when seen by both listeners.</div>`;
+    chatMsgs.innerHTML = `<div class="jam-chat-empty-state" id="jam-chat-empty">💬 <strong>Live Room Chat:</strong> Messages disappear automatically once read by both listeners.</div>`;
   }
 
   showJamPanel('host');
@@ -8551,16 +8660,71 @@ function renderJamMembers() {
   if (countSpan) countSpan.textContent = jamState.members.length;
   if (!container) return;
 
-  container.innerHTML = jamState.members.map(m => `
-    <div class="jam-member-row">
-      <div class="jam-member-info">
-        <div class="jam-member-avatar" style="background:${escapeAttribute(m.color || 'var(--grad-main)')}">${escapeHTML(m.avatar || 'U')}</div>
-        <span class="jam-member-name">${escapeHTML(m.name)}</span>
+  const now = Date.now();
+  container.innerHTML = jamState.members.map(m => {
+    const isSelf = (m.id === jamState.peerId);
+    const isOnline = isSelf || (m.lastSeen && (now - m.lastSeen < 20000)) || m.isOnline !== false;
+    const canRemove = jamState.isHost && !m.isHost && !isSelf;
+
+    return `
+      <div class="jam-member-row">
+        <div class="jam-member-info">
+          <div class="jam-member-avatar" style="background:${escapeAttribute(m.color || 'var(--grad-main)')}">${escapeHTML(m.avatar || 'U')}</div>
+          <span class="jam-member-name">${escapeHTML(m.name)}${isSelf ? ' (You)' : ''}</span>
+        </div>
+        <div class="jam-member-actions">
+          <span class="jam-member-status-badge ${isOnline ? 'online' : 'offline'}" title="${isOnline ? 'Online now' : 'Away / Offline'}">
+            <span class="${isOnline ? 'jam-online-dot' : 'jam-offline-dot'}"></span>
+            <span>${isOnline ? 'Online' : 'Offline'}</span>
+          </span>
+          <span class="jam-role-badge ${m.isHost ? 'host' : ''}">${m.isHost ? '👑 Host / DJ' : '🎧 Listening'}</span>
+          ${canRemove ? `
+            <button class="jam-kick-btn" type="button" onclick="kickJamMember('${escapeAttribute(m.id)}', '${escapeAttribute(m.name)}')" title="Remove ${escapeAttribute(m.name)} from room">
+              <span>✕ Remove</span>
+            </button>
+          ` : ''}
+        </div>
       </div>
-      <span class="jam-role-badge ${m.isHost ? 'host' : ''}">${m.isHost ? '👑 Host / DJ' : '🎧 Listening'}</span>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
+
+function kickJamMember(targetId, targetName) {
+  if (!jamState.isHost) return;
+  const displayName = targetName || 'this listener';
+  if (!confirm(`Are you sure you want to remove "${displayName}" from the room?`)) return;
+
+  broadcastJam({
+    type: 'KICK_MEMBER',
+    targetId: targetId,
+    targetName: displayName,
+    host: jamState.userName
+  });
+
+  jamState.members = jamState.members.filter(m => m.id !== targetId);
+  renderJamMembers();
+  updateJamUI();
+  showToast(`Removed "${displayName}" from the room`);
+
+  // Silent desktop backend notify
+  jamApi('POST', '/jam/leave', { roomId: jamState.roomId, name: displayName }).catch(() => {});
+}
+window.kickJamMember = kickJamMember;
+
+function handleJamLeaveClick() {
+  if (jamState.isHost) {
+    const guestCount = jamState.members.filter(m => !m.isHost && m.id !== jamState.peerId).length;
+    const confirmMsg = guestCount > 0
+      ? `End Jam session for all ${guestCount} listener(s)? This will close the room.`
+      : 'Close and end this Jam session?';
+    if (confirm(confirmMsg)) {
+      leaveJamSession();
+    }
+  } else {
+    leaveJamSession();
+  }
+}
+window.handleJamLeaveClick = handleJamLeaveClick;
 
 function updateJamUI() {
   const topBtn = document.getElementById('listen-together-topbar-btn');
@@ -8602,6 +8766,11 @@ function updateJamUI() {
 
     if (playerReactions) playerReactions.style.display = 'flex';
 
+    const leaveBtn = document.getElementById('jam-leave-btn');
+    if (leaveBtn) {
+      leaveBtn.innerHTML = jamState.isHost ? '<span>✕ End & Close Room</span>' : '<span>Leave Session</span>';
+    }
+
     // Refresh view-level track card and E2E security status
     updateJamTrackCard();
     updateJamE2EStatusUI(!!jamState._e2eKey);
@@ -8611,8 +8780,8 @@ function updateJamUI() {
       stack.style.display = 'inline-flex';
       const friendCount = Math.max(0, jamState.members.length - 1);
       const label = friendCount === 0
-        ? '🔒 E2E Encrypted · Waiting for friends to join'
-        : `🔒 E2E Encrypted · With ${friendCount} friend${friendCount > 1 ? 's' : ''}`;
+        ? '🎧 Listening Together · Waiting for friends to join'
+        : `🎧 Listening Together · With ${friendCount} friend${friendCount > 1 ? 's' : ''}`;
       stack.innerHTML = jamState.members.slice(0, 4).map(m => `
         <span class="jam-stack-avatar" style="background:${m.color || 'var(--grad-main)'}" title="${m.name}">${m.avatar || 'U'}</span>
       `).join('') + `<span class="jam-stack-label">${label}</span>`;
@@ -8636,10 +8805,39 @@ function updateJamUI() {
 }
 
 /* ═══════════════════════════════════════════════
-   EPHEMERAL LIVE JAM CHAT [T3-06, T3-08]
-   Disappears Once Seen by Both Users · AES-256-GCM
+   LIVE ROOM CHAT
+   Messages Disappear Once Read by Both Listeners
 ═══════════════════════════════════════════════ */
 const _jamMessageTimers = new Map(); // msgId -> { intervalId, remaining }
+const _jamActiveMessages = new Map(); // msgId -> { id, senderId, senderName, text, readBy: Set, isBurnStarted: boolean }
+
+function isJamChatVisible() {
+  const modal = document.getElementById('listen-together-modal');
+  return !!(modal && modal.style.display !== 'none' && !document.hidden);
+}
+
+function markAllUnreadJamChatAsRead() {
+  if (!isJamChatVisible() || !jamState.active) return;
+  const myId = jamState.peerId;
+  if (!myId) return;
+
+  _jamActiveMessages.forEach((info, msgId) => {
+    if (!info.readBy.has(myId)) {
+      info.readBy.add(myId);
+      broadcastJam({
+        type: 'CHAT_READ',
+        msgId: msgId,
+        reader: jamState.userName,
+        readerId: myId
+      });
+
+      if (info.readBy.size >= 2 && !info.isBurnStarted) {
+        info.isBurnStarted = true;
+        startJamMessageBurn(msgId, 10, '🔥 Read by both · Burns in');
+      }
+    }
+  });
+}
 
 function sendJamChatMessage() {
   const input = document.getElementById('jam-chat-input');
@@ -8650,10 +8848,20 @@ function sendJamChatMessage() {
 
   const msgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
 
-  // Render locally for sender
-  addJamChatMessage(jamState.userName, text, true, msgId);
+  // Store in active messages: sender has read their own message
+  _jamActiveMessages.set(msgId, {
+    id: msgId,
+    senderId: jamState.peerId,
+    senderName: jamState.userName,
+    text: text,
+    readBy: new Set([jamState.peerId]),
+    isBurnStarted: false
+  });
 
-  // Broadcast encrypted CHAT_MESSAGE
+  // Render locally for sender (not burned yet, awaiting friend to read)
+  addJamChatMessage(jamState.userName, text, true, msgId, false);
+
+  // Broadcast CHAT_MESSAGE
   broadcastJam({
     type: 'CHAT_MESSAGE',
     msgId: msgId,
@@ -8663,15 +8871,6 @@ function sendJamChatMessage() {
     timestamp: Date.now()
   });
 
-  // Fallback safety: if no peer ack arrives after 25s (e.g. testing alone),
-  // start self-burn countdown so messages never linger indefinitely
-  setTimeout(() => {
-    const msgEl = document.getElementById(`jam-msg-${msgId}`);
-    if (msgEl && !_jamMessageTimers.has(msgId)) {
-      startJamMessageBurn(msgId, 10, '⏳ Ephemeral · Burns in');
-    }
-  }, 25000);
-
   // Also POST to backend API endpoint if running
   jamApi('POST', '/jam/chat', {
     roomId: jamState.roomId,
@@ -8680,7 +8879,7 @@ function sendJamChatMessage() {
   }).catch(() => {});
 }
 
-function addJamChatMessage(sender, message, isOwn, msgId) {
+function addJamChatMessage(sender, message, isOwn, msgId, isReadByBoth) {
   const container = document.getElementById('jam-chat-messages');
   if (!container) return;
 
@@ -8690,12 +8889,24 @@ function addJamChatMessage(sender, message, isOwn, msgId) {
 
   const id = msgId || ('msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
 
+  // Avoid duplicate message elements
+  if (document.getElementById(`jam-msg-${id}`)) return;
+
   const msgEl = document.createElement('div');
   msgEl.className = `jam-chat-msg ${isOwn ? 'own' : ''}`;
   msgEl.id = `jam-msg-${id}`;
 
   const now = new Date();
   const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  let initialLabel = '';
+  if (isReadByBoth) {
+    initialLabel = `<span class="jam-flame">🔥</span><span>Read by both · Burns in <strong id="burn-sec-${id}">10</strong>s</span>`;
+  } else if (isOwn) {
+    initialLabel = `<span class="jam-clock-icon">🕒</span><span>Sent · Waiting for friend to read</span>`;
+  } else {
+    initialLabel = `<span class="jam-clock-icon">👁️</span><span>Read by you · Waiting for other</span>`;
+  }
 
   msgEl.innerHTML = `
     <div class="jam-msg-header">
@@ -8705,13 +8916,10 @@ function addJamChatMessage(sender, message, isOwn, msgId) {
     <div class="jam-chat-text">${escapeHTML(message || '')}</div>
     <div class="jam-msg-burn-wrap" id="burn-wrap-${id}">
       <div class="jam-burn-label" id="burn-label-${id}">
-        ${isOwn 
-          ? `<span class="jam-lock-mini">🔒</span><span>Sent · Awaiting read</span>`
-          : `<span class="jam-flame">🔥</span><span>Seen · Burns in <strong id="burn-sec-${id}">10</strong>s</span>`
-        }
+        ${initialLabel}
       </div>
       <div class="jam-burn-bar">
-        <div class="jam-burn-fill" id="burn-fill-${id}" style="${isOwn ? 'transform:scaleX(1);animation:none;' : 'animation-duration:10s;'}"></div>
+        <div class="jam-burn-fill" id="burn-fill-${id}" style="${isReadByBoth ? 'animation-duration:10s;' : 'transform:scaleX(1);animation:none;'}"></div>
       </div>
     </div>
   `;
@@ -8720,13 +8928,32 @@ function addJamChatMessage(sender, message, isOwn, msgId) {
   container.scrollTop = container.scrollHeight;
 }
 
-function handleJamChatSeen(msgId, readerName) {
+function handleJamChatRead(msgId, readerId, readerName) {
   if (!msgId) return;
-  const msgEl = document.getElementById(`jam-msg-${msgId}`);
-  if (!msgEl) return;
+  let info = _jamActiveMessages.get(msgId);
+  if (!info) {
+    info = { id: msgId, readBy: new Set(), isBurnStarted: false };
+    _jamActiveMessages.set(msgId, info);
+  }
 
-  // Once seen by peer, start burn countdown on sender view!
-  startJamMessageBurn(msgId, 10, `🔥 Seen by ${escapeHTML(readerName || 'friend')} · Burns in`);
+  if (readerId) info.readBy.add(readerId);
+
+  // Both have read? (at least 2 distinct participants have read)
+  if (info.readBy.size >= 2) {
+    if (!info.isBurnStarted) {
+      info.isBurnStarted = true;
+      startJamMessageBurn(msgId, 10, '🔥 Read by both · Burns in');
+    }
+  } else {
+    const labelEl = document.getElementById(`burn-label-${msgId}`);
+    if (labelEl && !_jamMessageTimers.has(msgId)) {
+      labelEl.innerHTML = `<span class="jam-clock-icon">🕒</span><span>Sent · Waiting for friend to read</span>`;
+    }
+  }
+}
+
+function handleJamChatSeen(msgId, readerName) {
+  handleJamChatRead(msgId, null, readerName);
 }
 
 function startJamMessageBurn(msgId, durationSeconds, labelPrefix) {
@@ -8765,6 +8992,9 @@ function startJamMessageBurn(msgId, durationSeconds, labelPrefix) {
 }
 
 function burnAndRemoveMessage(msgId) {
+  if (typeof _jamActiveMessages !== 'undefined') {
+    _jamActiveMessages.delete(msgId);
+  }
   const msgEl = document.getElementById(`jam-msg-${msgId}`);
   if (!msgEl) return;
 
@@ -8783,7 +9013,7 @@ function burnAndRemoveMessage(msgId) {
           emptyState = document.createElement('div');
           emptyState.id = 'jam-chat-empty';
           emptyState.className = 'jam-chat-empty-state';
-          emptyState.innerHTML = '🔒 <strong>E2E Encrypted Ephemeral Chat:</strong> Messages disappear automatically when seen by both listeners.';
+          emptyState.innerHTML = '💬 <strong>Live Room Chat:</strong> Messages disappear automatically once read by both listeners.';
           container.appendChild(emptyState);
         } else {
           emptyState.style.display = 'block';
@@ -8824,6 +9054,20 @@ setInterval(() => {
 
 window.sendJamChatMessage = sendJamChatMessage;
 window.addJamChatMessage = addJamChatMessage;
+window.markAllUnreadJamChatAsRead = markAllUnreadJamChatAsRead;
+window.isJamChatVisible = isJamChatVisible;
+window.handleJamChatRead = handleJamChatRead;
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && typeof markAllUnreadJamChatAsRead === 'function') {
+    markAllUnreadJamChatAsRead();
+  }
+});
+window.addEventListener('focus', () => {
+  if (typeof markAllUnreadJamChatAsRead === 'function') {
+    markAllUnreadJamChatAsRead();
+  }
+});
 window.sendJamReaction = sendJamReaction;
 window.renderJamReactionParticle = renderJamReactionParticle;
 window.updateJamTrackCard = updateJamTrackCard;
