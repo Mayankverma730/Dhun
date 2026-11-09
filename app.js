@@ -10,6 +10,7 @@
 // On file:// protocol, API calls will fail (CORS), so we use localhost
 // In production, this should be configured via environment or build
 const API = (function() {
+  if (typeof location === 'undefined') return 'http://127.0.0.1:3000/api';
   // If running on file://, use localhost for development
   if (location.protocol === 'file:') return 'http://127.0.0.1:3000/api';
   // If on localhost, use relative or explicit localhost
@@ -311,6 +312,7 @@ function onYTPlayerStateChange(event) {
     updatePlayUI();
     stopYTSimulatedBeatFFT();
   } else if (event.data === YT.PlayerState.ENDED) {
+    if (typeof DhunTasteSignals !== 'undefined') DhunTasteSignals.markPlaybackCompleted(state.currentSong);
     stopYTSimulatedBeatFFT();
     if (state.isRepeat) {
       state.progress = 0;
@@ -946,6 +948,7 @@ function resolveAudioSource(song) {
 }
 
 globalAudioPlayer.addEventListener('ended', () => {
+  if (typeof DhunTasteSignals !== 'undefined') DhunTasteSignals.markPlaybackCompleted(state.currentSong);
   if (state.isRepeat) {
     globalAudioPlayer.currentTime = 0;
     state.progress = 0;
@@ -1898,6 +1901,7 @@ function startPlaying() {
         if (dur > 0) {
           state.progress = Math.min(100, (cur / dur) * 100);
           updateProgress();
+          if (typeof DhunTasteSignals !== 'undefined') DhunTasteSignals.updatePlaybackProgress(state.progress);
         }
       }
     }, 250);
@@ -1922,6 +1926,7 @@ function startPlaying() {
         if (globalAudioPlayer.duration && !isNaN(globalAudioPlayer.duration)) {
           state.progress = (globalAudioPlayer.currentTime / globalAudioPlayer.duration) * 100;
           updateProgress();
+          if (typeof DhunTasteSignals !== 'undefined') DhunTasteSignals.updatePlaybackProgress(state.progress);
         }
       }, 250);
     }
@@ -1929,6 +1934,7 @@ function startPlaying() {
 }
 
 function stopPlaying() {
+  if (typeof DhunTasteSignals !== 'undefined') DhunTasteSignals.endPlaybackSession();
   state.isPlaying = false;
   updatePlayUI();
   clearInterval(state.timer);
@@ -3531,7 +3537,10 @@ if (typeof window !== 'undefined') {
 }
 
 function getUserStorageKey(suffix) {
-  const uid = (authState.currentUser && authState.currentUser.id) ? authState.currentUser.id : 'guest';
+  const user = (typeof authState !== 'undefined' && authState.currentUser)
+    ? authState.currentUser
+    : ((typeof global !== 'undefined' && global.authState && global.authState.currentUser) ? global.authState.currentUser : null);
+  const uid = (user && user.id) ? user.id : 'guest';
   return `dhun_usr_${uid}_${suffix}`;
 }
 
@@ -4294,6 +4303,14 @@ async function toggleLike(btn, event) {
     likedSet.delete(String(songId));
   }
   saveUserLikedSet(likedSet);
+
+  // Preference signal tracking & recommendation telemetry
+  const targetSong = (state.songs || []).find(s => s && s.id == songId) ||
+                     (state.currentSong && state.currentSong.id == songId ? state.currentSong : null) ||
+                     { id: songId };
+  if (typeof DhunTasteSignals !== 'undefined') {
+    DhunTasteSignals.recordSignal(isNowLiked ? 'like' : 'skip', targetSong);
+  }
 
   // Update in-memory state
   const song = (state.songs || []).find(s => s.id == songId);
@@ -5169,6 +5186,13 @@ function addSongToSpecificPlaylist(playlistId, songId) {
   pl.songs.push(finalId);
   pl.song_count = pl.songs.length;
 
+  // Preference signal tracking (save = +2.5) & recommendation conversion telemetry
+  const songObjForSave = [...(state.songs || []), ...(_libAllSongs || []), ...(state.history || [])].find(s => s && (String(s.id) === String(finalId) || s.id == finalId)) ||
+                         pcSongAudioMap.get(finalId) || pcSongAudioMap.get(Number(finalId)) || { id: finalId };
+  if (typeof DhunTasteSignals !== 'undefined') {
+    DhunTasteSignals.recordSignal('save', songObjForSave);
+  }
+
   // Update thumbnail if newly added
   const allKnown = [...(state.songs || []), ...(_libAllSongs || []), ...(state.history || [])];
   const songObj = allKnown.find(s => s && (String(s.id) === String(finalId) || s.id == finalId)) ||
@@ -5732,11 +5756,792 @@ function renderHero() {
   }
 }
 
+/* ==========================================================================
+   DHUN INTELLIGENT RECOMMENDATION SYSTEM (TIER 6)
+   Multi-Signal Taste Profile, Collaborative Patterns, Diversity Capping,
+   Listen Together Social Choice Utility & Recommendation Quality Telemetry
+   ========================================================================== */
+
+// Keep the full artist name intact; only split explicit credit separators such as “feat.” or “&”.
+function splitArtistCredits(artist) {
+  return String(artist || '')
+    .split(/\s*(?:,|\/|&|\b(?:feat(?:uring)?|ft)\.?(?=\s|$))\s*/i)
+    .map(name => name.trim())
+    .filter(Boolean);
+}
+
+function primaryArtistName(artist) {
+  return splitArtistCredits(artist)[0] || '';
+}
+
+function _normalizeTitleForDedup(title) {
+  if (!title) return '';
+  return String(title)
+    .toLowerCase()
+    .replace(/\s*[\(\[].*?[\)\]]/g, '')
+    .replace(/[^a-z0-9]/g, '')
+    .trim();
+}
+
+const DhunTasteSignals = {
+  WEIGHTS: {
+    like: 3.0,
+    save: 2.5,
+    complete: 2.0, // >= 70% duration played
+    click: 0.3,    // initial play click / start
+    skip: -2.5,    // < 20% duration or < 30 seconds
+    dislike: -3.0
+  },
+  HALF_LIFE_MS: 7 * 24 * 60 * 60 * 1000, // 7 days exponential recency decay
+  MIN_RECENCY_FACTOR: 0.15,
+  MAX_STORED_SIGNALS: 250,
+
+  _activeSession: null,
+  _inMemSignals: [],
+
+  _getStorageKey() {
+    return (typeof getUserStorageKey === 'function')
+      ? getUserStorageKey('taste_signals')
+      : 'dhun_taste_signals_v2';
+  },
+
+  getSignals() {
+    try {
+      if (typeof localStorage === 'undefined') return (this._inMemSignals || []);
+      const raw = localStorage.getItem(this._getStorageKey());
+      if (!raw) return this._inMemSignals || [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed)
+        ? parsed.filter(signal => signal && typeof signal === 'object' &&
+            Number.isFinite(Number(signal.weight)) &&
+            (signal.timestamp === undefined || Number.isFinite(Number(signal.timestamp))))
+        : (this._inMemSignals || []);
+    } catch (e) {
+      return (this._inMemSignals || []);
+    }
+  },
+
+  _saveSignals(signals) {
+    const trimmed = signals.slice(-this.MAX_STORED_SIGNALS);
+    this._inMemSignals = trimmed;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(this._getStorageKey(), JSON.stringify(trimmed));
+      }
+    } catch (e) {}
+  },
+
+  recordSignal(type, song) {
+    if (!song || !this.WEIGHTS.hasOwnProperty(type)) return;
+    const baseWeight = this.WEIGHTS[type];
+    const trackId = song.id !== undefined && song.id !== null ? String(song.id) : (song.videoId ? String(song.videoId) : '');
+    const videoId = song.videoId ? String(song.videoId).trim() : (trackId.startsWith('yt_') ? trackId.replace(/^yt_/, '') : '');
+    const cleanTitle = String(song.title || song.name || '').trim();
+    const cleanArtist = primaryArtistName(song.artist);
+    const genre = String(song.genre || '').trim();
+
+    const signalRecord = {
+      type,
+      weight: baseWeight,
+      trackId,
+      videoId,
+      title: cleanTitle,
+      artist: cleanArtist,
+      genre,
+      timestamp: Date.now()
+    };
+
+    const signals = this.getSignals();
+    signals.push(signalRecord);
+    this._saveSignals(signals);
+
+    // If strong positive conversion on a track, inform recommendation telemetry
+    if (typeof DhunRecommendationMetrics !== 'undefined') {
+      if (type === 'like' || type === 'save' || type === 'complete') {
+        DhunRecommendationMetrics.recordConversion(trackId || videoId, type);
+      }
+    }
+  },
+
+  startPlaybackSession(song) {
+    if (!song) return;
+    if (this._activeSession && !this._activeSession.finished) {
+      this.endPlaybackSession();
+    }
+    this.recordSignal('click', song);
+    this._activeSession = {
+      song,
+      trackId: song.id !== undefined && song.id !== null ? String(song.id) : '',
+      videoId: song.videoId || '',
+      startTime: Date.now(),
+      maxProgressPct: 0,
+      completed: false,
+      finished: false
+    };
+  },
+
+  updatePlaybackProgress(pct) {
+    if (this._activeSession && !this._activeSession.finished) {
+      const val = Number(pct) || 0;
+      if (val > this._activeSession.maxProgressPct) {
+        this._activeSession.maxProgressPct = val;
+      }
+    }
+  },
+
+  markPlaybackCompleted(song) {
+    if (this._activeSession && !this._activeSession.finished) {
+      // Defer the completion signal until session close so one ended event counts once.
+      this._activeSession.completed = true;
+    }
+  },
+
+  endPlaybackSession() {
+    if (!this._activeSession || this._activeSession.finished) return;
+    this._activeSession.finished = true;
+    const session = this._activeSession;
+    const durSec = (Date.now() - session.startTime) / 1000;
+    const pct = session.maxProgressPct || 0;
+
+    if (session.completed || pct >= 70) {
+      this.recordSignal('complete', session.song);
+    } else if (pct < 20 || durSec < 30) {
+      this.recordSignal('skip', session.song);
+    }
+  },
+
+  getAffinityProfile() {
+    const signals = this.getSignals();
+    const now = Date.now();
+    const artistScores = {};
+    const genreScores = {};
+    const trackScores = {};
+    const recentHistoryIds = new Set();
+    const dislikedKeys = new Set();
+
+    for (let i = signals.length - 1; i >= 0; i--) {
+      const sig = signals[i];
+      const ageMs = Math.max(0, now - (sig.timestamp || now));
+      // Exponential recency decay
+      const recencyFactor = Math.max(
+        this.MIN_RECENCY_FACTOR,
+        Math.exp(-ageMs / this.HALF_LIFE_MS)
+      );
+      const effectiveScore = sig.weight * recencyFactor;
+
+      if (sig.artist) {
+        const aKey = sig.artist.toLowerCase();
+        artistScores[aKey] = (artistScores[aKey] || 0) + effectiveScore;
+      }
+      if (sig.genre) {
+        const gKey = sig.genre.toLowerCase();
+        genreScores[gKey] = (genreScores[gKey] || 0) + effectiveScore;
+      }
+      if (sig.trackId) {
+        trackScores[sig.trackId] = (trackScores[sig.trackId] || 0) + effectiveScore;
+      }
+      if (sig.videoId) {
+        trackScores[sig.videoId] = (trackScores[sig.videoId] || 0) + effectiveScore;
+      }
+
+      // Track recent history (up to last 12 unique items)
+      if (recentHistoryIds.size < 12) {
+        if (sig.trackId) recentHistoryIds.add(sig.trackId);
+        if (sig.videoId) recentHistoryIds.add(sig.videoId);
+      }
+    }
+
+    Object.keys(artistScores).forEach(a => {
+      if (artistScores[a] <= -2.5) dislikedKeys.add(`artist:${a}`);
+    });
+    Object.keys(trackScores).forEach(t => {
+      if (trackScores[t] <= -2.5) dislikedKeys.add(`track:${t}`);
+    });
+
+    const topArtists = Object.keys(artistScores)
+      .filter(a => artistScores[a] > 0)
+      .sort((a, b) => artistScores[b] - artistScores[a]);
+
+    const topGenres = Object.keys(genreScores)
+      .filter(g => genreScores[g] > 0)
+      .sort((a, b) => genreScores[b] - genreScores[a]);
+
+    return {
+      artistScores,
+      genreScores,
+      trackScores,
+      recentHistoryIds,
+      dislikedKeys,
+      topArtists,
+      topGenres
+    };
+  }
+};
+
+const DhunRecommendationMetrics = {
+  MAX_IMPRESSIONS: 100,
+  _inMemImpressions: [],
+
+  _getStorageKey() {
+    return (typeof getUserStorageKey === 'function')
+      ? getUserStorageKey('rec_metrics')
+      : 'dhun_rec_metrics_v2';
+  },
+
+  getImpressions() {
+    try {
+      if (typeof localStorage === 'undefined') return (this._inMemImpressions || []);
+      const raw = localStorage.getItem(this._getStorageKey());
+      if (!raw) return this._inMemImpressions || [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed)
+        ? parsed.filter(impression => impression && typeof impression === 'object' && Array.isArray(impression.trackIds))
+        : (this._inMemImpressions || []);
+    } catch (e) {
+      return (this._inMemImpressions || []);
+    }
+  },
+
+  _saveImpressions(list) {
+    const trimmed = list.slice(-this.MAX_IMPRESSIONS);
+    this._inMemImpressions = trimmed;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(this._getStorageKey(), JSON.stringify(trimmed));
+      }
+    } catch (e) {}
+  },
+
+  recordImpression(source, tracks) {
+    if (!Array.isArray(tracks) || tracks.length === 0) return null;
+    const now = Date.now();
+    const trackIds = [];
+    const artists = [];
+
+    tracks.forEach(t => {
+      if (!t) return;
+      const tid = t.id !== undefined && t.id !== null ? String(t.id) : (t.videoId ? String(t.videoId) : '');
+      const vid = t.videoId ? String(t.videoId).trim() : '';
+      if (tid) trackIds.push(tid);
+      if (vid && vid !== tid) trackIds.push(vid);
+      const art = primaryArtistName(t.artist).toLowerCase();
+      if (art) artists.push(art);
+    });
+
+    const uniqueArtists = new Set(artists).size;
+    const diversityRatio = tracks.length > 0 ? Number((uniqueArtists / tracks.length).toFixed(3)) : 1.0;
+
+    const impRecord = {
+      id: 'imp_' + now + '_' + Math.random().toString(36).substr(2, 5),
+      timestamp: now,
+      source: source || 'feed',
+      trackIds,
+      totalTracks: tracks.length,
+      uniqueArtists,
+      diversityRatio,
+      conversions: {
+        clicks: 0,
+        completions: 0,
+        likes: 0,
+        saves: 0
+      }
+    };
+
+    const impressions = this.getImpressions();
+    impressions.push(impRecord);
+    this._saveImpressions(impressions);
+    return impRecord.id;
+  },
+
+  recordConversion(trackId, action) {
+    if (!trackId || !['click', 'complete', 'like', 'save'].includes(action)) return;
+    const sId = String(trackId).trim();
+    const impressions = this.getImpressions();
+    const now = Date.now();
+    const windowMs = 60 * 60 * 1000; // 60 min attribution window
+
+    let updated = false;
+    for (let i = impressions.length - 1; i >= 0; i--) {
+      const imp = impressions[i];
+      if (now - imp.timestamp > windowMs) break;
+      if (Array.isArray(imp.trackIds) && imp.trackIds.includes(sId)) {
+        if (!imp.conversions) imp.conversions = { clicks: 0, completions: 0, likes: 0, saves: 0 };
+        const key = action === 'click' ? 'clicks'
+                  : action === 'complete' ? 'completions'
+                  : action === 'like' ? 'likes' : 'saves';
+        imp.conversions[key] = (imp.conversions[key] || 0) + 1;
+        updated = true;
+        break; // attribute to most recent impression
+      }
+    }
+
+    if (updated) {
+      this._saveImpressions(impressions);
+    }
+  },
+
+  getReport() {
+    const impressions = this.getImpressions();
+    const totalImpressions = impressions.length;
+    let totalTracksServed = 0;
+    let totalClicks = 0;
+    let totalCompletions = 0;
+    let totalLikes = 0;
+    let totalSaves = 0;
+    let sumDiversity = 0;
+
+    impressions.forEach(imp => {
+      totalTracksServed += (imp.totalTracks || 0);
+      sumDiversity += (imp.diversityRatio || 1.0);
+      const conv = imp.conversions || {};
+      totalClicks += (conv.clicks || 0);
+      totalCompletions += (conv.completions || 0);
+      totalLikes += (conv.likes || 0);
+      totalSaves += (conv.saves || 0);
+    });
+
+    const avgDiversityRatio = totalImpressions > 0 ? Number((sumDiversity / totalImpressions).toFixed(3)) : 1.0;
+    const ctr = totalImpressions > 0 ? Number(((totalClicks / totalImpressions) * 100).toFixed(1)) : 0;
+    const completionRate = totalImpressions > 0 ? Number(((totalCompletions / totalImpressions) * 100).toFixed(1)) : 0;
+    const likeRate = totalImpressions > 0 ? Number(((totalLikes / totalImpressions) * 100).toFixed(1)) : 0;
+    const saveRate = totalImpressions > 0 ? Number(((totalSaves / totalImpressions) * 100).toFixed(1)) : 0;
+    const saveLikeRate = Number((likeRate + saveRate).toFixed(1));
+
+    // Quality Score evaluates actual listening completion, saves, and diversity rather than clicks alone
+    const qualityScore = Number((
+      (0.40 * Math.min(100, completionRate * 1.5)) +
+      (0.35 * Math.min(100, saveLikeRate * 2.0)) +
+      (0.15 * (avgDiversityRatio * 100)) +
+      (0.10 * Math.min(100, ctr))
+    ).toFixed(1));
+
+    return {
+      totalImpressions,
+      totalTracksServed,
+      conversions: {
+        clicks: totalClicks,
+        completions: totalCompletions,
+        likes: totalLikes,
+        saves: totalSaves
+      },
+      rates: {
+        ctr: `${ctr}%`,
+        completionRate: `${completionRate}%`,
+        likeRate: `${likeRate}%`,
+        saveRate: `${saveRate}%`,
+        saveLikeRate: `${saveLikeRate}%`
+      },
+      diversity: {
+        avgDiversityRatio,
+        diversityPct: `${Math.round(avgDiversityRatio * 100)}%`
+      },
+      compositeQualityScore: qualityScore
+    };
+  }
+};
+
+const DhunRecommendationEngine = {
+  // 5 Community Taste Clusters for Collaborative Filtering Patterns
+  COMMUNITY_CLUSTERS: [
+    {
+      id: 'bollywood_romance',
+      name: 'Bollywood Romance & Melodies',
+      artists: ['arijit singh', 'pritam', 'shreya ghoshal', 'atif aslam', 'mohit chauhan', 'jasleen royal', 'mithoon', 'sachet-parampara', 'darshan raval', 'prateek kuhad'],
+      genres: ['bollywood', 'romantic', 'pop', 'filmi'],
+      keywords: ['romance', 'love', 'tum hi ho', 'kesariya', 'shayad', 'heeriye', 'channa mereya', 'tum se hi']
+    },
+    {
+      id: 'punjabi_bangers',
+      name: 'Punjabi & Desi Hip-Hop',
+      artists: ['diljit dosanjh', 'sidhu moose wala', 'ap dhillon', 'karan aujla', 'shubh', 'b praak', 'gurinder gill', 'amrit maan'],
+      genres: ['punjabi', 'hiphop', 'bhangra', 'desi hip-hop'],
+      keywords: ['punjabi', 'banger', 'tauba tauba', 'brown munde', 'goat', 'softly', 'elevated']
+    },
+    {
+      id: 'lofi_chill',
+      name: 'Lo-Fi Chill & Late Night Indie',
+      artists: ['prabhteh', 'zaeden', 'anuv jain', 'lost stories', 'prateek kuhad', 'tanmaya bhatnagar'],
+      genres: ['lofi', 'lo-fi', 'indie', 'acoustic', 'chill'],
+      keywords: ['lofi', 'chill', 'slowed', 'reverb', 'late night', 'aesthetic', 'coffee']
+    },
+    {
+      id: 'global_pop',
+      name: 'Global Pop & Chartbusters',
+      artists: ['the weeknd', 'dua lipa', 'taylor swift', 'post malone', 'bruno mars', 'ed sheeran', 'sabrina carpenter', 'billie eilish'],
+      genres: ['pop', 'synthwave', 'dance pop', 'english'],
+      keywords: ['pop', 'blinding lights', 'espresso', 'birds of a feather', 'levitating', 'starboy']
+    },
+    {
+      id: 'electronic_dance',
+      name: 'EDM & High-Energy Festival',
+      artists: ['martin garrix', 'alan walker', 'avicii', 'david guetta', 'marshmello', 'chainsmokers', 'calvin harris'],
+      genres: ['electronic', 'edm', 'dance', 'house'],
+      keywords: ['electronic', 'festival', 'faded', 'animals', 'wake me up', 'titanium']
+    }
+  ],
+
+  // Discover adjacent genre map for serendipitous discovery
+  ADJACENT_GENRES: {
+    bollywood: ['romantic', 'lo-fi', 'indie'],
+    romantic: ['bollywood', 'lo-fi', 'pop'],
+    punjabi: ['hiphop', 'electronic', 'bollywood'],
+    lofi: ['indie', 'romantic', 'pop'],
+    electronic: ['pop', 'punjabi', 'hiphop'],
+    pop: ['electronic', 'romantic', 'indie']
+  },
+
+  findTopCommunityCluster(profile) {
+    if (!profile) return null;
+    let bestCluster = null;
+    let maxScore = -1;
+
+    for (const cluster of this.COMMUNITY_CLUSTERS) {
+      let clusterScore = 0;
+      (profile.topArtists || []).forEach(art => {
+        if (cluster.artists.some(a => a.includes(art) || art.includes(a))) {
+          clusterScore += 25;
+        }
+      });
+      (profile.topGenres || []).forEach(gen => {
+        if (cluster.genres.some(g => g.includes(gen) || gen.includes(g))) {
+          clusterScore += 20;
+        }
+      });
+      if (clusterScore > maxScore && clusterScore > 0) {
+        maxScore = clusterScore;
+        bestCluster = cluster;
+      }
+    }
+    return bestCluster;
+  },
+
+  deduplicateTracksAdvanced(tracks, options = {}) {
+    if (!Array.isArray(tracks)) return [];
+    const seenVideoIds = new Set();
+    const seenNormalizedKeys = new Set();
+    const seenIds = new Set();
+
+    const curr = options.currentSong || (typeof state !== 'undefined' ? state.currentSong : null);
+    if (options.excludeCurrent && curr) {
+      if (curr.id !== undefined && curr.id !== null) seenIds.add(String(curr.id));
+      if (curr.videoId) seenVideoIds.add(String(curr.videoId).trim());
+      const cCleanT = _normalizeTitleForDedup(curr.title || curr.name || '');
+      const cCleanA = primaryArtistName(curr.artist || '').toLowerCase();
+      if (cCleanT) seenNormalizedKeys.add(`${cCleanT}:::${cCleanA}`);
+    }
+
+    if (options.excludeHistory) {
+      const historyList = (Array.isArray(options.history) ? options.history : null) ||
+                          (typeof state !== 'undefined' && Array.isArray(state.history) ? state.history : []) ||
+                          ((typeof global !== 'undefined' && global.state && Array.isArray(global.state.history)) ? global.state.history : []);
+      const historyItems = historyList.slice(-8);
+      historyItems.forEach(h => {
+        if (!h) return;
+        if (h.id !== undefined && h.id !== null) seenIds.add(String(h.id));
+        if (h.videoId) seenVideoIds.add(String(h.videoId).trim());
+        const hCleanT = _normalizeTitleForDedup(h.title || h.name || '');
+        const hCleanA = primaryArtistName(h.artist || '').toLowerCase();
+        if (hCleanT) seenNormalizedKeys.add(`${hCleanT}:::${hCleanA}`);
+      });
+
+      if (options.recentHistoryIds instanceof Set) {
+        options.recentHistoryIds.forEach(id => seenIds.add(String(id)));
+      }
+    }
+
+    const unique = [];
+    for (const t of tracks) {
+      if (!t) continue;
+      const tid = t.id !== undefined && t.id !== null ? String(t.id) : '';
+      const vid = (t.videoId || (tid.startsWith('yt_') ? tid.replace(/^yt_/, '') : '') || '').trim();
+      const rawTitle = t.title || t.name || '';
+      const rawArtist = t.artist || '';
+      const cleanT = _normalizeTitleForDedup(rawTitle);
+      const cleanA = primaryArtistName(rawArtist).toLowerCase();
+      const normKey = cleanT ? `${cleanT}:::${cleanA}` : '';
+
+      if (tid && seenIds.has(tid)) continue;
+      if (vid && seenVideoIds.has(vid)) continue;
+      if (normKey && seenNormalizedKeys.has(normKey)) continue;
+
+      if (tid) seenIds.add(tid);
+      if (vid) seenVideoIds.add(vid);
+      if (normKey) seenNormalizedKeys.add(normKey);
+      unique.push(t);
+    }
+    return unique;
+  },
+
+  scoreCandidateForGroup(track, members) {
+    if (!track || !Array.isArray(members) || members.length <= 1) return null;
+    const tGenre = (track.genre || '').toLowerCase().trim();
+    const tArtist = (track.artist || '').toLowerCase().trim();
+
+    const individualScores = members.map(m => {
+      let s = 25; // neutral baseline
+      const summary = m.tasteSummary;
+      if (summary) {
+        if (Array.isArray(summary.topGenres)) {
+          if (summary.topGenres.some(g => tGenre.includes(g.toLowerCase()) || g.toLowerCase().includes(tGenre))) {
+            s += 35;
+          }
+        }
+        if (Array.isArray(summary.topArtists)) {
+          if (summary.topArtists.some(a => tArtist.includes(a.toLowerCase()) || a.toLowerCase().includes(tArtist))) {
+            s += 40;
+          }
+        }
+      }
+      return Math.min(100, Math.max(10, s));
+    });
+
+    const n = individualScores.length;
+    const mean = individualScores.reduce((a, b) => a + b, 0) / n;
+    const min = Math.min(...individualScores);
+    const variance = individualScores.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / n;
+    const stdDev = Math.sqrt(variance);
+
+    // Social Choice Utility: favors high mean + protected minimum - polarization penalty
+    const groupUtility = (0.60 * mean) + (0.40 * min) - (0.20 * stdDev);
+    return Math.round(Math.min(100, Math.max(0, groupUtility)));
+  },
+
+  scoreCandidate(track, profile, seedSong, topCluster, groupMembers) {
+    let score = 20; // baseline
+    let reason = track.genre ? `🎵 ${track.genre}` : '✨ Recommended';
+    let isSerendipity = false;
+
+    const tGenre = (track.genre || '').toLowerCase().trim();
+    const tArtist = (track.artist || '').toLowerCase().trim();
+    const tTitle = (track.title || track.name || '').toLowerCase().trim();
+
+    // 1. Content-based affinity from DhunTasteSignals
+    if (profile) {
+      if (profile.genreScores && profile.genreScores[tGenre]) {
+        score += Math.max(-30, Math.min(40, profile.genreScores[tGenre] * 8));
+      }
+      const primaryArtist = primaryArtistName(tArtist);
+      if (profile.artistScores && profile.artistScores[primaryArtist]) {
+        score += Math.max(-40, Math.min(45, profile.artistScores[primaryArtist] * 10));
+        if (profile.artistScores[primaryArtist] > 2.0) {
+          reason = `🎤 More by ${primaryArtistName(track.artist)}`;
+        }
+      }
+
+      // Strong negative veto if previously disliked or skipped
+      if (profile.dislikedKeys) {
+        if (profile.dislikedKeys.has(`artist:${primaryArtist}`) || profile.dislikedKeys.has(`track:${track.id}`)) {
+          score -= 60;
+        }
+      }
+    }
+
+    // 2. Currently playing seed track similarity
+    if (seedSong) {
+      const sGenre = (seedSong.genre || '').toLowerCase().trim();
+      const sArtist = (seedSong.artist || '').toLowerCase().trim();
+      if (sGenre && tGenre && (sGenre === tGenre || sGenre.includes(tGenre) || tGenre.includes(sGenre))) {
+        score += 35;
+        if (!reason.startsWith('🎤')) reason = `🎵 ${track.genre || seedSong.genre}`;
+      }
+      if (sArtist && tArtist) {
+        const sPrimary = primaryArtistName(sArtist);
+        const tPrimary = primaryArtistName(tArtist);
+        if (sPrimary && tPrimary && sPrimary === tPrimary) {
+          score += 40;
+          reason = `🎤 More by ${primaryArtistName(track.artist)}`;
+        }
+      }
+      // Word overlap in titles
+      const seedWords = (seedSong.title || '').toLowerCase().split(/\s+/).filter(w => w.length > 3);
+      for (const w of seedWords) {
+        if (tTitle.includes(w)) {
+          score += 10;
+          break;
+        }
+      }
+    }
+
+    // 3. Collaborative Community Pattern Matching
+    if (topCluster) {
+      const matchesClusterArtist = topCluster.artists.some(a => tArtist.includes(a));
+      const matchesClusterGenre = topCluster.genres.some(g => tGenre.includes(g));
+      if (matchesClusterArtist || matchesClusterGenre) {
+        score += 18;
+        if (!reason.startsWith('🎤') && !reason.startsWith('🎵')) {
+          reason = `🤝 Dhun Community: ${topCluster.name.split('&')[0].trim()}`;
+        }
+      }
+    }
+
+    // 4. Listen Together Group Utility
+    if (Array.isArray(groupMembers) && groupMembers.length > 1) {
+      const groupFit = this.scoreCandidateForGroup(track, groupMembers);
+      if (groupFit !== null) {
+        score = Math.round((score * 0.5) + (groupFit * 0.5));
+        reason = `👥 Group Fit: ${groupFit}%`;
+      }
+    }
+
+    // Star rating / plays bonus
+    if (track.rating) score += Math.round(track.rating * 2);
+    if (track.play_count) score += Math.min(15, track.play_count * 2);
+
+    return { score, reason, isSerendipity };
+  },
+
+  getRecommendations(seedSong, limit = 8, options = {}) {
+    const profile = DhunTasteSignals.getAffinityProfile();
+    const topCluster = this.findTopCommunityCluster(profile);
+    const inJam = typeof jamState !== 'undefined' && jamState.active && Array.isArray(jamState.members) && jamState.members.length > 1;
+    const groupMembers = inJam ? jamState.members : null;
+
+    // Gather candidate songs
+    let rawCandidates = [];
+    const seed = seedSong || (typeof state !== 'undefined' ? (state.currentSong || (state.songs && state.songs[0])) : null);
+
+    if (seed && typeof YTMusicAPI !== 'undefined' && YTMusicAPI.getSimilarSongsForTrack) {
+      rawCandidates = YTMusicAPI.getSimilarSongsForTrack(seed, limit * 3);
+    } else if (typeof YTMusicAPI !== 'undefined' && YTMusicAPI.getTrending) {
+      rawCandidates = [
+        ...YTMusicAPI.getTrending('trending'),
+        ...YTMusicAPI.getTrending('bollywood'),
+        ...YTMusicAPI.getTrending('romantic'),
+        ...YTMusicAPI.getTrending('lofi'),
+        ...YTMusicAPI.getTrending('punjabi')
+      ];
+    }
+
+    if (typeof state !== 'undefined' && Array.isArray(state.songs)) {
+      rawCandidates = [...rawCandidates, ...state.songs];
+    }
+
+    // 1. Strict deduplication (excluding current track and recent history)
+    const dedupedCandidates = this.deduplicateTracksAdvanced(rawCandidates, {
+      excludeCurrent: true,
+      excludeHistory: true,
+      currentSong: seed,
+      recentHistoryIds: profile.recentHistoryIds
+    });
+
+    // 2. Score candidate tracks
+    const scoredList = dedupedCandidates.map(track => {
+      const evalResult = this.scoreCandidate(track, profile, seed, topCluster, groupMembers);
+      return {
+        song: track,
+        score: evalResult.score,
+        reason: evalResult.reason,
+        isSerendipity: evalResult.isSerendipity
+      };
+    });
+
+    // Filter out strongly vetoed tracks
+    const viable = scoredList.filter(item => item.score > 0);
+    viable.sort((a, b) => b.score - a.score);
+
+    // 3. Balance Relevance and Variety: Artist Diversity Capping (max 2 tracks per artist)
+    const artistCounts = {};
+    const selected = [];
+    const deferred = [];
+
+    for (const item of viable) {
+      const art = primaryArtistName(item.song.artist).toLowerCase() || 'unknown';
+      const currentCount = artistCounts[art] || 0;
+      if (currentCount < 2) {
+        artistCounts[art] = currentCount + 1;
+        selected.push(item);
+      } else {
+        deferred.push(item);
+      }
+      if (selected.length >= limit) break;
+    }
+
+    // Fill remaining slots if needed with deferred distinct tracks
+    if (selected.length < limit) {
+      for (const item of deferred) {
+        selected.push(item);
+        if (selected.length >= limit) break;
+      }
+    }
+
+    // 4. Inject 15-20% Discovery Serendipity (1-2 tracks from adjacent genres or fresh discoveries)
+    const discoveryCount = Math.max(1, Math.round(limit * 0.18));
+    if (selected.length >= 4 && dedupedCandidates.length > selected.length) {
+      const selectedIds = new Set(selected.map(s => s.song.id || s.song.videoId));
+      const currGenre = ((seed && seed.genre) || (profile.topGenres && profile.topGenres[0]) || 'pop').toLowerCase();
+      const adjacent = this.ADJACENT_GENRES[currGenre] || ['romantic', 'indie', 'electronic'];
+
+      const discoveryCandidates = dedupedCandidates.filter(t => {
+        const id = t.id || t.videoId;
+        if (selectedIds.has(id)) return false;
+        const g = (t.genre || '').toLowerCase();
+        const discArt = primaryArtistName(t.artist).toLowerCase();
+        if ((artistCounts[discArt] || 0) >= 2) return false;
+        return adjacent.some(adj => g.includes(adj));
+      });
+
+      if (discoveryCandidates.length > 0) {
+        for (let i = 0; i < discoveryCount && i < discoveryCandidates.length; i++) {
+          const discTrack = discoveryCandidates[i];
+          const replaceIdx = selected.length - 1 - i;
+          if (replaceIdx >= 2) { // keep top 2 relevance picks intact
+            const oldArt = primaryArtistName(selected[replaceIdx].song.artist).toLowerCase();
+            if (artistCounts[oldArt]) artistCounts[oldArt]--;
+            const newArt = primaryArtistName(discTrack.artist).toLowerCase();
+            artistCounts[newArt] = (artistCounts[newArt] || 0) + 1;
+
+            selected[replaceIdx] = {
+              song: discTrack,
+              score: 55,
+              reason: '✨ Discovery',
+              isSerendipity: true
+            };
+          }
+        }
+      }
+    }
+
+    // 5. Telemetry & Measurement: Record impression
+    if (typeof DhunRecommendationMetrics !== 'undefined') {
+      const presentedSongs = selected.map(s => s.song);
+      DhunRecommendationMetrics.recordImpression('unified_recommendation_engine', presentedSongs);
+    }
+
+    return selected;
+  }
+};
+
+// Global telemetry accessor for monitoring and console debugging
+function getRecommendationMetrics() {
+  return DhunRecommendationMetrics.getReport();
+}
+
+// User taste summary generator for Listen Together social choice matching
+function getUserTasteSummary() {
+  const profile = DhunTasteSignals.getAffinityProfile();
+  return {
+    topGenres: (profile.topGenres && profile.topGenres.length > 0) ? profile.topGenres.slice(0, 3) : ['Bollywood', 'Romantic', 'Pop'],
+    topArtists: (profile.topArtists && profile.topArtists.length > 0) ? profile.topArtists.slice(0, 3) : ['Arijit Singh', 'Pritam']
+  };
+}
+
+if (typeof window !== 'undefined') {
+  window.DhunTasteSignals = DhunTasteSignals;
+  window.DhunRecommendationMetrics = DhunRecommendationMetrics;
+  window.DhunRecommendationEngine = DhunRecommendationEngine;
+  window.getRecommendationMetrics = getRecommendationMetrics;
+  window.getUserTasteSummary = getUserTasteSummary;
+}
+
 function renderRecommended() {
   const container = document.getElementById('recommended-list');
   if (!container) return;
 
-  const recResults = typeof getAutoRecommendations === 'function' ? getAutoRecommendations(state.currentSong || (state.songs && state.songs[0]), 8) : [];
+  const seed = state.currentSong || (state.songs && state.songs[0]);
+  const recResults = (typeof DhunRecommendationEngine !== 'undefined' && DhunRecommendationEngine.getRecommendations)
+    ? DhunRecommendationEngine.getRecommendations(seed, 8)
+    : (typeof getAutoRecommendations === 'function' ? getAutoRecommendations(seed, 8) : []);
+
   let songs = (recResults && recResults.length > 0)
     ? recResults.map(r => r.song)
     : (state.songs || []).slice(0, 8);
@@ -5746,20 +6551,24 @@ function renderRecommended() {
   }
 
   // Strict deduplication by videoId and normalized title/artist
-  const seenRecVids = new Set();
-  const seenRecTitles = new Set();
-  songs = (songs || []).filter(s => {
-    if (!s) return false;
-    const vid = (s.videoId || (typeof s.id === 'string' && s.id.startsWith('yt_') ? s.id.replace(/^yt_/, '') : '') || '').trim();
-    const cleanT = (s.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const cleanA = (s.artist || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const key = cleanT ? `${cleanT}:::${cleanA}` : '';
-    if (vid && seenRecVids.has(vid)) return false;
-    if (key && seenRecTitles.has(key)) return false;
-    if (vid) seenRecVids.add(vid);
-    if (key) seenRecTitles.add(key);
-    return true;
-  });
+  if (typeof DhunRecommendationEngine !== 'undefined' && DhunRecommendationEngine.deduplicateTracksAdvanced) {
+    songs = DhunRecommendationEngine.deduplicateTracksAdvanced(songs, { excludeCurrent: true });
+  } else {
+    const seenRecVids = new Set();
+    const seenRecTitles = new Set();
+    songs = (songs || []).filter(s => {
+      if (!s) return false;
+      const vid = (s.videoId || (typeof s.id === 'string' && s.id.startsWith('yt_') ? s.id.replace(/^yt_/, '') : '') || '').trim();
+      const cleanT = (s.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const cleanA = (s.artist || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const key = cleanT ? `${cleanT}:::${cleanA}` : '';
+      if (vid && seenRecVids.has(vid)) return false;
+      if (key && seenRecTitles.has(key)) return false;
+      if (vid) seenRecVids.add(vid);
+      if (key) seenRecTitles.add(key);
+      return true;
+    });
+  }
 
   if (songs.length === 0) {
     container.innerHTML = `
@@ -5772,7 +6581,10 @@ function renderRecommended() {
     return;
   }
 
-  container.innerHTML = songs.map((s, i) => `
+  container.innerHTML = songs.map((s, i) => {
+    const recItem = recResults && recResults[i];
+    const reasonText = (recItem && recItem.reason) || (s.genre ? `🎵 ${s.genre}` : '✨ Recommended');
+    return `
     <div class="st-row" id="str-api-${escapeHtmlAttr(String(s.id))}" onclick="openPlayerById('${escapeHtmlAttr(String(s.id))}')">
       <span class="st-num">${i+1}</span>
       <div class="st-title-col">
@@ -5785,7 +6597,7 @@ function renderRecommended() {
         </div>
       </div>
       <span class="st-cell">${escapeHtmlText(s.album || 'Online Media')}</span>
-      <span class="st-cell">${escapeHtmlText(s.genre || 'Music')}</span>
+      <span class="st-cell"><span class="rec-badge-tag" style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:12px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);font-size:11px;font-weight:500;color:var(--accent-1, #22d3ee);">${escapeHtmlText(reasonText)}</span></span>
       <span class="st-dur">${fmtDur(s.duration)}</span>
       <div class="st-acts">
         <button class="icon-act like-btn" data-song-id="${escapeHtmlAttr(String(s.id))}"
@@ -5797,7 +6609,8 @@ function renderRecommended() {
         <button class="icon-act" title="Add to playlist"
           onclick="addToPlaylistPrompt('${escapeHtmlAttr(String(s.id))}',event)" aria-label="Add to playlist">⋯</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function renderTrending() {
@@ -5846,6 +6659,11 @@ function renderRecentlyPlayed() {
 
 /* ── Inbuilt Auto-Recommendation Engine (YouTube & Category-Powered) ── */
 function getAutoRecommendations(currentSong, limit = 6) {
+  if (typeof DhunRecommendationEngine !== 'undefined' && DhunRecommendationEngine.getRecommendations) {
+    const recs = DhunRecommendationEngine.getRecommendations(currentSong, limit);
+    if (recs && recs.length > 0) return recs;
+  }
+
   const curr = currentSong || state.currentSong;
   const currId = curr ? String(curr.id) : null;
   const candidates = (state.songs || []).filter(s => s && String(s.id) !== currId);
@@ -5941,9 +6759,9 @@ function getAutoRecommendations(currentSong, limit = 6) {
     if (currArtist && sArtist) {
       if (currArtist === sArtist) {
         score += 40;
-        reason = `🎤 More by ${s.artist.split(/[,/]/)[0]}`;
+        reason = `🎤 More by ${primaryArtistName(s.artist)}`;
       } else {
-        const artistParts = currArtist.split(/[,/ft.&]/).map(p => p.trim()).filter(Boolean);
+        const artistParts = splitArtistCredits(currArtist);
         for (const part of artistParts) {
           if (part.length > 3 && sArtist.includes(part)) {
             score += 35;
@@ -8095,6 +8913,9 @@ function handleJamMessageData(data) {
       case 'JOIN': {
         const memberId = data.senderId || ('anon_' + Math.random().toString(36).substring(2, 7));
         const existingMember = jamState.members.find(m => m.id === memberId);
+        if (existingMember && data.tasteSummary) {
+          existingMember.tasteSummary = data.tasteSummary;
+        }
         if (!existingMember) {
           const initials = (data.avatar || (data.sender || 'FR').slice(0, 2)).toUpperCase();
           let displayName = data.sender || 'Guest';
@@ -8107,7 +8928,8 @@ function handleJamMessageData(data) {
             name: displayName,
             avatar: initials,
             color: data.color || '#06b6d4',
-            isHost: false
+            isHost: false,
+            tasteSummary: data.tasteSummary || null
           });
           renderJamMembers();
           updateJamUI();
@@ -8352,7 +9174,7 @@ async function startJamSession() {
   jamState.hostPeerId = jamState.peerId;
   jamState.hostToken = 'htok_' + Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
   jamState.members = [
-    { id: jamState.peerId, name: djName, avatar: djAvatar, color: djColor, isHost: true, lastSeen: Date.now(), isOnline: true }
+    { id: jamState.peerId, name: djName, avatar: djAvatar, color: djColor, isHost: true, lastSeen: Date.now(), isOnline: true, tasteSummary: typeof getUserTasteSummary === 'function' ? getUserTasteSummary() : null }
   ];
 
   showJamPanel('active');
@@ -8536,7 +9358,8 @@ async function joinJamSession(prefilledCode) {
         sender: guestName,
         senderId: jamState.peerId,
         avatar: guestName.slice(0, 2).toUpperCase(),
-        color: '#06b6d4'
+        color: '#06b6d4',
+        tasteSummary: typeof getUserTasteSummary === 'function' ? getUserTasteSummary() : null
       });
     } else {
       showToast(`⚠️ Syncing room ${code}...`);
@@ -10375,6 +11198,15 @@ function saveSongStats(song, data) {
 
 function recordSongPlay(song) {
   if (!song) return;
+
+  // Signal taste tracking & conversion attribution
+  if (typeof DhunTasteSignals !== 'undefined') {
+    DhunTasteSignals.startPlaybackSession(song);
+  }
+  if (typeof DhunRecommendationMetrics !== 'undefined') {
+    DhunRecommendationMetrics.recordConversion(song.id || song.videoId, 'click');
+  }
+
   const key = getSongStorageKey(song);
   if (dhunHubState.lastPlayedTrackedId === key) return; // avoid duplicate count on same track
   dhunHubState.lastPlayedTrackedId = key;
@@ -11254,7 +12086,7 @@ function getUserTasteProfile() {
       const g = (s.genre || 'Pop').trim();
       genreCounts[g] = (genreCounts[g] || 0) + weight;
 
-      const art = (s.artist || '').split(/[,/ft.&]/)[0].trim();
+      const art = primaryArtistName(s.artist);
       if (art && art.length > 2) {
         artistCounts[art] = (artistCounts[art] || 0) + weight;
       }
@@ -11291,20 +12123,24 @@ function getPersonalizedDiscoverTracks(vibe = 'auto') {
   ];
 
   // Deduplicate by videoId and normalized title
-  const seenIds = new Set();
-  const seenTitles = new Set();
-  const uniqueTracks = [];
-  for (const t of allTracks) {
-    if (!t) continue;
-    const vid = (t.videoId || '').trim();
-    const normT = (t.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const normA = (t.artist || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const key = normT ? `${normT}:::${normA}` : '';
-    if (vid && seenIds.has(vid)) continue;
-    if (key && seenTitles.has(key)) continue;
-    if (vid) seenIds.add(vid);
-    if (key) seenTitles.add(key);
-    uniqueTracks.push({ ...t });
+  let uniqueTracks = [];
+  if (typeof DhunRecommendationEngine !== 'undefined' && DhunRecommendationEngine.deduplicateTracksAdvanced) {
+    uniqueTracks = DhunRecommendationEngine.deduplicateTracksAdvanced(allTracks, { excludeCurrent: true, excludeHistory: true });
+  } else {
+    const seenIds = new Set();
+    const seenTitles = new Set();
+    for (const t of allTracks) {
+      if (!t) continue;
+      const vid = (t.videoId || '').trim();
+      const normT = (t.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normA = (t.artist || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const key = normT ? `${normT}:::${normA}` : '';
+      if (vid && seenIds.has(vid)) continue;
+      if (key && seenTitles.has(key)) continue;
+      if (vid) seenIds.add(vid);
+      if (key) seenTitles.add(key);
+      uniqueTracks.push({ ...t });
+    }
   }
 
   // Score candidate tracks according to user preference & taste
@@ -11395,7 +12231,34 @@ function getPersonalizedDiscoverTracks(vibe = 'auto') {
 
   // Sort descending by match score
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, 16);
+
+  // Artist Diversity Capping (max 2 per artist)
+  const artistCounts = {};
+  const diverseScored = [];
+  const deferredScored = [];
+  for (const item of scored) {
+      const art = primaryArtistName(item.artist).toLowerCase() || 'unknown';
+    const c = artistCounts[art] || 0;
+    if (c < 2) {
+      artistCounts[art] = c + 1;
+      diverseScored.push(item);
+    } else {
+      deferredScored.push(item);
+    }
+    if (diverseScored.length >= 16) break;
+  }
+  if (diverseScored.length < 16) {
+    for (const item of deferredScored) {
+      diverseScored.push(item);
+      if (diverseScored.length >= 16) break;
+    }
+  }
+
+  const finalTracks = diverseScored.slice(0, 16);
+  if (typeof DhunRecommendationMetrics !== 'undefined') {
+    DhunRecommendationMetrics.recordImpression('discover_' + vibe, finalTracks);
+  }
+  return finalTracks;
 }
 
 function setDiscoverVibePreference(vibe, btnEl) {
@@ -11638,4 +12501,14 @@ async function enqueueYTMusicSong(track) {
 }
 
 const importYTMusicSongToLibrary = autoAddTrackToLibrary;
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    DhunTasteSignals,
+    DhunRecommendationMetrics,
+    DhunRecommendationEngine,
+    getRecommendationMetrics,
+    getUserTasteSummary
+  };
+}
 

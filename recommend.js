@@ -407,6 +407,9 @@ function _cleanSongTitle(title) {
 
 function deduplicateTracks(tracks) {
   if (!Array.isArray(tracks)) return [];
+  if (typeof window !== 'undefined' && window.DhunRecommendationEngine && typeof window.DhunRecommendationEngine.deduplicateTracksAdvanced === 'function') {
+    return window.DhunRecommendationEngine.deduplicateTracksAdvanced(tracks, { excludeCurrent: true, excludeHistory: true, currentSong: getSeed() });
+  }
   const seenKeys = new Set();
   const seenCleanTitles = new Set();
   const result = [];
@@ -722,6 +725,10 @@ window._recPlayDirect = async function(title, artist, artwork, e) {
     showToast(`▶ Finding exact track "${title}" on YouTube...`);
   }
 
+  if (typeof window !== 'undefined' && window.DhunRecommendationMetrics) {
+    window.DhunRecommendationMetrics.recordConversion(title, 'click');
+  }
+
   const cleanTitle = title.trim();
   const cleanArtist = (artist || '').trim();
   const query = `${cleanTitle} ${cleanArtist}`.trim();
@@ -926,6 +933,10 @@ async function initRecommendations(force = false) {
     enriched = await enrich(filtered.slice(0, DISPLAY_LIMIT));
   } catch (e) {
     enriched = filtered.slice(0, DISPLAY_LIMIT).map(t => ({ ...t, itunes: null }));
+  }
+
+  if (typeof window !== 'undefined' && window.DhunRecommendationMetrics) {
+    window.DhunRecommendationMetrics.recordImpression('nowplaying_recommendations', enriched);
   }
 
   render(enriched, seed.title);
