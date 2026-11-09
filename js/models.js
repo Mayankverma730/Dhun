@@ -5,7 +5,11 @@
 
 class SongModel {
     constructor(data = {}) {
-        this.id = Number(data.id) || Date.now();
+        const numericId = Number(data.id);
+        // Keep nonnumeric provider IDs such as yt_<videoId> intact for playback.
+        this.id = Number.isSafeInteger(numericId) && numericId > 0
+            ? numericId
+            : (typeof data.id === 'string' && data.id.trim() ? data.id.trim() : Date.now());
         this.title = String(data.title || 'Untitled Track').trim().slice(0, 100);
         this.artist = String(data.artist || 'Unknown Artist').trim().slice(0, 80);
         this.album = String(data.album || 'Unknown Album').trim().slice(0, 80);
@@ -19,6 +23,7 @@ class SongModel {
         this.rating = Number.isFinite(rating) ? Math.min(5, Math.max(0, rating)) : 4.5;
         this.liked = data.liked === true || data.liked === 1 || (typeof data.liked === 'string' && /^(true|1)$/i.test(data.liked));
         this.url = String(data.url || data.audioUrl || '');
+        this.videoId = String(data.videoId || (typeof this.id === 'string' && this.id.startsWith('yt_') ? this.id.slice(3) : ''));
         this.cover = data.cover || data.thumbnail || data.artwork || 'album1.jpg';
         this.source = data.source || (this.url.includes('youtube') ? 'youtube' : 'local');
         // Extended metadata [T3-16]
@@ -41,6 +46,7 @@ class SongModel {
             rating: this.rating,
             liked: this.liked ? 1 : 0,
             url: this.url,
+            videoId: this.videoId,
             cover: this.cover,
             source: this.source,
             year: this.year,

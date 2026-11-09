@@ -125,6 +125,12 @@ class DhunDB {
         return key;
     }
 
+    _legacyPositiveId(value) {
+        const decimalString = typeof value === 'string' && /^\d+$/.test(value.trim());
+        const number = typeof value === 'number' ? value : (decimalString ? Number(value) : NaN);
+        return Number.isSafeInteger(number) && number > 0 ? number : NaN;
+    }
+
     async _migrateFromLocalStorage() {
         try {
             // Fix N-M-05: Migrate legacy liked songs with type and range validation
@@ -133,8 +139,8 @@ class DhunDB {
                 const parsed = JSON.parse(legacyLikes);
                 if (Array.isArray(parsed)) {
                     for (const id of parsed) {
-                        const numId = Number(id);
-                        if (Number.isSafeInteger(numId) && numId > 0 && numId < 100000000) {
+                        const numId = this._legacyPositiveId(id);
+                        if (Number.isSafeInteger(numId) && numId < 100000000) {
                             await this._putMigratedRecord('likes', { key: `guest_${numId}`, userId: 'guest', songId: numId });
                         }
                     }
@@ -156,9 +162,9 @@ class DhunDB {
                     for (const [index, pl] of parsed.entries()) {
                         if (pl && typeof pl === 'object' && typeof pl.name === 'string') {
                             const validSongs = Array.isArray(pl.songs)
-                                ? pl.songs.map(Number).filter(s => Number.isSafeInteger(s) && s > 0)
+                                ? pl.songs.map(songId => this._legacyPositiveId(songId)).filter(Number.isSafeInteger)
                                 : [];
-                            const oldId = Number(pl.id);
+                            const oldId = this._legacyPositiveId(pl.id);
                             await this._putMigratedRecord('playlists', {
                                 id: Number.isSafeInteger(oldId) && oldId > 0 ? oldId : Date.now() + index,
                                 name: String(pl.name).slice(0, 100),

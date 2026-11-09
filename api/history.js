@@ -32,9 +32,17 @@ module.exports = async (req, res) => {
 
     // POST /api/history/back — pop history
     if (req.query.action === 'back') {
-      const prev = history.pop() || null;
+      // The top entry is the song currently playing; skip it before choosing the previous one.
+      if (history.length) history.pop();
+      let previous = null;
+      while (history.length && !previous) {
+        const entry = history.pop();
+        if (entry && entry.song_id !== undefined) {
+          previous = (store.songs || []).find(song => song && String(song.id) === String(entry.song_id)) || null;
+        }
+      }
       saveStore(store);
-      return res.status(200).json({ previous: prev, history });
+      return res.status(200).json(previous || {});
     }
 
     // Push to history with validation

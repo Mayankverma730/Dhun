@@ -9,6 +9,14 @@
 
 const { loadStore, saveStore, setCORS, getCallerIdentity, parsePositiveId } = require('./_store');
 
+function resolveQueue(store, queue) {
+  return queue.map(item => {
+    if (!item || !Number.isSafeInteger(item.song_id)) return null;
+    const song = (store.songs || []).find(candidate => candidate && Number(candidate.id) === item.song_id);
+    return song ? { ...song, addedAt: item.addedAt } : null;
+  }).filter(Boolean);
+}
+
 module.exports = async (req, res) => {
   setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -23,7 +31,7 @@ module.exports = async (req, res) => {
   if (!Array.isArray(store.queues[userId])) store.queues[userId] = [];
   const queue = store.queues[userId];
 
-  if (req.method === 'GET') return res.status(200).json(queue);
+  if (req.method === 'GET') return res.status(200).json(resolveQueue(store, queue));
 
   if (req.method === 'POST') {
     let body = req.body;
@@ -47,14 +55,14 @@ module.exports = async (req, res) => {
 
     queue.push({ song_id: songId, addedAt: Date.now() });
     saveStore(store);
-    return res.status(200).json(queue);
+    return res.status(200).json(resolveQueue(store, queue));
   }
 
   if (req.method === 'DELETE') {
     if (req.query.action === 'clear') {
       queue.length = 0;
       saveStore(store);
-      return res.status(200).json({ cleared: true, queue });
+      return res.status(200).json({ cleared: true, queue: [] });
     }
     let body = req.body;
     if (typeof body === 'string') {
@@ -69,14 +77,18 @@ module.exports = async (req, res) => {
       if (removeId === null) {
         return res.status(400).json({ error: 'Valid positive integer song_id required' });
       }
-      const idx = queue.findIndex(item => item.song_id === removeId);
+      const idx = queue.findIndex(item => item && item.song_id === removeId);
       const removed = idx !== -1 ? queue.splice(idx, 1)[0] : null;
       saveStore(store);
-      return res.status(200).json({ removed, queue });
+      return res.status(200).json({
+        removed: removed ? resolveQueue(store, [removed])[0] || null : null,
+        queue: resolveQueue(store, queue)
+      });
     }
     const next = queue.shift() || null;
     saveStore(store);
-    return res.status(200).json({ dequeued: next, queue });
+    // Match the C backend: DELETE returns the song that should play next.
+    return res.status(200).json(next ? resolveQueue(store, [next])[0] || {} : {});
   }
 
   return res.status(405).json({ error: 'Method not allowed' });

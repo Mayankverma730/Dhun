@@ -27,6 +27,7 @@ function checkRateLimit(ip, limit = 30, windowMs = 60000) {
       else map.set(k, recent);
     }
   }
+  if (map.size > 10000) map.delete(map.keys().next().value);
 
   const timestamps = (map.get(ip) || []).filter(ts => now - ts < windowMs);
   if (timestamps.length >= limit) {

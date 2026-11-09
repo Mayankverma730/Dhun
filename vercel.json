@@ -9,7 +9,7 @@
     { "source": "/api/songs/:id/like",    "destination": "/api/songs/[id]?action=like" },
     { "source": "/api/songs/:id",         "destination": "/api/songs/[id]" },
     { "source": "/api/playlists/:id/songs/:sid", "destination": "/api/playlists/[id]?action=removeSong&sid=:sid" },
-    { "source": "/api/playlists/:id/songs", "destination": "/api/playlists/[id]" },
+    { "source": "/api/playlists/:id/songs", "destination": "/api/playlists/[id]?action=listSongs" },
     { "source": "/api/playlists/:id",     "destination": "/api/playlists/[id]" },
     { "source": "/api/history/back",      "destination": "/api/history?action=back" },
     { "source": "/api/search",            "destination": "/api/search" },

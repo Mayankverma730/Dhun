@@ -19,7 +19,7 @@ module.exports = async (req, res) => {
 
   // Rate-limiting: max 5 requests per IP per 10 minutes
   const headers = (req && req.headers) || {};
-  const ip = headers['x-forwarded-for'] || (req.socket && req.socket.remoteAddress) || 'unknown';
+  const ip = String(headers['x-forwarded-for'] || (req.socket && req.socket.remoteAddress) || 'unknown').split(',')[0].trim();
   const now = Date.now();
   const limits = global._forgotRateLimits;
   let rl = limits.get(ip);
@@ -33,6 +33,7 @@ module.exports = async (req, res) => {
       if (now > value.resetAt) limits.delete(key);
     }
   }
+  if (limits.size > 10000) limits.delete(limits.keys().next().value);
   if (rl.count > 5) {
     return res.status(429).json({ success: false, error: 'Too many password reset requests. Please try again later.' });
   }
@@ -55,12 +56,14 @@ module.exports = async (req, res) => {
 
   const user = store.users.find(u => u.email === cleanEmail);
   if (user) {
+    // TODO: Send this token through a configured email provider; without delivery,
+    // the server-side reset token is not available to the user.
     const rawToken = 'rst_' + crypto.randomBytes(24).toString('hex');
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
 
     store.resetTokens[tokenHash] = {
       email: cleanEmail,
-      rawToken: rawToken, // Kept in server storage for email delivery / test simulation
+      rawToken: rawToken, // Kept in store for email delivery / test simulation (never sent in HTTP response)
       expiresAt: now + 15 * 60 * 1000, // 15 minutes
       used: false
     };

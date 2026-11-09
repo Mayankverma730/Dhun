@@ -343,9 +343,9 @@ const YTMusicAPI = (() => {
       { videoId: 'LK7-_dgAVQE', title: 'Tauba Tauba', artist: 'Karan Aujla', album: 'Bad Newz', genre: 'Trending', duration: 3.45, durationSec: 207 },
       { videoId: 'Etkd-07gnxM', title: 'O Maahi', artist: 'Arijit Singh, Pritam', album: 'Dunki', genre: 'Trending', duration: 3.9, durationSec: 234 },
       { videoId: 'eVli-tstM5E', title: 'Espresso', artist: 'Sabrina Carpenter', album: 'Short n Sweet', genre: 'Trending', duration: 2.92, durationSec: 175 },
-      { videoId: 'd5gf9dXHeG4', title: 'Birds of a Feather', artist: 'Billie Eilish', album: 'Hit Me Hard and Soft', genre: 'Trending', duration: 3.5, durationSec: 210 },
-      { videoId: 'edZZ0mFwZ-M', title: 'Greedy', artist: 'Tate McRae', album: 'Think Later', genre: 'Trending', duration: 2.18, durationSec: 131 },
-      { videoId: 'bO69qXl6R4g', title: 'Gata Only', artist: 'FloyyMenor, Cris Mj', album: 'Gata Only Single', genre: 'Trending', duration: 3.7, durationSec: 222 },
+      { videoId: 'd5gf9dXbPi0', title: 'Birds of a Feather', artist: 'Billie Eilish', album: 'Hit Me Hard and Soft', genre: 'Trending', duration: 3.5, durationSec: 210 },
+      { videoId: 'UTmZqY_arzk', title: 'Greedy', artist: 'Tate McRae', album: 'Think Later', genre: 'Trending', duration: 2.18, durationSec: 131 },
+      { videoId: 'Q0jje_RmqLE', title: 'Gata Only', artist: 'FloyyMenor, Cris Mj', album: 'Gata Only Single', genre: 'Trending', duration: 3.7, durationSec: 222 },
       { videoId: 'em0MknB6wFo', title: 'Illusion', artist: 'Dua Lipa', album: 'Radical Optimism', genre: 'Trending', duration: 3.13, durationSec: 188 },
       { videoId: 'GZ3zL7kT6_c', title: 'Lose Control', artist: 'Teddy Swims', album: "I've Tried Everything But Therapy", genre: 'Trending', duration: 3.5, durationSec: 210 }
     ],
@@ -367,10 +367,10 @@ const YTMusicAPI = (() => {
       { videoId: 'cl0a3i2wFcc', title: 'Brown Munde', artist: 'AP Dhillon, Gurinder Gill, Shinda Kahlon', album: 'Brown Munde Single', genre: 'Punjabi', duration: 4.28, durationSec: 257 },
       { videoId: 'e-ORhEE9VVg', title: '295', artist: 'Sidhu Moose Wala', album: 'Moosetape', genre: 'Punjabi', duration: 4.5, durationSec: 270 },
       { videoId: 'vX2cDW8LUWk', title: 'Excuses', artist: 'AP Dhillon, Gurinder Gill', album: 'Hidden Gems', genre: 'Punjabi', duration: 2.93, durationSec: 176 },
-      { videoId: '47dwt3_yC3s', title: 'Winning Speech', artist: 'Karan Aujla, Mxrci', album: 'Four You', genre: 'Punjabi', duration: 3.42, durationSec: 205 },
-      { videoId: 'm4rU4Xk2h5s', title: 'Softly', artist: 'Karan Aujla, Ikky', album: 'Making Memories', genre: 'Punjabi', duration: 2.58, durationSec: 155 },
-      { videoId: '8nK_4VfFpYc', title: 'Cheques', artist: 'Shubh', album: 'Still Rollin', genre: 'Punjabi', duration: 3.05, durationSec: 183 },
-      { videoId: 'cl34XmaN4U8', title: 'GOAT', artist: 'Diljit Dosanjh', album: 'G.O.A.T.', genre: 'Punjabi', duration: 3.43, durationSec: 206 }
+      { videoId: '0DS5jYQeiw0', title: 'Winning Speech', artist: 'Karan Aujla, Mxrci', album: 'Four You', genre: 'Punjabi', duration: 3.42, durationSec: 205 },
+      { videoId: '-Chif1XK2e8', title: 'Softly', artist: 'Karan Aujla, Ikky', album: 'Making Memories', genre: 'Punjabi', duration: 2.58, durationSec: 155 },
+      { videoId: 'DAqxAqq_jhg', title: 'Cheques', artist: 'Shubh', album: 'Still Rollin', genre: 'Punjabi', duration: 3.05, durationSec: 183 },
+      { videoId: 'cl0a3i2wFcc', title: 'GOAT', artist: 'Diljit Dosanjh', album: 'G.O.A.T.', genre: 'Punjabi', duration: 3.43, durationSec: 206 }
     ],
     lofi: [
       { videoId: 'DWcJFNfaw9c', title: 'Lofi Study Session', artist: 'Lofi Girl', album: 'Peaceful Beats', genre: 'Lo-Fi', duration: 3.5, durationSec: 210 },
@@ -400,14 +400,14 @@ const YTMusicAPI = (() => {
       { videoId: '1w7OgIMMRc4', title: 'Sweet Child O Mine', artist: "Guns N' Roses", album: 'Appetite for Destruction', genre: 'Rock', duration: 5.05, durationSec: 303 }
     ],
     romantic: [
-      { videoId: 'bfIqG8a1sHY', title: 'Shayad', artist: 'Arijit Singh, Pritam', album: 'Love Aaj Kal', genre: 'Romantic', duration: 4.12, durationSec: 247 },
+      { videoId: 'muxtRRMmyhc', title: 'Shayad', artist: 'Arijit Singh, Pritam', album: 'Love Aaj Kal', genre: 'Romantic', duration: 4.12, durationSec: 247 },
       { videoId: 'xRb8hxwN5zc', title: 'Agar Tum Saath Ho', artist: 'Alka Yagnik & Arijit Singh', album: 'Tamasha', genre: 'Romantic', duration: 5.68, durationSec: 341 },
       { videoId: 'RLzC55ai0eo', title: 'Heeriye', artist: 'Jasleen Royal, Arijit Singh', album: 'Heeriye Single', genre: 'Romantic', duration: 3.25, durationSec: 195 },
-      { videoId: 'mt9xg0mmt68', title: 'Tum Se Hi', artist: 'Mohit Chauhan, Pritam', album: 'Jab We Met', genre: 'Romantic', duration: 5.38, durationSec: 323 },
-      { videoId: 'Grr0Exhy-lQ', title: 'Kalank', artist: 'Arijit Singh, Pritam', album: 'Kalank', genre: 'Romantic', duration: 5.18, durationSec: 311 },
-      { videoId: '4K-V-n7D_b0', title: 'Pehla Nasha', artist: 'Udit Narayan, Sadhana Sargam', album: 'Jo Jeeta Wohi Sikandar', genre: 'Romantic', duration: 4.85, durationSec: 291 },
+      { videoId: 'ZyCazQV9hls', title: 'Tum Se Hi', artist: 'Mohit Chauhan, Pritam', album: 'Jab We Met', genre: 'Romantic', duration: 5.38, durationSec: 323 },
+      { videoId: 'k6dGN3azeqo', title: 'Kalank', artist: 'Arijit Singh, Pritam', album: 'Kalank', genre: 'Romantic', duration: 5.18, durationSec: 311 },
+      { videoId: 'ODu7OyAqK-Q', title: 'Pehla Nasha', artist: 'Udit Narayan, Sadhana Sargam', album: 'Jo Jeeta Wohi Sikandar', genre: 'Romantic', duration: 4.85, durationSec: 291 },
       { videoId: 'PEM0Vs8jf1w', title: 'Golden Hour', artist: 'JVKE', album: 'This Is What Falling In Love Feels Like', genre: 'Romantic', duration: 3.48, durationSec: 209 },
-      { videoId: 'GxldQ9GyXfY', title: 'Until I Found You', artist: 'Stephen Sanchez', album: 'Easy On My Eyes', genre: 'Romantic', duration: 2.97, durationSec: 178 }
+      { videoId: 'GxldQ9eX2wo', title: 'Until I Found You', artist: 'Stephen Sanchez', album: 'Easy On My Eyes', genre: 'Romantic', duration: 2.97, durationSec: 178 }
     ],
     hiphop: [
       { videoId: '_Yhyp-_hX2s', title: 'Lose Yourself', artist: 'Eminem', album: '8 Mile', genre: 'Hip-Hop', duration: 5.4, durationSec: 324 },

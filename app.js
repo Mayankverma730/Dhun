@@ -206,7 +206,6 @@ function initYouTubePlayer() {
       height: '100%',
       width: '100%',
       videoId: ytPendingVideoId || 'fsiPzT50ZiM',
-      host: 'https://www.youtube.com',
       playerVars: {
         autoplay: ytPendingVideoId ? 1 : 0,
         controls: 0,
@@ -1275,23 +1274,32 @@ const ALBUM_IMGS = ['album1.jpg','album2.jpg','album3.jpg'];
 const ytCoverArtCache = new Map();
 const _pendingArtFetches = new Set();
 
+function isValidYouTubeVideoId(v) {
+  return typeof v === 'string' && /^[a-zA-Z0-9_-]{11}$/.test(v.trim());
+}
+
 function imgFor(id) {
   if (!id && id !== 0) return ALBUM_IMGS[0];
 
   // If a full image URL or data URI is passed directly
   if (typeof id === 'string') {
+    if (id.includes('/vi/undefined') || id.includes('/vi//') || id.includes('undefined.jpg')) {
+      return ALBUM_IMGS[0];
+    }
     if (id.startsWith('https://i.ytimg.com') || id.startsWith('https://img.youtube.com') || id.startsWith('blob:') || id.startsWith('data:')) {
       return id;
     }
     // If a relative /vi/ or third-party Invidious URL is passed, extract videoId and convert to YouTube CDN
     if (id.includes('/vi/')) {
       const m = id.match(/\/vi\/([a-zA-Z0-9_-]{11})\b/);
-      if (m && m[1]) return `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg`;
+      if (m && m[1] && isValidYouTubeVideoId(m[1])) return `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg`;
+      return ALBUM_IMGS[0];
     }
     // If YouTube ID prefix:
     if (id.startsWith('yt_')) {
       const vid = id.replace('yt_', '');
-      return `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`;
+      if (isValidYouTubeVideoId(vid)) return `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`;
+      return ALBUM_IMGS[0];
     }
     if (id.endsWith('.jpg') || id.endsWith('.png') || id.endsWith('.webp') || id.endsWith('.svg')) {
       return id;
@@ -1301,15 +1309,15 @@ function imgFor(id) {
   // 1. Check pcSongAudioMap first (authoritative map for YouTube & local tracks)
   const ytData = pcSongAudioMap.get(id) || pcSongAudioMap.get(Number(id)) || pcSongAudioMap.get(String(id));
   if (ytData) {
-    if (ytData.videoId) {
+    if (ytData.videoId && isValidYouTubeVideoId(ytData.videoId)) {
       const thumb = `https://i.ytimg.com/vi/${ytData.videoId}/hqdefault.jpg`;
       ytCoverArtCache.set(id, thumb);
       return thumb;
     }
-    if (ytData.thumbnail && (ytData.thumbnail.startsWith('http://') || ytData.thumbnail.startsWith('https://'))) {
+    if (ytData.thumbnail && (ytData.thumbnail.startsWith('http://') || ytData.thumbnail.startsWith('https://')) && !ytData.thumbnail.includes('/vi/undefined')) {
       if (ytData.thumbnail.includes('/vi/')) {
         const m = ytData.thumbnail.match(/\/vi\/([a-zA-Z0-9_-]{11})\b/);
-        if (m && m[1]) {
+        if (m && m[1] && isValidYouTubeVideoId(m[1])) {
           const thumb = `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg`;
           ytCoverArtCache.set(id, thumb);
           return thumb;
@@ -1322,15 +1330,15 @@ function imgFor(id) {
   // 2. Check in-memory thumbnail cache
   if (ytCoverArtCache.has(id)) {
     const c = ytCoverArtCache.get(id);
-    if (c && !c.startsWith('/vi/')) return c;
+    if (c && !c.startsWith('/vi/') && !c.includes('/vi/undefined')) return c;
   }
   if (ytCoverArtCache.has(Number(id))) {
     const c = ytCoverArtCache.get(Number(id));
-    if (c && !c.startsWith('/vi/')) return c;
+    if (c && !c.startsWith('/vi/') && !c.includes('/vi/undefined')) return c;
   }
   if (ytCoverArtCache.has(String(id))) {
     const c = ytCoverArtCache.get(String(id));
-    if (c && !c.startsWith('/vi/')) return c;
+    if (c && !c.startsWith('/vi/') && !c.includes('/vi/undefined')) return c;
   }
 
   // 3. Check localStorage 'dhun_yt_songs'
@@ -1340,15 +1348,15 @@ function imgFor(id) {
       const parsed = JSON.parse(raw);
       const item = parsed[id] || parsed[String(id)] || parsed[Number(id)];
       if (item) {
-        if (item.videoId) {
+        if (item.videoId && isValidYouTubeVideoId(item.videoId)) {
           const thumb = `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`;
           ytCoverArtCache.set(id, thumb);
           return thumb;
         }
-        if (item.thumbnail && !item.thumbnail.startsWith('/vi/')) {
+        if (item.thumbnail && !item.thumbnail.startsWith('/vi/') && !item.thumbnail.includes('/vi/undefined')) {
           if (item.thumbnail.includes('/vi/')) {
             const m = item.thumbnail.match(/\/vi\/([a-zA-Z0-9_-]{11})\b/);
-            if (m && m[1]) {
+            if (m && m[1] && isValidYouTubeVideoId(m[1])) {
               const thumb = `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg`;
               ytCoverArtCache.set(id, thumb);
               return thumb;
@@ -1364,15 +1372,15 @@ function imgFor(id) {
   // 4. Look up song object in state.songs
   const song = (state.songs || []).find(s => s.id === id || s.id === Number(id) || String(s.id) === String(id));
   if (song) {
-    if (song.videoId) {
+    if (song.videoId && isValidYouTubeVideoId(song.videoId)) {
       const thumb = `https://i.ytimg.com/vi/${song.videoId}/hqdefault.jpg`;
       ytCoverArtCache.set(id, thumb);
       return thumb;
     }
-    if (song.thumbnail && !song.thumbnail.startsWith('/vi/')) {
+    if (song.thumbnail && !song.thumbnail.startsWith('/vi/') && !song.thumbnail.includes('/vi/undefined')) {
       if (song.thumbnail.includes('/vi/')) {
         const m = song.thumbnail.match(/\/vi\/([a-zA-Z0-9_-]{11})\b/);
-        if (m && m[1]) {
+        if (m && m[1] && isValidYouTubeVideoId(m[1])) {
           const thumb = `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg`;
           ytCoverArtCache.set(id, thumb);
           return thumb;
@@ -1385,7 +1393,7 @@ function imgFor(id) {
     // 5. Match by title & artist in YTMusicAPI
     if (typeof YTMusicAPI !== 'undefined' && YTMusicAPI.getVideoIdForTrack) {
       const vid = YTMusicAPI.getVideoIdForTrack(song.title, song.artist);
-      if (vid) {
+      if (vid && isValidYouTubeVideoId(vid)) {
         const thumb = `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`;
         ytCoverArtCache.set(id, thumb);
         const entry = { ...(pcSongAudioMap.get(id) || {}), isYT: true, videoId: vid, thumbnail: thumb, title: song.title, artist: song.artist };
@@ -1826,9 +1834,14 @@ function _img(id, src) {
     this.src = ALBUM_IMGS[0];
   };
   let validSrc = src;
-  if (typeof validSrc === 'string' && validSrc.includes('/vi/')) {
-    const m = validSrc.match(/\/vi\/([a-zA-Z0-9_-]{11})\b/);
-    if (m && m[1]) validSrc = `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg`;
+  if (typeof validSrc === 'string') {
+    if (validSrc.includes('/vi/undefined') || validSrc.includes('/vi//') || validSrc.includes('undefined.jpg')) {
+      validSrc = ALBUM_IMGS[0];
+    } else if (validSrc.includes('/vi/')) {
+      const m = validSrc.match(/\/vi\/([a-zA-Z0-9_-]{11})\b/);
+      if (m && m[1] && isValidYouTubeVideoId(m[1])) validSrc = `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg`;
+      else validSrc = ALBUM_IMGS[0];
+    }
   }
   el.src = validSrc || ALBUM_IMGS[0];
 }
@@ -5750,7 +5763,13 @@ function renderHero() {
   _set('hero-stat-quality', 'HD');
   
   const bgImg = document.getElementById('hero-bg-img');
-  if (bgImg) bgImg.src = imgFor(topSong.id);
+  if (bgImg) {
+    bgImg.onerror = function() {
+      this.onerror = null;
+      this.src = 'album3.jpg';
+    };
+    bgImg.src = imgFor(topSong.id);
+  }
   
   const playBtn = document.getElementById('hero-play-btn');
   if (playBtn) {

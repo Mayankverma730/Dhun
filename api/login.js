@@ -13,6 +13,7 @@ const { loadStore, saveStore, verifyPasswordHash, setCORS } = require('./_store'
 
 // In-memory rate limiter per IP / email to prevent brute-force attacks
 const loginAttempts = new Map();
+const MAX_LOGIN_ATTEMPT_KEYS = 10000;
 
 function isThrottled(key) {
   const now = Date.now();
@@ -30,6 +31,14 @@ function recordAttempt(key, success) {
   if (success) {
     loginAttempts.delete(key);
     return;
+  }
+  if (!loginAttempts.has(key) && loginAttempts.size >= MAX_LOGIN_ATTEMPT_KEYS) {
+    for (const [oldKey, record] of loginAttempts) {
+      if (now > record.resetAt) loginAttempts.delete(oldKey);
+    }
+    if (loginAttempts.size >= MAX_LOGIN_ATTEMPT_KEYS) {
+      loginAttempts.delete(loginAttempts.keys().next().value);
+    }
   }
   const record = loginAttempts.get(key) || { count: 0, resetAt: now + 5 * 60 * 1000 };
   record.count++;
@@ -63,7 +72,7 @@ module.exports = (req, res) => {
     return res.status(400).json({ success: false, error: 'Invalid email address format' });
   }
 
-  const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'ip';
+  const clientIp = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'ip').split(',')[0].trim();
   const throttleKey = `${clientIp}_${cleanEmail}`;
 
   if (isThrottled(throttleKey)) {

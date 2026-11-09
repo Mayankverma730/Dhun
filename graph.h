@@ -8,8 +8,6 @@
 
 #include "song.h"
 
-#define MAX_GRAPH_SONGS 500
-
 typedef struct GraphEdge {
     int target_song_id;
     float similarity; /* 0.0 to 1.0 */
@@ -25,8 +23,9 @@ typedef struct {
 } GraphNode;
 
 typedef struct {
-    GraphNode *nodes[MAX_GRAPH_SONGS];
+    GraphNode **nodes;
     int count;
+    int capacity;
 } SongGraph;
 
 SongGraph *graph_create(void);

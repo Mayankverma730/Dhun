@@ -1032,10 +1032,13 @@ static void route_get_history(SOCKET sock)
 /* POST /api/history/back — pop history */
 static void route_history_back(SOCKET sock)
 {
-    Song s;
-    if (!stack_pop(g_history, &s)) { send_error(sock,400,"history empty"); return; }
+    Song current, previous;
+    if (!stack_pop(g_history, &current) || !stack_pop(g_history, &previous)) {
+        send_error(sock,400,"history empty"); return;
+    }
+    (void)current;
     char buf[512];
-    song_to_json_liked(&s, buf, sizeof(buf));
+    song_to_json_liked(&previous, buf, sizeof(buf));
     send_ok(sock, buf);
 }
 
@@ -1253,7 +1256,8 @@ static int check_rate_limit(const char *ip) {
     return 0;
 }
 
-/* Upgraded Cryptographic Multi-Round Salted Hash with Per-User Salt [T1-01, Finding 14] */
+/* TODO: Replace this custom hash with a standard password KDF (PBKDF2, scrypt, or Argon2).
+ * A salt and repeated custom mixing do not make this a password-safe cryptographic hash. */
 static void hash_password_salted(const char *password, const char *custom_salt, char *out_hash, size_t out_size)
 {
     unsigned long long h1 = 14695981039346656037ULL;

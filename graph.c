@@ -6,11 +6,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 #include <math.h>
 #include "graph.h"
 
 SongGraph *graph_create(void) {
     SongGraph *g = (SongGraph *)calloc(1, sizeof(SongGraph));
+    if (!g) return NULL;
+    g->capacity = 16;
+    g->nodes = (GraphNode **)calloc((size_t)g->capacity, sizeof(*g->nodes));
+    if (!g->nodes) {
+        free(g);
+        return NULL;
+    }
     return g;
 }
 
@@ -27,6 +35,7 @@ void graph_destroy(SongGraph *g) {
             free(g->nodes[i]);
         }
     }
+    free(g->nodes);
     free(g);
 }
 
@@ -41,8 +50,18 @@ static GraphNode *find_node(const SongGraph *g, int song_id) {
 }
 
 int graph_add_song(SongGraph *g, const Song *song) {
-    if (!g || !song || g->count >= MAX_GRAPH_SONGS) return 0;
+    if (!g || !song) return 0;
     if (find_node(g, song->id)) return 1;
+
+    if (g->count == g->capacity) {
+        if (g->capacity > INT_MAX / 2) return 0;
+        int capacity = g->capacity ? g->capacity * 2 : 16;
+        GraphNode **nodes = (GraphNode **)realloc(g->nodes, (size_t)capacity * sizeof(*nodes));
+        if (!nodes) return 0;
+        memset(nodes + g->capacity, 0, (size_t)(capacity - g->capacity) * sizeof(*nodes));
+        g->nodes = nodes;
+        g->capacity = capacity;
+    }
 
     GraphNode *n = (GraphNode *)calloc(1, sizeof(GraphNode));
     if (!n) return 0;
@@ -161,32 +180,29 @@ int graph_get_similar(const SongGraph *g, int song_id, int out_ids[], float out_
     GraphNode *n = find_node(g, song_id);
     if (!n) return 0;
 
-    /* Fix L-01: Collect and rank edges descending by similarity score */
+    /* Keep only the requested best matches; this works for dynamically sized graphs. */
     typedef struct { int id; float sim; } SimCandidate;
-    SimCandidate candidates[MAX_GRAPH_SONGS];
-    int total = 0;
+    int limit = max_results < g->count ? max_results : g->count;
+    SimCandidate *candidates = (SimCandidate *)malloc((size_t)limit * sizeof(*candidates));
+    if (!candidates) return 0;
+    int count = 0;
 
-    for (GraphEdge *e = n->edges; e && total < MAX_GRAPH_SONGS; e = e->next) {
-        candidates[total].id = e->target_song_id;
-        candidates[total].sim = e->similarity;
-        total++;
-    }
-
-    /* Sort descending by similarity score */
-    for (int i = 1; i < total; i++) {
-        SimCandidate key = candidates[i];
-        int j = i - 1;
-        while (j >= 0 && candidates[j].sim < key.sim) {
-            candidates[j + 1] = candidates[j];
-            j--;
+    for (GraphEdge *e = n->edges; e; e = e->next) {
+        int position = count;
+        while (position > 0 && candidates[position - 1].sim < e->similarity) position--;
+        if (position >= limit) continue;
+        if (count < limit) count++;
+        for (int i = count - 1; i > position; i--) {
+            candidates[i] = candidates[i - 1];
         }
-        candidates[j + 1] = key;
+        candidates[position].id = e->target_song_id;
+        candidates[position].sim = e->similarity;
     }
 
-    int count = (total < max_results) ? total : max_results;
     for (int i = 0; i < count; i++) {
         out_ids[i] = candidates[i].id;
         if (out_scores) out_scores[i] = candidates[i].sim;
     }
+    free(candidates);
     return count;
 }

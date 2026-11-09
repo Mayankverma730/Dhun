@@ -44,6 +44,13 @@ module.exports = async (req, res) => {
       (Number.isSafeInteger(currentPlayCount) && currentPlayCount >= 0 ? currentPlayCount : 0) + 1,
       100000000
     );
+    const userId = identity.user.id;
+    if (!store.histories || typeof store.histories !== 'object' || Array.isArray(store.histories)) {
+      store.histories = Object.create(null);
+    }
+    if (!Array.isArray(store.histories[userId])) store.histories[userId] = [];
+    store.histories[userId].push({ song_id: songId, playedAt: Date.now() });
+    if (store.histories[userId].length > 50) store.histories[userId].shift();
     saveStore(store);
     const { songIds } = getUserSongLikes(req, store);
     const liked = songIds.some(id => String(id) === String(songId));
@@ -72,6 +79,29 @@ module.exports = async (req, res) => {
     }
 
     const [removed] = songs.splice(idx, 1);
+    for (const playlists of Object.values(store.userPlaylists || {})) {
+      if (!Array.isArray(playlists)) continue;
+      for (const playlist of playlists) {
+        if (!Array.isArray(playlist?.songs)) continue;
+        playlist.songs = playlist.songs.filter(id => String(id) !== String(songId));
+        playlist.song_count = playlist.songs.length;
+      }
+    }
+    for (const playlist of store.playlists || []) {
+      if (!Array.isArray(playlist?.songs)) continue;
+      playlist.songs = playlist.songs.filter(id => String(id) !== String(songId));
+      playlist.song_count = playlist.songs.length;
+    }
+    for (const [userId, queue] of Object.entries(store.queues || {})) {
+      if (Array.isArray(queue)) {
+        store.queues[userId] = queue.filter(item => Number(item?.song_id) !== songId);
+      }
+    }
+    for (const [userId, likes] of Object.entries(store.userLikes || {})) {
+      if (Array.isArray(likes)) {
+        store.userLikes[userId] = likes.filter(id => String(id) !== String(songId));
+      }
+    }
     saveStore(store);
     return res.status(200).json(removed);
   }

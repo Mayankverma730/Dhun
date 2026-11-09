@@ -33,6 +33,14 @@ module.exports = async (req, res) => {
 
   // GET /api/playlists/:id
   if (req.method === 'GET') {
+    if (req.query.action === 'listSongs') {
+      // The rewrite marks the /songs suffix; resolve stored IDs to records the client can play.
+      const catalog = new Map((store.songs || []).map(song => [String(song.id), song]));
+      const songs = Array.isArray(playlist.songs) ? playlist.songs : [];
+      return res.status(200).json(songs.map(song =>
+        song && typeof song === 'object' ? song : catalog.get(String(song))
+      ).filter(Boolean));
+    }
     return res.status(200).json(playlist);
   }
 
@@ -73,10 +81,9 @@ module.exports = async (req, res) => {
     if (!sid) {
       return res.status(400).json({ error: 'sid required to remove song' });
     }
-    if (playlist.songs) {
-      playlist.songs = playlist.songs.filter(s => String(s) !== String(sid));
-      playlist.song_count = playlist.songs.length;
-    }
+    const songs = Array.isArray(playlist.songs) ? playlist.songs : [];
+    playlist.songs = songs.filter(s => String(s) !== String(sid));
+    playlist.song_count = playlist.songs.length;
     saveStore(store);
     return res.status(200).json(playlist);
   }
