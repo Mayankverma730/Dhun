@@ -34,6 +34,8 @@ const REQUEST_DELAY  = 220;  // ms between batched iTunes calls
 const _itunesCache    = new Map();
 const _lastfmCache    = new Map();
 let   _recRefreshTimer = null;
+let   _allRecTracks    = [];
+let   _activeRecFilter = 'all';
 
 /* ══════════════════════════════════════════════════════════════════
    STEP 1 — getSeed
@@ -544,7 +546,36 @@ function _sleep(ms) {
    STEP 5 — render
    Renders recommendation cards into #rec-grid.
 ══════════════════════════════════════════════════════════════════ */
-function render(tracks, seedTitle) {
+function _getRecReason(track, seed) {
+  if (track.reason) return track.reason;
+  const sArt = (seed && seed.artist ? seed.artist.toLowerCase() : '');
+  const tArt = (track.artist ? track.artist.toLowerCase() : '');
+  if (sArt && tArt && (sArt.includes(tArt) || tArt.includes(sArt))) {
+    return '🎤 Similar Artist';
+  }
+  if (track.score && track.score >= 0.8) {
+    return '✨ Top Match';
+  }
+  return '🎵 Similar Vibe';
+}
+
+window.setRecFilter = function(filter, e) {
+  if (e) {
+    try { e.stopPropagation(); e.preventDefault(); } catch(err) {}
+  }
+  _activeRecFilter = filter || 'all';
+  const container = document.getElementById('rec-chips-bar');
+  if (container) {
+    const chips = container.querySelectorAll('.rec-chip');
+    chips.forEach(c => c.classList.remove('active'));
+    const activeChip = container.querySelector(`#rec-chip-${_activeRecFilter}`);
+    if (activeChip) activeChip.classList.add('active');
+  }
+  const seed = getSeed();
+  render(_allRecTracks, seed ? seed.title : '', _activeRecFilter);
+};
+
+function render(tracks, seedTitle, filterOverride) {
   const section  = document.getElementById('recommendations');
   if (!section) return;
   const grid     = section.querySelector('#rec-grid');
@@ -555,28 +586,42 @@ function render(tracks, seedTitle) {
   if (statusEl) statusEl.style.display = 'none';
   if (seedSpan && seedTitle) seedSpan.textContent = `Based on: ${seedTitle}`;
 
-  const uniqueTracks = deduplicateTracks(tracks);
+  _allRecTracks = deduplicateTracks(tracks || []);
+  const seed = getSeed();
+  const currentFilter = filterOverride || _activeRecFilter || 'all';
 
-  if (!uniqueTracks || uniqueTracks.length === 0) {
+  let displayTracks = _allRecTracks;
+  if (currentFilter === 'similar') {
+    const sArt = (seed && seed.artist ? seed.artist.toLowerCase() : '');
+    const filtered = _allRecTracks.filter(t => {
+      const tArt = (t.artist || '').toLowerCase();
+      return (sArt && tArt && (sArt.includes(tArt) || tArt.includes(sArt))) || (t.reason && t.reason.includes('Artist'));
+    });
+    if (filtered.length > 0) displayTracks = filtered;
+  } else if (currentFilter === 'hits') {
+    displayTracks = [..._allRecTracks].sort((a, b) => (b.score || 0) - (a.score || 0));
+  }
+
+  if (!displayTracks || displayTracks.length === 0) {
     grid.innerHTML = `
       <div class="rec-empty">
-        <span style="font-size:32px">🌐</span>
-        <p>No similar tracks found right now.</p>
-        <p style="font-size:12px;opacity:0.6">Try playing a popular song, then click Refresh.</p>
+        <span style="font-size:32px">✨</span>
+        <p>No similar tracks found in this category.</p>
+        <p style="font-size:12px;opacity:0.6">Try switching filters or click Refresh.</p>
       </div>`;
     return;
   }
 
-  grid.innerHTML = uniqueTracks.slice(0, DISPLAY_LIMIT).map((t, idx) => {
-    const artwork   = (t.itunes && t.itunes.artwork) || t.image || '';
-    const previewUrl= (t.itunes && t.itunes.preview) || '';
+  grid.innerHTML = displayTracks.slice(0, DISPLAY_LIMIT).map((t, idx) => {
+    let rawArt = (t.itunes && t.itunes.artwork) || t.image || '';
+    const artwork = rawArt ? rawArt.replace('100x100bb', '600x600bb') : '';
     const duration  = t.itunes && t.itunes.trackTimeMillis ? _fmtMs(t.itunes.trackTimeMillis) : '';
     const album     = (t.itunes && t.itunes.collectionName) || '';
-    const matchPct  = Math.round((t.match || 0) * 100);
     const gradient  = _gradientFromString(t.name + t.artist);
     const safeTitle = _escHtml(t.name);
     const safeArtist= _escHtml(t.artist);
     const safeAlbum = _escHtml(album);
+    const reasonText= _getRecReason(t, seed);
     const artImg    = artwork
       ? `<img src="${_escAttr(artwork)}" alt="${safeTitle}" class="rec-art-img"
              onerror="this.style.display='none'" />`
@@ -590,7 +635,11 @@ function render(tracks, seedTitle) {
            data-art="${_escAttr(artwork)}"
            title="Click to play ${safeTitle} directly on Dhun">
         <div class="rec-art" style="background:${gradient}">
+          <span class="rec-vibe-badge">${_escHtml(reasonText)}</span>
           ${artImg}
+          <div class="rec-art-overlay">
+            <span class="rec-overlay-play">▶</span>
+          </div>
         </div>
         <div class="rec-info">
           <p class="rec-track-name" title="${safeTitle}">${safeTitle}</p>
@@ -796,9 +845,23 @@ function _renderLoading() {
   const statusEl = document.getElementById('rec-status');
   if (statusEl) {
     statusEl.style.display = 'flex';
-    statusEl.innerHTML = `<div class="rec-spinner"></div><span>Finding similar tracks…</span>`;
+    statusEl.innerHTML = `<div class="rec-spinner"></div><span>Tailoring personalized recommendations…</span>`;
   }
-  if (grid) grid.innerHTML = '';
+  if (grid) {
+    grid.innerHTML = Array.from({ length: 6 }).map(() => `
+      <div class="rec-card rec-skeleton-card">
+        <div class="rec-art rec-skeleton-box"></div>
+        <div class="rec-info">
+          <div class="rec-skeleton-line" style="width:78%;height:13px;margin-bottom:8px;"></div>
+          <div class="rec-skeleton-line" style="width:50%;height:10px;margin-bottom:4px;"></div>
+        </div>
+        <div class="rec-actions">
+          <div class="rec-skeleton-line" style="width:48%;height:26px;border-radius:8px;"></div>
+          <div class="rec-skeleton-line" style="width:48%;height:26px;border-radius:8px;"></div>
+        </div>
+      </div>
+    `).join('');
+  }
 }
 
 function _renderError(msg) {
@@ -1071,6 +1134,96 @@ function _injectStyles() {
   transition: opacity 0.22s ease;
 }
 .rec-card:hover .rec-art-overlay { opacity: 1; }
+.rec-chips-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.rec-chip {
+  background: var(--card-bg, rgba(255,255,255,0.06));
+  border: 1px solid var(--glass-border, rgba(255,255,255,0.1));
+  color: var(--text-2, #888);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.rec-chip:hover {
+  background: var(--hover-bg, rgba(255,255,255,0.12));
+  color: var(--text-1, #fff);
+}
+.rec-chip.active {
+  background: var(--sage, #829779);
+  color: #fff;
+  border-color: var(--sage, #829779);
+  box-shadow: 0 2px 8px rgba(130,151,121,0.35);
+}
+.rec-vibe-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 2.5px 8px;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 20px;
+  letter-spacing: 0.3px;
+  z-index: 2;
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+.rec-art-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.32);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.22s ease;
+  z-index: 1;
+}
+.rec-card:hover .rec-art-overlay {
+  opacity: 1;
+}
+.rec-overlay-play {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--sage, #829779);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+  transform: scale(0.88);
+  transition: transform 0.2s ease;
+}
+.rec-card:hover .rec-overlay-play {
+  transform: scale(1);
+}
+.rec-skeleton-card {
+  pointer-events: none;
+  opacity: 0.75;
+}
+.rec-skeleton-box, .rec-skeleton-line {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.04) 75%);
+  background-size: 200% 100%;
+  animation: recShimmer 1.5s infinite;
+  border-radius: 6px;
+}
+@keyframes recShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
 .rec-match-badge { display: none !important; 
   position: absolute;
   top: 8px; right: 8px;
@@ -1244,9 +1397,16 @@ function _injectRecommendationsSection() {
     section.className = 'player-recommendations-section';
     section.innerHTML = `
       <div class="section-header rec-section-header">
-        <h2 class="section-title">
-          🌐 Recommended For You
-        </h2>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <h2 class="section-title">
+            ✨ Recommended For You
+          </h2>
+          <div class="rec-chips-bar" id="rec-chips-bar">
+            <button class="rec-chip active" id="rec-chip-all" onclick="setRecFilter('all', event)">✨ All Vibe</button>
+            <button class="rec-chip" id="rec-chip-similar" onclick="setRecFilter('similar', event)">🎤 Artists</button>
+            <button class="rec-chip" id="rec-chip-hits" onclick="setRecFilter('hits', event)">🔥 Top Hits</button>
+          </div>
+        </div>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <span id="rec-seed-label"></span>
           <button class="see-all-btn rec-refresh-btn" id="rec-refresh-btn" onclick="refreshRecommendations(event)">↻ Refresh</button>

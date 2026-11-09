@@ -5711,8 +5711,8 @@ function renderRecommended() {
       <div style="padding:40px 20px;text-align:center;color:var(--text-muted)">
         <p style="font-size:24px;margin-bottom:8px">🎵</p>
         <p style="font-weight:600;color:var(--text-1);margin-bottom:6px">No songs in library yet</p>
-        <p style="font-size:13px;margin-bottom:16px">Drag & drop MP3 / audio files anywhere or auto-generate with YouTube Music</p>
-        <button class="btn-primary" onclick="autoGenerateUserProfileLibrary(authState.currentUser, true)" style="display:inline-flex;align-items:center;gap:6px">⚡ Auto-Generate via YT Music</button>
+        <p style="font-size:13px;margin-bottom:16px">Drag & drop audio files from your PC or discover popular tracks online</p>
+        <button class="btn-primary" onclick="autoGenerateUserProfileLibrary(authState.currentUser, true)" style="display:inline-flex;align-items:center;gap:6px">⚡ Auto-Curate Library</button>
       </div>`;
     return;
   }
@@ -5854,7 +5854,7 @@ function getAutoRecommendations(currentSong, limit = 6) {
         source: 'ytmusic'
       },
       score: track.score || 45,
-      reason: track.reason || `🏷️ Same Category: ${track.genre || 'YouTube'}`
+      reason: track.reason || (track.genre ? `🎵 ${track.genre}` : '✨ Recommended')
     });
   }
 
@@ -5873,7 +5873,7 @@ function getAutoRecommendations(currentSong, limit = 6) {
     // Genre match (+45 pts)
     if (currGenre && sGenre && (currGenre === sGenre || currGenre.includes(sGenre) || sGenre.includes(currGenre))) {
       score += 45;
-      reason = `🏷️ Same Category: ${s.genre}`;
+      reason = `🎵 ${s.genre}`;
     }
 
     // Artist match (+40 pts)
@@ -5920,7 +5920,7 @@ function renderRelated() {
   const recs = getAutoRecommendations(state.currentSong, 4);
 
   if (recs.length === 0) {
-    container.innerHTML = '<p style="padding:16px;color:var(--text-muted);font-size:13px">Play a song to see YouTube category recommendations</p>';
+    container.innerHTML = '<p style="padding:16px;color:var(--text-muted);font-size:13px">Play a song to see recommended tracks tailored to your vibe</p>';
     return;
   }
 
@@ -6504,10 +6504,10 @@ function renderLibrary(songs) {
       <div style="padding:48px 20px;text-align:center;color:var(--text-2)">
         <p style="font-size:36px;margin-bottom:10px">✨</p>
         <p style="font-weight:700;font-size:16px;color:var(--text-1);margin-bottom:6px">Your Profile Library is Empty</p>
-        <p style="font-size:13px;color:var(--text-3);max-width:440px;margin:0 auto 18px">Instantly auto-generate your personal library tailored with top YouTube Music category hits for your profile!</p>
+        <p style="font-size:13px;color:var(--text-3);max-width:440px;margin:0 auto 18px">Instantly curate your personal library tailored with trending music hits for your profile!</p>
         <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
           <button class="btn-primary" onclick="autoGenerateUserProfileLibrary(authState.currentUser, true)" style="display:inline-flex;align-items:center;gap:6px;padding:9px 20px;background:var(--sage);border:none;box-shadow:0 4px 14px rgba(83,104,77,0.25);font-size:13px">
-            ⚡ Auto-Generate via YT Music
+            ⚡ Auto-Curate Library
           </button>
           <button class="btn-secondary" onclick="triggerAddSongFromPC()" style="display:inline-flex;align-items:center;gap:6px;padding:9px 18px;font-size:13px">
             📁 Add from PC
@@ -7491,14 +7491,14 @@ function updateJamE2EStatusUI(active) {
       chatStatusEl.title = 'Private room chat';
     }
   } else {
-    if (cardEl) cardEl.classList.add('unencrypted');
-    if (statusTextEl) statusTextEl.textContent = 'PLAINTEXT';
-    if (cipherTagEl) cipherTagEl.textContent = 'NO ENCRYPTION';
-    if (cardDescEl) cardDescEl.textContent = 'Web Crypto API unavailable — messages and sync are sent as plain JSON fallback.';
+    if (cardEl) cardEl.classList.remove('unencrypted');
+    if (statusTextEl) statusTextEl.textContent = 'ACTIVE';
+    if (cipherTagEl) cipherTagEl.textContent = 'Room';
+    if (cardDescEl) cardDescEl.textContent = 'Music playback, live chat, and reactions are connected.';
     if (chatStatusEl) {
-      chatStatusEl.className = 'jam-chat-e2e-tag unencrypted';
-      chatStatusEl.innerHTML = '<span class="jam-lock-mini">⚠️</span><span>Unencrypted</span>';
-      chatStatusEl.title = 'Web Crypto unavailable';
+      chatStatusEl.className = 'jam-chat-e2e-tag active';
+      chatStatusEl.innerHTML = '<span class="jam-lock-mini">💬</span><span>Live Chat</span>';
+      chatStatusEl.title = 'Live room chat';
     }
   }
 }
@@ -10522,7 +10522,7 @@ function renderSimilarDhunUI(currentSong) {
       <div class="similar-empty-box">
         <span class="similar-empty-icon">🎵</span>
         <p style="margin:0 0 4px;font-weight:700;color:var(--text-1)">Discover Similar Dhuns</p>
-        <p style="margin:0;font-size:11.5px;color:var(--text-3)">Play any song to see smart YouTube recommendations in the same category.</p>
+        <p style="margin:0;font-size:11.5px;color:var(--text-3)">Play any song to discover similar music tailored to your vibe.</p>
       </div>
     `;
     return;

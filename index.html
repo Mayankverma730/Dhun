@@ -891,7 +891,7 @@
                   <div class="dhun-info-hero" style="display:flex;align-items:center;gap:16px;margin-bottom:16px;padding:12px 14px;border-radius:14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);">
                     <img id="hub-info-art" src="album1.jpg" alt="Album Cover" onerror="this.onerror=null;this.src='album1.jpg'" style="width:72px;height:72px;border-radius:10px;object-fit:cover;box-shadow:0 8px 24px rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.15);flex-shrink:0;" />
                     <div style="flex:1;min-width:0;">
-                      <span style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);font-weight:700;">YouTube Music Album Photo</span>
+                      <span style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);font-weight:700;">NOW PLAYING</span>
                       <h3 id="hub-info-title" style="margin:2px 0 4px;font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-1);">Song Title</h3>
                       <p id="hub-info-artist" style="margin:0;font-size:12px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Artist · Album</p>
                     </div>
@@ -1164,7 +1164,14 @@
         <!-- Recommended For You Under Now Playing [T5-06] -->
         <section id="recommendations" class="player-recommendations-section">
           <div class="section-header rec-section-header">
-            <h2 class="section-title">🌐 Recommended For You</h2>
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <h2 class="section-title">✨ Recommended For You</h2>
+              <div class="rec-chips-bar" id="rec-chips-bar">
+                <button class="rec-chip active" id="rec-chip-all" onclick="setRecFilter('all', event)">✨ All Vibe</button>
+                <button class="rec-chip" id="rec-chip-similar" onclick="setRecFilter('similar', event)">🎤 Artists</button>
+                <button class="rec-chip" id="rec-chip-hits" onclick="setRecFilter('hits', event)">🔥 Top Hits</button>
+              </div>
+            </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
               <span id="rec-seed-label"></span>
               <button class="see-all-btn rec-refresh-btn" id="rec-refresh-btn" onclick="refreshRecommendations(event)">↻ Refresh</button>
@@ -1193,7 +1200,7 @@
             <div class="profile-actions">
               <button class="btn-primary" onclick="toggleEditProfile()" id="edit-profile-btn">✏️ Edit Profile</button>
               <button class="btn-secondary" onclick="openProfileCoverModal()" id="pcover-action-btn" title="Customize Profile Banner">🎨 Change Cover</button>
-              <button class="btn-secondary" onclick="autoGenerateUserProfileLibrary(authState.currentUser, true)" id="auto-gen-profile-lib-btn" title="Auto-Generate / Refresh Profile Library via YouTube Music Suggestions" style="display:inline-flex;align-items:center;gap:6px">⚡ Auto-Generate Library (YT)</button>
+              <button class="btn-secondary" onclick="autoGenerateUserProfileLibrary(authState.currentUser, true)" id="auto-gen-profile-lib-btn" title="Curate / Refresh Profile Library with Trending Music" style="display:inline-flex;align-items:center;gap:6px">⚡ Auto-Curate Library</button>
               <button class="btn-secondary" onclick="triggerProfileCloudSync(this)" id="sync-profile-btn" title="Sync Profile & Playlists Across Devices">☁️ Sync Devices</button>
             </div>
 
@@ -1306,8 +1313,8 @@
               <option value="plays">Sort: Most Played</option>
               <option value="rating">Sort: Top Rated</option>
             </select>
-            <button class="btn-primary" onclick="autoGenerateUserProfileLibrary(authState.currentUser, true)" style="padding:8px 16px;font-size:13px;display:inline-flex;align-items:center;gap:6px;background:var(--sage);border:none;box-shadow:0 2px 10px rgba(83,104,77,0.25)" title="Auto-Generate Profile Library via YouTube Music Suggestions">
-              ⚡ Auto-Generate via YT
+            <button class="btn-primary" onclick="autoGenerateUserProfileLibrary(authState.currentUser, true)" style="padding:8px 16px;font-size:13px;display:inline-flex;align-items:center;gap:6px;background:var(--sage);border:none;box-shadow:0 2px 10px rgba(83,104,77,0.25)" title="Auto-Curate Profile Library with Trending Music">
+              ⚡ Auto-Curate
             </button>
             <button class="btn-primary btn-add-pc" onclick="triggerAddSongFromPC()" style="padding:8px 18px;font-size:13px;display:inline-flex;align-items:center;gap:6px">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -1496,7 +1503,7 @@
         <button class="btn-secondary" onclick="hideAddSongModal()">Cancel</button>
       </div>
       <p style="margin-top:16px;font-size:12px;color:var(--text-2)">
-        Data stored in C backend via Doubly Linked List + BST + Hash Table
+        Songs are saved directly to your personal music library.
       </p>
     </div>
   </div>
