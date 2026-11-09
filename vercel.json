@@ -1,10 +1,5 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "redirects": [
-    { "source": "/test_dsa.c", "destination": "/", "permanent": false },
-    { "source": "/server.c", "destination": "/", "permanent": false },
-    { "source": "/benchmark.c", "destination": "/", "permanent": false }
-  ],
+  "version": 2,
   "rewrites": [
     { "source": "/api/songs/:id/play",    "destination": "/api/songs/[id]?action=play" },
     { "source": "/api/songs/:id/like",    "destination": "/api/songs/[id]?action=like" },
@@ -21,7 +16,7 @@
   ],
   "headers": [
     {
-      "source": "/api/:path*",
+      "source": "/api/(.*)",
       "headers": [
         { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,DELETE,OPTIONS" },
         { "key": "Access-Control-Allow-Headers", "value": "Content-Type,Authorization,X-User-Id,X-Host-Token" },
@@ -29,7 +24,7 @@
       ]
     },
     {
-      "source": "/:path*",
+      "source": "/(.*)",
       "headers": [
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "X-Frame-Options",        "value": "SAMEORIGIN" },
