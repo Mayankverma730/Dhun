@@ -3067,46 +3067,26 @@ const DhunAuth = {
       return;
     }
 
-    const user = this.findUser(email);
-    let resetToken = null;
-
-    if (user) {
-      const randomHex = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-        .map(b => b.toString(16).padStart(2, '0')).join('');
-      resetToken = `rst_${randomHex}`;
-      const tokens = getPasswordResetTokens();
-      tokens.push({
-        token: resetToken,
-        email: user.email,
-        expiresAt: Date.now() + 15 * 60 * 1000,
-        used: false
-      });
-      savePasswordResetTokens(tokens);
-    }
-
     try {
-      fetch('/api/forgot-password', {
+      const response = await fetch('/api/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
-      }).catch(() => {});
-    } catch(e) {}
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Password reset service is unavailable.');
 
-    if (statusEl) {
-      let html = `<div class="auth-status-banner">✉️ <strong>Notice:</strong> If an account exists for <em>${escapeHtml(email)}</em>, a password reset link has been dispatched.</div>`;
-      if (resetToken) {
-        html += `
-          <div class="reset-simulation-card">
-            <div class="sim-title"><span>📧</span> Quick Test Simulation: Reset Link Generated</div>
-            <p style="margin:4px 0 0;font-size:12px;color:var(--text-2);">For immediate testing without email delivery, click below:</p>
-            <a class="sim-link" onclick="DhunAuth.openResetWithToken('${resetToken}', ${isModal})">
-              Click to Open Password Reset Screen →
-            </a>
-          </div>
-        `;
+      if (statusEl) {
+        statusEl.innerHTML = `<div class="auth-status-banner">✉️ <strong>Notice:</strong> ${escapeHtml(result.message || 'If an account exists, reset instructions will be sent shortly.')}</div>`;
+        statusEl.style.display = 'block';
       }
-      statusEl.innerHTML = html;
-      statusEl.style.display = 'block';
+      showToast('📬 If your account exists, reset instructions will be sent shortly.');
+    } catch (error) {
+      if (statusEl) {
+        statusEl.innerHTML = `<div class="auth-status-banner warning">⚠️ ${escapeHtml(error.message || 'Password reset service is unavailable. Please try again later.')}</div>`;
+        statusEl.style.display = 'block';
+      }
+      showToast('⚠️ Password reset service is unavailable. Please try again later.');
     }
   },
 
@@ -3152,31 +3132,34 @@ const DhunAuth = {
       return;
     }
 
-    const tokens = getPasswordResetTokens();
-    const entry = tokens.find(t => t.token === token && !t.used);
-    if (!entry || Date.now() > entry.expiresAt) {
-      showToast('❌ Reset link has expired or was already used.');
+    let result;
+    try {
+      const response = await fetch('/api/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, newPassword })
+      });
+      result = await response.json().catch(() => ({}));
+      if (!response.ok || !(result.success || result.status === 'ok')) {
+        throw new Error(result.error || 'This reset link is invalid or has expired.');
+      }
+    } catch (error) {
+      showToast(`❌ ${error.message || 'Password reset failed. Please request a new link.'}`);
+      if (statusEl) {
+        statusEl.innerHTML = `<div class="auth-status-banner warning">⚠️ ${escapeHtml(error.message || 'Password reset failed. Please request a new link.')}</div>`;
+        statusEl.style.display = 'block';
+      }
       return;
     }
 
+    // Keep this browser's local sign-in copy in sync only after the server accepts the one-time token.
     const users = this.getUsers();
-    const user = users.find(u => u.email && u.email.toLowerCase() === entry.email.toLowerCase());
+    const user = users.find(account => account.email && account.email.toLowerCase() === String(result.email || '').toLowerCase());
     if (user) {
       user.passwordHash = await hashClientPassword(newPassword, user.id);
       delete user.password;
       this.saveUsers(users);
     }
-
-    entry.used = true;
-    savePasswordResetTokens(tokens);
-
-    try {
-      fetch('/api/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, newPassword })
-      }).catch(() => {});
-    } catch(e) {}
 
     if (statusEl) {
       statusEl.innerHTML = '<div class="auth-status-banner success">🎉 <strong>Password updated!</strong> Switching to sign in...</div>';
@@ -3187,7 +3170,7 @@ const DhunAuth = {
     setTimeout(() => {
       this.setTab('signin', isModal);
       const emailField = document.getElementById(isModal ? 'signin-email' : 'gate-signin-email');
-      if (emailField && entry.email) emailField.value = entry.email;
+      if (emailField && result.email) emailField.value = result.email;
       const passField = document.getElementById(isModal ? 'signin-password' : 'gate-signin-password');
       if (passField) { passField.value = ''; passField.focus(); }
     }, 1200);

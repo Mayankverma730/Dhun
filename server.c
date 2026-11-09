@@ -2106,7 +2106,8 @@ static void route_reset_password(SOCKET sock, const char *body)
 {
     char token[64] = {0}, password[128] = {0};
     json_str(body, "token", token, sizeof(token));
-    json_str(body, "password", password, sizeof(password));
+    json_str(body, "newPassword", password, sizeof(password));
+    if (!password[0]) json_str(body, "password", password, sizeof(password)); /* Keep older clients compatible. */
 
     if (!token[0] || !password[0]) {
         send_error(sock, 400, "token and new password required");
@@ -2149,7 +2150,11 @@ static void route_reset_password(SOCKET sock, const char *body)
     memset(u->session_token, 0, sizeof(u->session_token)); /* Finding 15: Revoke all active sessions on password reset */
     found_token->used = 1;
 
-    send_ok(sock, "{\"status\":\"ok\",\"message\":\"Password updated successfully\"}");
+    char esc_email[256], response[512];
+    json_escape(u->email, esc_email, sizeof(esc_email));
+    snprintf(response, sizeof(response),
+        "{\"status\":\"ok\",\"message\":\"Password updated successfully\",\"email\":\"%s\"}", esc_email);
+    send_ok(sock, response);
 }
 
 /* POST /api/logout — receives the FULL raw HTTP request to access headers */

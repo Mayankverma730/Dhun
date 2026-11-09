@@ -59,7 +59,9 @@ module.exports = async (req, res) => {
 
   return res.status(200).json({
     success: true,
-    message: 'Password successfully updated. Please sign in with your new password.'
+    message: 'Password successfully updated. Please sign in with your new password.',
+    // The token holder can sync the browser's local account copy after server validation.
+    email: user.email
   });
 };
 
