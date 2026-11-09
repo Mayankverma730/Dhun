@@ -6,7 +6,7 @@
  * Findings 11 & 12: Uses persistent store and isolates anonymous guest history.
  */
 
-const { loadStore, saveStore, setCORS, getCallerIdentity } = require('./_store');
+const { loadStore, saveStore, setCORS, getCallerIdentity, parsePositiveId } = require('./_store');
 
 module.exports = async (req, res) => {
   setCORS(req, res);
@@ -39,8 +39,8 @@ module.exports = async (req, res) => {
 
     // Push to history with validation
     if (body && body.song_id !== undefined) {
-      const songId = Number(body.song_id);
-      if (!Number.isSafeInteger(songId) || songId <= 0 || songId > 10000000) {
+      const songId = parsePositiveId(body.song_id, 10000000);
+      if (songId === null) {
         return res.status(400).json({ error: 'Valid positive integer song_id required' });
       }
 

@@ -36,6 +36,12 @@ function safeDictionary(value) {
   return Object.assign(Object.create(null), value);
 }
 
+function parsePositiveId(value, max = Number.MAX_SAFE_INTEGER) {
+  const isDecimalString = typeof value === 'string' && /^\d+$/.test(value.trim());
+  const number = typeof value === 'number' ? value : (isDecimalString ? Number(value) : NaN);
+  return Number.isSafeInteger(number) && number > 0 && number <= max ? number : null;
+}
+
 function loadStore() {
   if (_memoryStore) return _memoryStore;
   try {
@@ -213,6 +219,7 @@ module.exports = {
   hashPassword,
   verifyPasswordHash,
   setCORS,
+  parsePositiveId,
   getCallerIdentity,
   getUserPlaylistBucket,
   getUserSongLikes

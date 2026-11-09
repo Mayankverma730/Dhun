@@ -6,15 +6,15 @@
  * DELETE /api/songs/:id       → delete song (requires authorization)
  */
 
-const { loadStore, saveStore, setCORS, getCallerIdentity, getUserSongLikes } = require('../_store');
+const { loadStore, saveStore, setCORS, getCallerIdentity, getUserSongLikes, parsePositiveId } = require('../_store');
 
 module.exports = async (req, res) => {
   setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const { id, action } = req.query;
-  const songId = Number(id);
-  if (!Number.isSafeInteger(songId) || songId <= 0) {
+  const songId = parsePositiveId(id);
+  if (songId === null) {
     return res.status(400).json({ error: 'Valid positive integer song ID required' });
   }
 

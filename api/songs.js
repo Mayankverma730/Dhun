@@ -13,6 +13,7 @@ const { loadStore, saveStore, setCORS, getCallerIdentity, getUserSongLikes } = r
 function finiteNumber(value) {
   if (typeof value !== 'number' && typeof value !== 'string') return NaN;
   if (typeof value === 'string' && !value.trim()) return NaN;
+  if (typeof value === 'string' && !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(value.trim())) return NaN;
   const number = Number(value);
   return Number.isFinite(number) ? number : NaN;
 }

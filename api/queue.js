@@ -7,7 +7,7 @@
  * Findings 11 & 12: Uses persistent store and isolates anonymous guest queues.
  */
 
-const { loadStore, saveStore, setCORS, getCallerIdentity } = require('./_store');
+const { loadStore, saveStore, setCORS, getCallerIdentity, parsePositiveId } = require('./_store');
 
 module.exports = async (req, res) => {
   setCORS(req, res);
@@ -32,8 +32,8 @@ module.exports = async (req, res) => {
     }
     if (!body || body.song_id === undefined) return res.status(400).json({ error: 'song_id required' });
 
-    const songId = Number(body.song_id);
-    if (!Number.isSafeInteger(songId) || songId <= 0 || songId > 10000000) {
+    const songId = parsePositiveId(body.song_id, 10000000);
+    if (songId === null) {
       return res.status(400).json({ error: 'Valid positive integer song_id required' });
     }
 
@@ -64,8 +64,8 @@ module.exports = async (req, res) => {
     }
     const hasRemoveId = req.query.song_id !== undefined || (body && body.song_id !== undefined);
     if (hasRemoveId) {
-      const removeId = Number(req.query.song_id !== undefined ? req.query.song_id : body.song_id);
-      if (!Number.isSafeInteger(removeId) || removeId <= 0) {
+      const removeId = parsePositiveId(req.query.song_id !== undefined ? req.query.song_id : body.song_id);
+      if (removeId === null) {
         return res.status(400).json({ error: 'Valid positive integer song_id required' });
       }
       const idx = queue.findIndex(item => item.song_id === removeId);

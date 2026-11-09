@@ -7,15 +7,15 @@
  * DELETE /api/playlists/:id/songs  → remove song from playlist
  */
 
-const { loadStore, saveStore, setCORS, getUserPlaylistBucket } = require('../_store');
+const { loadStore, saveStore, setCORS, getUserPlaylistBucket, parsePositiveId } = require('../_store');
 
 module.exports = async (req, res) => {
   setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const { id } = req.query;
-  const plId = Number(id);
-  if (!Number.isSafeInteger(plId) || plId <= 0) {
+  const plId = parsePositiveId(id);
+  if (plId === null) {
     return res.status(400).json({ error: 'Valid positive integer playlist ID required' });
   }
 
