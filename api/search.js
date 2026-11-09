@@ -151,19 +151,43 @@ module.exports = async (req, res) => {
           continue;
         }
 
-        const cleanTitle = rawTitle
-          .replace(/\s*[\(\[](?:Official\s+(?:Music\s+)?(?:Video|Audio|Song|Lyric\s+Video)|Audio|Video|HD|4K|Visualizer|Lyrics)[\)\]]/gi, '')
-          .replace(/\|.*$/g, '')
+        // Clean and extract core song title
+        let cleanTitle = rawTitle;
+        // A single slash may be part of a song title; only split on known suffix separators.
+        cleanTitle = cleanTitle.split(/\||\/\/|•/)[0];
+        // Remove known video labels while preserving meaningful parenthetical title text.
+        cleanTitle = cleanTitle.replace(/\s*[\(\[]\s*(?:(?:official\s+)?(?:music\s+)?(?:video|audio|song|lyric\s+video|lyrics?|visualizer)|(?:hd|4k|8k|remix|remaster(?:ed)?))\s*[\)\]]/gi, '');
+        // If format 'Artist - Song' or 'Song - Artist'
+        if (cleanTitle.includes(' - ')) {
+          const parts = cleanTitle.split(' - ');
+          if (/[,\&]|ft\b|feat\b|\bx\b/i.test(parts[0])) {
+            cleanTitle = parts[1];
+          } else if (/[,\&]|ft\b|feat\b|\bx\b/i.test(parts[1])) {
+            cleanTitle = parts[0];
+          } else {
+            cleanTitle = parts[0];
+          }
+        }
+        // Strip music boilerplate words
+        cleanTitle = cleanTitle
+          .replace(/\b(?:Full\s+(?:Video\s+)?Song|Official\s+(?:Music\s+)?(?:Video|Audio|Song|Lyric\s+Video)|Lyric\s+Video|Lyrical\s+(?:Video|Song)|Video\s+Song|Audio\s+Song|HD|4K|8K|Visualizer|Lyrics|Remix|Song)\b/gi, '')
           .trim();
 
+        if (!cleanTitle) cleanTitle = rawTitle.trim() || 'Track';
+
         const rawArtist = v.ownerText?.runs?.[0]?.text || 'YouTube Artist';
-        const cleanArtist = rawArtist.replace(/\s*-\s*Topic$/i, '').trim();
+        let cleanArtist = rawArtist.replace(/\s*-\s*Topic$/i, '').trim();
+        // If channel is a known record label/distributor and the user searched for an artist, attribute to searched artist
+        if (/t-series|sony\s*music|zee\s*music|tips|speed\s*records|yrf|saregama|eros/i.test(cleanArtist) && !isCategory && q.length > 2) {
+          cleanArtist = q.charAt(0).toUpperCase() + q.slice(1);
+        }
 
         const normTitle = cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
         const normArtist = cleanArtist.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const songKey = normTitle ? `${normTitle}:::${normArtist}` : '';
-        if (songKey && seenTitles.has(songKey)) {
-          continue;
+        if (!normTitle) continue;
+        const titleKey = `${normTitle}:::${normArtist}`;
+        if (seenTitles.has(titleKey)) {
+          continue; // Keep same-title songs by different artists while dropping duplicate uploads.
         }
 
         const durText = v.lengthText?.simpleText || '3:30';
@@ -186,7 +210,7 @@ module.exports = async (req, res) => {
         }
 
         seenIds.add(v.videoId);
-        if (songKey) seenTitles.add(songKey);
+        seenTitles.add(titleKey);
 
         const genre = detectGenre(cleanTitle, cleanArtist, q);
 

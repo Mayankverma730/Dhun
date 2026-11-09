@@ -90,7 +90,7 @@ const YTMusicAPI = (() => {
 
       if (vid) seenIds.add(vid);
       if (titleKey) seenTitles.add(titleKey);
-      unique.push(t);
+      unique.push({ ...t, title: cleanT });
     }
     return unique;
   }
@@ -219,7 +219,7 @@ const YTMusicAPI = (() => {
       const title = cleanSongTitle(item.title || 'Unknown Title');
       const artist = cleanArtistName(item.author || item.artist || 'YouTube Artist');
       const normTitle = title.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const normArtist = artist.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normArtist = cleanArtistName(artist).toLowerCase().replace(/[^a-z0-9]/g, '');
       const titleKey = normTitle ? `${normTitle}:::${normArtist}` : '';
       if (titleKey && seenTitles.has(titleKey)) continue;
 
@@ -292,14 +292,29 @@ const YTMusicAPI = (() => {
   }
 
   /**
-   * Clean titles by removing redundant strings like "(Official Video)", "4K", etc.
+   * Clean titles by removing redundant strings like "(Official Video)", "4K", movie suffixes, etc.
    */
   function cleanSongTitle(str) {
     if (!str) return 'Untitled';
-    return str
-      .replace(/\s*[\(\[](?:Official\s+(?:Music\s+)?(?:Video|Audio|Song|Lyric\s+Video)|Audio|Video|HD|4K|Visualizer|Lyrics)[\)\]]/gi, '')
-      .replace(/\|.*$/g, '')
-      .trim();
+    let s = String(str);
+    // Treat separators as suffix markers only; a single slash can be part of a song title.
+    s = s.split(/\||\/\/|•/)[0];
+    // Remove known video labels without deleting meaningful title text in parentheses.
+    s = s.replace(/\s*[\(\[]\s*(?:(?:official\s+)?(?:music\s+)?(?:video|audio|song|lyric\s+video|lyrics?|visualizer)|(?:hd|4k|8k|remix|remaster(?:ed)?))\s*[\)\]]/gi, '');
+    // If format 'Artist - Song' or 'Song - Artist'
+    if (s.includes(' - ')) {
+      const parts = s.split(' - ');
+      if (/[,\&]|ft\b|feat\b|\bx\b/i.test(parts[0])) {
+        s = parts[1];
+      } else if (/[,\&]|ft\b|feat\b|\bx\b/i.test(parts[1])) {
+        s = parts[0];
+      } else {
+        s = parts[0];
+      }
+    }
+    // Strip music boilerplate words
+    s = s.replace(/\b(?:Full\s+(?:Video\s+)?Song|Official\s+(?:Music\s+)?(?:Video|Audio|Song|Lyric\s+Video)|Lyric\s+Video|Lyrical\s+(?:Video|Song)|Video\s+Song|Audio\s+Song|HD|4K|8K|Visualizer|Lyrics|Remix|Song)\b/gi, '').trim();
+    return s || String(str).trim() || 'Track';
   }
 
   function cleanArtistName(str) {

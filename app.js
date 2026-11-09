@@ -312,7 +312,7 @@ function onYTPlayerStateChange(event) {
     updatePlayUI();
     stopYTSimulatedBeatFFT();
   } else if (event.data === YT.PlayerState.ENDED) {
-    if (typeof DhunTasteSignals !== 'undefined') DhunTasteSignals.markPlaybackCompleted(state.currentSong);
+    if (typeof DhunTasteSignals !== 'undefined') DhunTasteSignals.markPlaybackCompleted();
     stopYTSimulatedBeatFFT();
     if (state.isRepeat) {
       state.progress = 0;
@@ -948,7 +948,7 @@ function resolveAudioSource(song) {
 }
 
 globalAudioPlayer.addEventListener('ended', () => {
-  if (typeof DhunTasteSignals !== 'undefined') DhunTasteSignals.markPlaybackCompleted(state.currentSong);
+  if (typeof DhunTasteSignals !== 'undefined') DhunTasteSignals.markPlaybackCompleted();
   if (state.isRepeat) {
     globalAudioPlayer.currentTime = 0;
     state.progress = 0;
@@ -4227,7 +4227,10 @@ window.addEventListener('click', e => {
 
 /* ── Like / Heart (Strictly Isolated Per User) ─────────────────── */
 function getUserLikedSet() {
-  if (!authState.currentUser) return new Set();
+  const user = (typeof authState !== 'undefined' && authState.currentUser)
+    ? authState.currentUser
+    : ((typeof global !== 'undefined' && global.authState && global.authState.currentUser) ? global.authState.currentUser : null);
+  if (!user) return new Set();
   try {
     const raw = localStorage.getItem(getUserStorageKey('likes'));
     if (raw) return new Set(JSON.parse(raw));
@@ -5889,7 +5892,7 @@ const DhunTasteSignals = {
     }
   },
 
-  markPlaybackCompleted(song) {
+  markPlaybackCompleted() {
     if (this._activeSession && !this._activeSession.finished) {
       // Defer the completion signal until session close so one ended event counts once.
       this._activeSession.completed = true;
@@ -12504,6 +12507,18 @@ const importYTMusicSongToLibrary = autoAddTrackToLibrary;
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    state,
+    jamState,
+    openPlayerById,
+    startPlaying,
+    stopPlaying,
+    nextSong,
+    toggleLike,
+    startJamSession,
+    handleJamMessageData,
+    kickJamMember,
+    leaveJamSession,
+    broadcastJam,
     DhunTasteSignals,
     DhunRecommendationMetrics,
     DhunRecommendationEngine,

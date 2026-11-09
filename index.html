@@ -8,7 +8,7 @@
   <title>Dhun – Music for every little moment</title>
   <meta name="description"
     content="Dhun – Music for every little moment. An artistic, warm and premium music experience." />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' blob: https://cdn.jsdelivr.net https://www.youtube.com https://accounts.google.com; worker-src 'self' blob:; child-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://*.googleusercontent.com https://lastfm.freetls.fastly.net https://*.last.fm https://is1-ssl.mzstatic.com https://is2-ssl.mzstatic.com https://is3-ssl.mzstatic.com https://is4-ssl.mzstatic.com https://is5-ssl.mzstatic.com; media-src 'self' blob: data: https://audio-ssl.itunes.apple.com; connect-src 'self' wss: wss://* https://*; frame-src 'self' https://www.youtube.com https://accounts.google.com;" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' blob: https://cdn.jsdelivr.net https://www.youtube.com https://accounts.google.com; worker-src 'self' blob:; child-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://*.googleusercontent.com https://lastfm.freetls.fastly.net https://*.last.fm https://is1-ssl.mzstatic.com https://is2-ssl.mzstatic.com https://is3-ssl.mzstatic.com https://is4-ssl.mzstatic.com https://is5-ssl.mzstatic.com; media-src 'self' blob: data: https://audio-ssl.itunes.apple.com; connect-src 'self' http://localhost:3000 http://127.0.0.1:3000 https://*.vercel.app https://ws.audioscrobbler.com https://itunes.apple.com https://www.youtube.com https://accounts.google.com https://invidious.f5.si https://inv.vern.cc https://yewtu.be wss://broker.emqx.io:8084 wss://broker.hivemq.com:8884; frame-src 'self' https://www.youtube.com https://accounts.google.com;" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..800;1,9..40,300..800&family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,600;0,700;1,400;1,600&family=Outfit:wght@400;500;600;700&display=swap"
@@ -17,36 +17,7 @@
   <link rel="apple-touch-icon" href="logo.png" />
   <link rel="stylesheet" href="style.css?v=35.0" />
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script>
-    (function () {
-      try {
-        var t = localStorage.getItem('vibe-theme');
-        if (t === 'dark') {
-          document.documentElement.setAttribute('data-theme', 'dark');
-        } else if (t === 'light') {
-          document.documentElement.setAttribute('data-theme', 'light');
-        } else {
-          document.documentElement.removeAttribute('data-theme');
-        }
-      } catch (e) {}
-
-      // If user opened directly via file://, show banner and offer redirect to http://localhost:3000
-      // to eliminate YouTube Error 153 (YouTube blocks media playback on file:// protocol)
-      if (window.location.protocol === 'file:') {
-        var banner = document.getElementById('file-protocol-banner');
-        if (banner) banner.style.display = 'block';
-        
-        // Try to detect if server is running, then auto-redirect
-        fetch('http://127.0.0.1:3000/api/songs', { mode: 'cors' })
-          .then(function(res) {
-            if (res.ok && confirm('YouTube blocks playback on file:// protocol. Redirect to http://localhost:3000?')) {
-              window.location.replace('http://localhost:3000');
-            }
-          })
-          .catch(function() {});
-      }
-    })();
-  </script>
+  <script src="js/preloader.js?v=1.0"></script>
 </head>
 
 <body>
@@ -2166,8 +2137,8 @@
   <script src="js/api.js?v=2.6"></script>
 
   <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.5/dist/mqtt.min.js" crossorigin="anonymous"></script>
-  <script src="ytmusic_api.js?v=35.0"></script>
-  <script src="app.js?v=42.0"></script>
+  <script src="ytmusic_api.js?v=36.0"></script>
+  <script src="app.js?v=43.0"></script>
   <!-- Last.fm + iTunes Global Recommendation Engine -->
   <script src="recommend.js?v=12.0"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
