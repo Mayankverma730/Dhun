@@ -69,6 +69,33 @@ const YTMusicAPI = (() => {
   }
 
   /**
+   * Helper to deduplicate track arrays by YouTube videoId and normalized title/artist
+   */
+  function deduplicateTracks(tracks) {
+    if (!Array.isArray(tracks)) return [];
+    const seenIds = new Set();
+    const seenTitles = new Set();
+    const unique = [];
+    for (const t of tracks) {
+      if (!t) continue;
+      const vid = (t.videoId || (typeof t.id === 'string' && t.id.startsWith('yt_') ? t.id.replace(/^yt_/, '') : '') || '').trim();
+      const cleanT = cleanSongTitle(t.title || '');
+      const cleanA = cleanArtistName(t.artist || '');
+      const normTitle = cleanT.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normArtist = cleanA.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const titleKey = normTitle ? `${normTitle}:::${normArtist}` : '';
+
+      if (vid && seenIds.has(vid)) continue;
+      if (titleKey && seenTitles.has(titleKey)) continue;
+
+      if (vid) seenIds.add(vid);
+      if (titleKey) seenTitles.add(titleKey);
+      unique.push(t);
+    }
+    return unique;
+  }
+
+  /**
    * Search for songs exclusively on YouTube Music with automatic failover
    */
   async function search(query, maxResults = 25) {
@@ -128,9 +155,9 @@ const YTMusicAPI = (() => {
                   });
                 }
               }
-              if (merged.length > 0) return merged.slice(0, maxResults);
+              if (merged.length > 0) return deduplicateTracks(merged).slice(0, maxResults);
             } else if (data.length > 0) {
-              return data.slice(0, maxResults);
+              return deduplicateTracks(data).slice(0, maxResults);
             }
           }
         }
@@ -158,7 +185,7 @@ const YTMusicAPI = (() => {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
           const norm = normalizeResults(data, maxResults);
-          if (norm && norm.length > 0) return norm;
+          if (norm && norm.length > 0) return deduplicateTracks(norm).slice(0, maxResults);
         }
       } catch (err) {
         rotateInstance();
@@ -167,9 +194,9 @@ const YTMusicAPI = (() => {
 
     // 4. Fallback exclusively to curated YouTube Music library with smart fuzzy matching
     if (isCategory) {
-      return getCategoryRecommendations(q, maxResults);
+      return deduplicateTracks(getCategoryRecommendations(q, maxResults)).slice(0, maxResults);
     }
-    return getCuratedFallback(q);
+    return deduplicateTracks(getCuratedFallback(q)).slice(0, maxResults);
   }
 
   /**
@@ -177,6 +204,8 @@ const YTMusicAPI = (() => {
    */
   function normalizeResults(items, limit = 25) {
     const list = [];
+    const seenIds = new Set();
+    const seenTitles = new Set();
     for (const item of items) {
       if (!item) continue;
       const rawVid = item.videoId || item.id;
@@ -185,8 +214,18 @@ const YTMusicAPI = (() => {
       const vidMatch = rawVid.match(/^[a-zA-Z0-9_-]{11}$/);
       if (!vidMatch) continue;
       const vid = vidMatch[0];
+      if (seenIds.has(vid)) continue;
+
       const title = cleanSongTitle(item.title || 'Unknown Title');
-      const artist = item.author || 'YouTube Artist';
+      const artist = cleanArtistName(item.author || item.artist || 'YouTube Artist');
+      const normTitle = title.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normArtist = artist.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const titleKey = normTitle ? `${normTitle}:::${normArtist}` : '';
+      if (titleKey && seenTitles.has(titleKey)) continue;
+
+      seenIds.add(vid);
+      if (titleKey) seenTitles.add(titleKey);
+
       const durationSec = Math.max(30, Number(item.lengthSeconds) || 210);
       const durMinutes = Number((durationSec / 60).toFixed(2));
 
@@ -362,7 +401,8 @@ const YTMusicAPI = (() => {
 
   function getTrending(category = 'trending') {
     const list = TRENDING_FEEDS[category] || TRENDING_FEEDS.trending;
-    return list.map(item => ({
+    const unique = deduplicateTracks(list);
+    return unique.map(item => ({
       ...item,
       id: `yt_${item.videoId}`,
       thumbnail: `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`,
@@ -386,22 +426,24 @@ const YTMusicAPI = (() => {
       ...TRENDING_FEEDS.hiphop
     ];
 
+    const uniquePool = deduplicateTracks(all);
+
     // 1. Exact or substring match across title, artist, genre, album
-    let matches = all.filter(t => {
+    let matches = uniquePool.filter(t => {
       const full = `${t.title} ${t.artist} ${t.genre} ${t.album || ''}`.toLowerCase();
       return full.includes(q);
     });
 
     // 2. Multi-word keyword match if exact substring didn't match
     if (matches.length === 0 && words.length > 0) {
-      matches = all.filter(t => {
+      matches = uniquePool.filter(t => {
         const full = `${t.title} ${t.artist} ${t.genre} ${t.album || ''}`.toLowerCase();
         return words.some(w => full.includes(w));
       });
     }
 
     if (matches.length > 0) {
-      return matches.map(m => ({
+      return deduplicateTracks(matches).map(m => ({
         ...m,
         id: `yt_${m.videoId}`,
         thumbnail: `https://i.ytimg.com/vi/${m.videoId}/hqdefault.jpg`,
@@ -426,7 +468,8 @@ const YTMusicAPI = (() => {
       ...TRENDING_FEEDS.romantic,
       ...TRENDING_FEEDS.hiphop
     ];
-    for (const item of all) {
+    const uniquePool = deduplicateTracks(all);
+    for (const item of uniquePool) {
       const it = cleanSongTitle(item.title).toLowerCase().trim();
       if (cleanT.includes(it) || it.includes(cleanT)) {
         return item.videoId;
@@ -503,7 +546,8 @@ const YTMusicAPI = (() => {
   function getCategoryRecommendations(category = 'trending', limit = 8) {
     const key = normalizeCategoryKey(category);
     let list = TRENDING_FEEDS[key] || TRENDING_FEEDS.trending;
-    return list.slice(0, limit).map(item => ({
+    const unique = deduplicateTracks(list);
+    return unique.slice(0, limit).map(item => ({
       ...item,
       id: `yt_${item.videoId}`,
       thumbnail: `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`,
@@ -604,6 +648,7 @@ const YTMusicAPI = (() => {
   return {
     search,
     searchTracks: search,
+    deduplicateTracks,
     getSuggestions,
     getTrending,
     getTrendingFeed: getTrending,
@@ -618,4 +663,11 @@ const YTMusicAPI = (() => {
     extractVideoId
   };
 })();
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = YTMusicAPI;
+}
+if (typeof window !== 'undefined') {
+  window.YTMusicAPI = YTMusicAPI;
+}
 

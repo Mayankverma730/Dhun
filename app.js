@@ -6741,6 +6741,24 @@ async function performYTMusicSearch(query) {
 
       hideSuggestions();
 
+      // Deduplicate tracks defensively by videoId and title
+      if (Array.isArray(tracks)) {
+        const seenVids = new Set();
+        const seenTitles = new Set();
+        tracks = tracks.filter(t => {
+          if (!t) return false;
+          const vid = (t.videoId || (typeof t.id === 'string' && t.id.startsWith('yt_') ? t.id.replace(/^yt_/, '') : '') || '').trim();
+          const normT = (t.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const normA = (t.artist || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const key = normT ? `${normT}:::${normA}` : '';
+          if (vid && seenVids.has(vid)) return false;
+          if (key && seenTitles.has(key)) return false;
+          if (vid) seenVids.add(vid);
+          if (key) seenTitles.add(key);
+          return true;
+        });
+      }
+
       if (isCat && Array.isArray(tracks)) {
         tracks = tracks.map(t => ({
           ...t,
@@ -11436,7 +11454,21 @@ async function loadYTFeed(category = 'for-you', btnEl = null) {
 
 /* ── Grid Renderer with Non-Overlapping Layout ───────── */
 function renderYTMusicGrid(tracks, customGrid = null, customCount = null) {
-  currentYTResults = Array.isArray(tracks) ? tracks : [];
+  const rawTracks = Array.isArray(tracks) ? tracks : [];
+  const seenGridVids = new Set();
+  const seenGridTitles = new Set();
+  currentYTResults = rawTracks.filter(t => {
+    if (!t) return false;
+    const vid = (t.videoId || (typeof t.id === 'string' && t.id.startsWith('yt_') ? t.id.replace(/^yt_/, '') : '') || '').trim();
+    const normT = (t.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normA = (t.artist || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const key = normT ? `${normT}:::${normA}` : '';
+    if (vid && seenGridVids.has(vid)) return false;
+    if (key && seenGridTitles.has(key)) return false;
+    if (vid) seenGridVids.add(vid);
+    if (key) seenGridTitles.add(key);
+    return true;
+  });
   const countEl = customCount || document.getElementById('yt-results-count');
   if (countEl && currentYTFeedCategory !== 'for-you') {
     countEl.textContent = `${currentYTResults.length} Tracks`;

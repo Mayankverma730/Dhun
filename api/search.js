@@ -120,6 +120,8 @@ module.exports = async (req, res) => {
     const data = await ytRes.json();
     const sections = data?.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents || [];
     const tracks = [];
+    const seenIds = new Set();
+    const seenTitles = new Set();
 
     function detectGenre(title, artist, queryTerm) {
       const text = `${title} ${artist} ${queryTerm}`.toLowerCase();
@@ -139,6 +141,7 @@ module.exports = async (req, res) => {
       for (const item of items) {
         const v = item?.videoRenderer;
         if (!v || !v.videoId) continue;
+        if (seenIds.has(v.videoId)) continue;
 
         const rawTitle = v.title?.runs?.[0]?.text || 'Untitled Video';
 
@@ -155,6 +158,13 @@ module.exports = async (req, res) => {
 
         const rawArtist = v.ownerText?.runs?.[0]?.text || 'YouTube Artist';
         const cleanArtist = rawArtist.replace(/\s*-\s*Topic$/i, '').trim();
+
+        const normTitle = cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const normArtist = cleanArtist.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const songKey = normTitle ? `${normTitle}:::${normArtist}` : '';
+        if (songKey && seenTitles.has(songKey)) {
+          continue;
+        }
 
         const durText = v.lengthText?.simpleText || '3:30';
         let durMin = 3.5;
@@ -174,6 +184,9 @@ module.exports = async (req, res) => {
         if (durSec < 45 || durSec > 720) {
           continue;
         }
+
+        seenIds.add(v.videoId);
+        if (songKey) seenTitles.add(songKey);
 
         const genre = detectGenre(cleanTitle, cleanArtist, q);
 
