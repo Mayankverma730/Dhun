@@ -62,3 +62,4 @@ module.exports = async (req, res) => {
     message: 'Password successfully updated. Please sign in with your new password.'
   });
 };
+

@@ -110,7 +110,7 @@ function setCORS(req, res) {
   res.setHeader('Content-Type', 'application/json');
 }
 
-/* ── Authorization Validator ── */
+/* ── Authorization & Identity Validator [Findings 02 & 11] ── */
 function getCallerIdentity(req) {
   const headers = (req && req.headers) || {};
   const auth = headers.authorization || headers.Authorization || '';
@@ -121,22 +121,18 @@ function getCallerIdentity(req) {
     const token = auth.slice(7).trim();
     const session = store.sessions[token];
     if (session && session.expiresAt > Date.now()) {
-      return { authenticated: true, user: session.user, token };
+      return { authenticated: true, user: session.user, token, guestId: session.user.id };
     }
   }
 
-  const userId = headers['x-user-id'] || headers['X-User-Id'];
-  if (userId && typeof userId === 'string') {
-    const user = (store.users || []).find(u => u.id === userId);
-    if (user) {
-      return { authenticated: true, user: { id: user.id, email: user.email, name: user.name }, isHeaderAuth: true };
-    }
-    if (userId.startsWith('usr_') || userId.startsWith('guest_')) {
-      return { authenticated: true, user: { id: userId, email: userId + '@local' }, isHeaderAuth: true };
-    }
+  // Unauthenticated client: provide isolated guest ID for read-only user state
+  const clientHeader = headers['x-user-id'] || headers['X-User-Id'];
+  let guestId = 'guest_anonymous';
+  if (clientHeader && typeof clientHeader === 'string' && /^[a-zA-Z0-9_-]{4,64}$/.test(clientHeader)) {
+    guestId = clientHeader;
   }
 
-  return { authenticated: false };
+  return { authenticated: false, guestId };
 }
 
 module.exports = {

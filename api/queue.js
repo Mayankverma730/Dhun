@@ -3,58 +3,23 @@
  * GET    → show queue
  * POST   → enqueue song
  * DELETE → dequeue (play next)
+ *
+ * Findings 11 & 12: Uses persistent store and isolates anonymous guest queues.
  */
 
-if (!global._dhunUserQueue) global._dhunUserQueue = {};
-
-function getUserId(req) {
-  const auth = req.headers.authorization || '';
-  if (auth.startsWith('Bearer ')) {
-    const token = auth.slice(7).trim();
-    if (token && token.length >= 8) return token.slice(0, 64);
-  }
-  const clientHeader = req.headers['x-user-id'];
-  // Prevent unauthenticated callers from spoofing registered usr_ accounts
-  if (clientHeader && typeof clientHeader === 'string' && clientHeader.startsWith('guest_')) {
-    return clientHeader.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
-  }
-  return 'guest';
-}
-
-function isAllowedOrigin(origin) {
-  if (!origin) return false;
-  const allowed = process.env.ALLOWED_ORIGIN;
-  if (allowed === '*' || origin === allowed) return true;
-  if (/^https?:\/\/localhost(:\d+)?$/.test(origin) || /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) return true;
-  if (/^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/.test(origin)) return true;
-  return false;
-}
-
-function setCORS(req, res) {
-  const origin = req.headers.origin;
-  if (origin && isAllowedOrigin(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  } else if (!origin) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-  } else {
-    const defaultOrigin = process.env.ALLOWED_ORIGIN || 'https://dhun-vk85.vercel.app';
-    res.setHeader('Access-Control-Allow-Origin', defaultOrigin);
-  }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-user-id');
-  res.setHeader('Content-Type', 'application/json');
-}
+const { loadStore, saveStore, setCORS, getCallerIdentity } = require('./_store');
 
 module.exports = async (req, res) => {
   setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // Fix N-C-02: User isolation prevents multi-tenant data leaks and crosstalk
-  const userId = getUserId(req);
-  if (!global._dhunUserQueue[userId]) {
-    global._dhunUserQueue[userId] = [];
-  }
-  const queue = global._dhunUserQueue[userId];
+  const identity = getCallerIdentity(req);
+  const userId = identity.authenticated ? identity.user.id : (identity.guestId || 'guest_default');
+
+  const store = loadStore();
+  if (!store.queues) store.queues = {};
+  if (!store.queues[userId]) store.queues[userId] = [];
+  const queue = store.queues[userId];
 
   if (req.method === 'GET') return res.status(200).json(queue);
 
@@ -70,18 +35,19 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: 'Valid positive integer song_id required' });
     }
 
-    // Fix N-M-02: Bound queue length to 200 items to prevent memory exhaustion DoS
     if (queue.length >= 200) {
       return res.status(400).json({ error: 'Queue full: maximum 200 items allowed' });
     }
 
     queue.push({ song_id: songId, addedAt: Date.now() });
+    saveStore(store);
     return res.status(200).json(queue);
   }
 
   if (req.method === 'DELETE') {
     if (req.query.action === 'clear') {
       queue.length = 0;
+      saveStore(store);
       return res.status(200).json({ cleared: true, queue });
     }
     let body = req.body;
@@ -92,9 +58,11 @@ module.exports = async (req, res) => {
     if (!isNaN(removeId) && removeId > 0) {
       const idx = queue.findIndex(item => item.song_id === removeId);
       const removed = idx !== -1 ? queue.splice(idx, 1)[0] : null;
+      saveStore(store);
       return res.status(200).json({ removed, queue });
     }
     const next = queue.shift() || null;
+    saveStore(store);
     return res.status(200).json({ dequeued: next, queue });
   }
 

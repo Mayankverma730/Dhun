@@ -216,7 +216,7 @@ static void menu_library(void)
         clear_input();
 
         char t[MAX_TITLE], ar[MAX_ARTIST], al[MAX_ALBUM], g[MAX_GENRE];
-        float dur, rat;
+        float dur = 3.5f, rat = 4.0f;
         int   id;
 
         switch (choice) {
@@ -227,8 +227,12 @@ static void menu_library(void)
                 printf("  Artist  : "); fgets(ar, sizeof(ar), stdin); ar[strcspn(ar,"\n")]= '\0';
                 printf("  Album   : "); fgets(al, sizeof(al), stdin); al[strcspn(al,"\n")]= '\0';
                 printf("  Genre   : "); fgets(g,  sizeof(g),  stdin); g[strcspn(g,"\n")]  = '\0';
-                printf("  Duration (mins, e.g. 3.5): "); scanf("%f", &dur); clear_input();
-                printf("  Rating  (1-5): ");             scanf("%f", &rat); clear_input();
+                printf("  Duration (mins, e.g. 3.5): ");
+                if (scanf("%f", &dur) != 1 || dur <= 0.0f) { dur = 3.5f; }
+                clear_input();
+                printf("  Rating  (1-5): ");
+                if (scanf("%f", &rat) != 1 || rat < 1.0f || rat > 5.0f) { rat = 4.0f; }
+                clear_input();
                 id = add_song_all(t, ar, al, g, dur, rat);
                 if (id == -2) {
                     printf("  A song with title \"%s\" already exists in the library.\n", t);

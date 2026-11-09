@@ -341,8 +341,18 @@ static const char *json_str(const char *body, const char *key, char *out, int ma
         p++;
         int i = 0;
         while (*p && *p != '"' && i < maxlen-1) {
-            if (*p == '\\' && *(p+1)) { p++; out[i++] = *p; }
-            else out[i++] = *p;
+            if (*p == '\\' && *(p+1)) {
+                p++;
+                if (*p == 'n') out[i++] = '\n';
+                else if (*p == 'r') out[i++] = '\r';
+                else if (*p == 't') out[i++] = '\t';
+                else if (*p == '"') out[i++] = '"';
+                else if (*p == '\\') out[i++] = '\\';
+                else if (*p == '/') out[i++] = '/';
+                else out[i++] = *p;
+            } else {
+                out[i++] = *p;
+            }
             p++;
         }
         out[i] = '\0';
@@ -393,13 +403,18 @@ static const char *json_obj(const char *body, const char *key, char *out, int ma
     while (*p && (*p == ':' || *p == ' ')) p++;
     if (*p == '{') {
         int depth = 0;
+        int in_str = 0;
         int i = 0;
         while (*p && i < maxlen - 1) {
             out[i++] = *p;
-            if (*p == '{') depth++;
-            else if (*p == '}') {
-                depth--;
-                if (depth == 0) { p++; break; }
+            if (*p == '"' && (i < 2 || out[i-2] != '\\')) {
+                in_str = !in_str;
+            } else if (!in_str) {
+                if (*p == '{') depth++;
+                else if (*p == '}') {
+                    depth--;
+                    if (depth == 0) { break; }
+                }
             }
             p++;
         }
@@ -1146,30 +1161,41 @@ static int check_rate_limit(const char *ip) {
     return 0;
 }
 
-/* Upgraded Cryptographic Multi-Round Salted Hash [T1-01] */
-static void hash_password(const char *password, char *out_hash, size_t out_size)
+/* Upgraded Cryptographic Multi-Round Salted Hash with Per-User Salt [T1-01, Finding 14] */
+static void hash_password_salted(const char *password, const char *custom_salt, char *out_hash, size_t out_size)
 {
     unsigned long long h1 = 14695981039346656037ULL;
     unsigned long long h2 = 0xabcdef0123456789ULL;
-    const char *salt = "Dhun_Auth_Salt_v2_2026_SecureKey#99";
+    const char *base_salt = "Dhun_Auth_Salt_v2_2026_SecureKey#99";
+    const char *salt = (custom_salt && custom_salt[0]) ? custom_salt : base_salt;
 
     for (const char *p = salt; *p; p++) {
         h1 ^= (unsigned char)(*p);
         h1 *= 1099511628211ULL;
         h2 = ((h2 << 7) | (h2 >> 57)) ^ (unsigned char)(*p);
     }
+    for (const char *p = base_salt; *p; p++) {
+        h1 ^= (unsigned char)(*p);
+        h1 *= 1099511628211ULL;
+        h2 = ((h2 << 5) | (h2 >> 59)) ^ (unsigned char)(*p);
+    }
     for (const char *p = password; *p; p++) {
         h1 ^= (unsigned char)(*p);
         h1 *= 1099511628211ULL;
         h2 = ((h2 << 11) | (h2 >> 53)) ^ (unsigned char)(*p);
     }
-    for (int round = 0; round < 1000; round++) {
+    for (int round = 0; round < 2500; round++) {
         h1 ^= (h2 + round);
         h1 = ((h1 << 13) | (h1 >> 51)) * 1099511628211ULL;
         h2 ^= (h1 + 0x9e3779b97f4a7c15ULL);
         h2 = ((h2 << 17) | (h2 >> 47)) * 0x517cc1b727220a95ULL;
     }
     snprintf(out_hash, out_size, "%016llx%016llx", h1, h2);
+}
+
+static void hash_password(const char *password, char *out_hash, size_t out_size)
+{
+    hash_password_salted(password, NULL, out_hash, out_size);
 }
 
 /* Input validation helper [T1-05] */
@@ -1721,6 +1747,7 @@ typedef struct {
     char name[64];
     char email[128];
     char password_hash[128];
+    char salt[32];
     char avatar_color[16];
     char provider[16];
     char session_token[64];
@@ -1844,11 +1871,12 @@ static void route_register(SOCKET sock, const char *body)
     }
 
     AuthUser *u = &g_auth_users[g_auth_user_count++];
-    /* Fix C-03: Use secure token generation */
+    /* Fix C-03 & Finding 14: Use secure token and per-user salt */
     generate_secure_token(u->id, sizeof(u->id), "usr_");
+    generate_secure_token(u->salt, sizeof(u->salt), "s_");
     snprintf(u->name, sizeof(u->name), "%s", name);
     snprintf(u->email, sizeof(u->email), "%s", email);
-    hash_password(password, u->password_hash, sizeof(u->password_hash));
+    hash_password_salted(password, u->salt, u->password_hash, sizeof(u->password_hash));
     strcpy(u->avatar_color, "#829779");
     strcpy(u->provider, "email");
     generate_secure_token(u->session_token, sizeof(u->session_token), "sess_");
@@ -1885,7 +1913,7 @@ static void route_login(SOCKET sock, const char *body)
     }
 
     char pass_hash[128];
-    hash_password(password, pass_hash, sizeof(pass_hash));
+    hash_password_salted(password, u->salt[0] ? u->salt : NULL, pass_hash, sizeof(pass_hash));
     if (!constant_time_eq(u->password_hash, pass_hash)) {
         send_error(sock, 401, "Invalid email or password");
         return;
@@ -1922,52 +1950,14 @@ static void route_google_config(SOCKET sock)
     send_ok(sock, resp);
 }
 
-/* POST /api/google-login or POST /api/auth/google */
+/* POST /api/google-login or POST /api/auth/google
+ * Finding 01 (CRITICAL): Disable C Google Sign-In route to prevent unauthenticated session issuance.
+ * Google OAuth authentication is securely handled by the serverless /api/auth/google endpoint.
+ */
 static void route_google_login(SOCKET sock, const char *body)
 {
-    if (!body || !body[0]) {
-        send_error(sock, 400, "empty request body");
-        return;
-    }
-    char email[128] = {0}, name[128] = {0}, sub[128] = {0};
-    json_str(body, "email", email, sizeof(email));
-    json_str(body, "name", name, sizeof(name));
-    json_str(body, "sub", sub, sizeof(sub));
-    if (!sub[0]) json_str(body, "googleSub", sub, sizeof(sub));
-
-    if (!email[0]) {
-        send_error(sock, 400, "Google email is required");
-        return;
-    }
-
-    /* Look up or register user */
-    AuthUser *u = auth_find_user_by_email(email);
-    if (!u) {
-        if (g_auth_user_count >= MAX_AUTH_USERS) {
-            send_error(sock, 503, "User database is full");
-            return;
-        }
-        u = &g_auth_users[g_auth_user_count++];
-        memset(u, 0, sizeof(*u));
-        snprintf(u->id, sizeof(u->id), "usr_g_%d", g_auth_user_count);
-        snprintf(u->email, sizeof(u->email), "%.127s", email);
-        snprintf(u->name, sizeof(u->name), "%.63s", name[0] ? name : "Google Listener");
-        strncpy(u->provider, "google", sizeof(u->provider) - 1);
-        strncpy(u->avatar_color, "#4285F4", sizeof(u->avatar_color) - 1);
-        u->created_at = time(NULL);
-    }
-
-    generate_secure_token(u->session_token, sizeof(u->session_token), "sess_");
-
-    char esc_name[128], esc_email[128];
-    json_escape(u->name, esc_name, sizeof(esc_name));
-    json_escape(u->email, esc_email, sizeof(esc_email));
-
-    char resp[1024];
-    snprintf(resp, sizeof(resp),
-        "{\"status\":\"ok\",\"success\":true,\"token\":\"%s\",\"user\":{\"id\":\"%s\",\"name\":\"%s\",\"email\":\"%s\",\"provider\":\"%s\",\"avatarColor\":\"%s\"}}",
-        u->session_token, u->id, esc_name, esc_email, u->provider, u->avatar_color);
-    send_ok(sock, resp);
+    (void)body;
+    send_error(sock, 501, "Google Sign-In on C daemon is disabled. Please authenticate via the verified serverless endpoint /api/auth/google.");
 }
 
 /* POST /api/forgot-password (Section 8: Anti-Enumeration Generic Notice) */
@@ -2058,7 +2048,9 @@ static void route_reset_password(SOCKET sock, const char *body)
         return;
     }
 
-    hash_password(password, u->password_hash, sizeof(u->password_hash));
+    generate_secure_token(u->salt, sizeof(u->salt), "s_");
+    hash_password_salted(password, u->salt, u->password_hash, sizeof(u->password_hash));
+    memset(u->session_token, 0, sizeof(u->session_token)); /* Finding 15: Revoke all active sessions on password reset */
     found_token->used = 1;
 
     send_ok(sock, "{\"status\":\"ok\",\"message\":\"Password updated successfully\"}");
@@ -2182,12 +2174,10 @@ static void handle_request(SOCKET sock, char *req, int req_len, const char *clie
             /* /api/songs */
             if (strcmp(method,"GET")==0)  { route_get_songs(sock); return; }
             if (strcmp(method,"POST")==0) {
-                /* Fix Finding 02: Check authorization for catalog mutations */
+                /* Fix Finding 02: Enforce server-issued session token for catalog mutations */
                 char auth_tok[128] = {0};
                 extract_bearer_token(req, auth_tok, sizeof(auth_tok));
-                const char *uid_hdr = strstr(req, "X-User-Id:");
-                if (!uid_hdr) uid_hdr = strstr(req, "x-user-id:");
-                if (!auth_find_user_by_token(auth_tok) && !uid_hdr && strcmp(client_ip, "127.0.0.1") != 0 && strcmp(client_ip, "::1") != 0) {
+                if (!auth_find_user_by_token(auth_tok) && strcmp(client_ip, "127.0.0.1") != 0 && strcmp(client_ip, "::1") != 0) {
                     send_error(sock, 401, "unauthorized: sign in required to add songs");
                     return;
                 }
@@ -2228,12 +2218,10 @@ static void handle_request(SOCKET sock, char *req, int req_len, const char *clie
             /* /api/songs/:id */
             if (strcmp(method,"GET")==0)    { route_get_song_by_id(sock, song_id); return; }
             if (strcmp(method,"DELETE")==0) {
-                /* Fix Finding 02: Check authorization for catalog deletion */
+                /* Fix Finding 02: Enforce server-issued session token for catalog deletion */
                 char auth_tok[128] = {0};
                 extract_bearer_token(req, auth_tok, sizeof(auth_tok));
-                const char *uid_hdr = strstr(req, "X-User-Id:");
-                if (!uid_hdr) uid_hdr = strstr(req, "x-user-id:");
-                if (!auth_find_user_by_token(auth_tok) && !uid_hdr && strcmp(client_ip, "127.0.0.1") != 0 && strcmp(client_ip, "::1") != 0) {
+                if (!auth_find_user_by_token(auth_tok) && strcmp(client_ip, "127.0.0.1") != 0 && strcmp(client_ip, "::1") != 0) {
                     send_error(sock, 401, "unauthorized: sign in required to delete songs");
                     return;
                 }
@@ -2249,9 +2237,23 @@ static void handle_request(SOCKET sock, char *req, int req_len, const char *clie
         }
 
         if (strcmp(seg4,"play")==0 && strcmp(method,"PUT")==0) {
+            /* Fix Finding 02: Protect play counter mutation */
+            char auth_tok[128] = {0};
+            extract_bearer_token(req, auth_tok, sizeof(auth_tok));
+            if (!auth_find_user_by_token(auth_tok) && strcmp(client_ip, "127.0.0.1") != 0 && strcmp(client_ip, "::1") != 0) {
+                send_error(sock, 401, "unauthorized: sign in required to record play");
+                return;
+            }
             route_play_song(sock, song_id); return;
         }
         if (strcmp(seg4,"like")==0 && strcmp(method,"PUT")==0) {
+            /* Fix Finding 02: Protect like status mutation */
+            char auth_tok[128] = {0};
+            extract_bearer_token(req, auth_tok, sizeof(auth_tok));
+            if (!auth_find_user_by_token(auth_tok) && strcmp(client_ip, "127.0.0.1") != 0 && strcmp(client_ip, "::1") != 0) {
+                send_error(sock, 401, "unauthorized: sign in required to like songs");
+                return;
+            }
             route_like_song(sock, song_id); return;
         }
         send_error(sock,404,"not found"); return;
@@ -2538,14 +2540,14 @@ int main(void)
         int total = 0;
         int done  = 0;
         time_t req_start = time(NULL);
-        const int MAX_REQ_TIME = 5; /* 5-second total request deadline (Fix Finding 09) */
-        /* Set a receive timeout so we don't hang */
+        const int MAX_REQ_TIME = 3; /* 3-second total request deadline (Finding 19) */
+        /* Set a 1000ms receive timeout so slow clients cannot monopolize the worker */
 #ifdef _WIN32
-        DWORD tv = 2000; /* 2 seconds */
+        DWORD tv = 1000; /* 1 second */
         setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
 #else
         struct timeval tv;
-        tv.tv_sec = 2;
+        tv.tv_sec = 1;
         tv.tv_usec = 0;
         setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, (const void*)&tv, sizeof(tv));
 #endif

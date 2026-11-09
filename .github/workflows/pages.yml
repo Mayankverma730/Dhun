@@ -32,6 +32,7 @@ jobs:
           mkdir -p public_site
           cp -r index.html presentation.html style.css app.js ytmusic_api.js recommend.js js public_site/
           cp -r *.jpg *.png *.svg public_site/ 2>/dev/null || true
+          [ -f tujhko.mp3 ] && cp tujhko.mp3 public_site/ || true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

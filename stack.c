@@ -11,7 +11,8 @@
  * │         [ Song 2 ]                                           │
  * │         [ Song 1 ]  ← first played                          │
  * │                                                              │
- * │  push(song) → play a song, add to history  O(1)             │
+ * │  push(song) → play a song, add to history  O(1)*            │
+ * │              (*O(STACK_MAX_SIZE) eviction shift when full)   │
  * │  pop()      → go back to previous song     O(1)             │
  * │  peek()     → see currently played song    O(1)             │
  * └──────────────────────────────────────────────────────────────┘
@@ -36,7 +37,7 @@ void stack_destroy(Stack *s)
     free(s);
 }
 
-/* ── Push — O(1) ─────────────────────────────── */
+/* ── Push — O(1) amortized, O(STACK_MAX_SIZE) on shift ───────── */
 int stack_push(Stack *s, Song song)
 {
     if (!s) return 0;

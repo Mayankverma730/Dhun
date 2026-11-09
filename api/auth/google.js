@@ -6,6 +6,7 @@
  */
 
 const crypto = require('crypto');
+const { loadStore, saveStore } = require('../_store');
 
 function loadEnv() {
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) return;
@@ -99,6 +100,11 @@ module.exports = async (req, res) => {
           return res.status(401).json({ success: false, error: 'Google token audience mismatch' });
         }
 
+        // Finding 13: Strictly enforce email_verified check
+        if (info.email_verified !== true && info.email_verified !== 'true') {
+          return res.status(401).json({ success: false, error: 'Google email is not verified' });
+        }
+
         const email = (info.email || '').toLowerCase().trim();
         if (!email) {
           return res.status(400).json({ success: false, error: 'No email returned in Google token' });
@@ -107,6 +113,36 @@ module.exports = async (req, res) => {
         const sessionToken = 'sess_' + crypto.randomBytes(16).toString('hex');
         const userId = 'usr_g_' + crypto.createHash('sha256').update(info.sub || email).digest('hex').slice(0, 16);
 
+        // Finding 13: Register user and session in persistent store so protected APIs accept the token
+        const store = loadStore();
+        if (!store.sessions) store.sessions = {};
+        if (!store.users) store.users = [];
+
+        let user = store.users.find(u => u.email === email);
+        if (!user) {
+          user = {
+            id: userId,
+            email: email,
+            name: info.name || email.split('@')[0],
+            avatar: info.picture || '',
+            provider: 'google',
+            googleSub: info.sub,
+            avatarColor: '#4285F4',
+            createdAt: Date.now()
+          };
+          store.users.push(user);
+        } else {
+          user.googleSub = info.sub;
+          user.provider = 'google';
+        }
+
+        store.sessions[sessionToken] = {
+          user: { id: user.id, email: user.email, name: user.name },
+          createdAt: Date.now(),
+          expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days
+        };
+        saveStore(store);
+
         return res.status(200).json({
           success: true,
           status: 'ok',
@@ -114,7 +150,7 @@ module.exports = async (req, res) => {
           user: {
             id: userId,
             email: email,
-            name: info.name || email.split('@')[0],
+            name: user.name,
             avatar: info.picture || '',
             provider: 'google',
             googleSub: info.sub,
@@ -159,9 +195,41 @@ module.exports = async (req, res) => {
         }
 
         const profile = await userinfoRes.json();
+        if (profile.email_verified !== true && profile.email_verified !== 'true') {
+          return res.status(401).json({ success: false, error: 'Google email is not verified' });
+        }
         const email = (profile.email || '').toLowerCase().trim();
         const sessionToken = 'sess_' + crypto.randomBytes(16).toString('hex');
         const userId = 'usr_g_' + crypto.createHash('sha256').update(profile.sub || email).digest('hex').slice(0, 16);
+
+        const store = loadStore();
+        if (!store.sessions) store.sessions = {};
+        if (!store.users) store.users = [];
+
+        let user = store.users.find(u => u.email === email);
+        if (!user) {
+          user = {
+            id: userId,
+            email: email,
+            name: profile.name || email.split('@')[0],
+            avatar: profile.picture || '',
+            provider: 'google',
+            googleSub: profile.sub,
+            avatarColor: '#4285F4',
+            createdAt: Date.now()
+          };
+          store.users.push(user);
+        } else {
+          user.googleSub = profile.sub;
+          user.provider = 'google';
+        }
+
+        store.sessions[sessionToken] = {
+          user: { id: user.id, email: user.email, name: user.name },
+          createdAt: Date.now(),
+          expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days
+        };
+        saveStore(store);
 
         return res.status(200).json({
           success: true,
@@ -170,7 +238,7 @@ module.exports = async (req, res) => {
           user: {
             id: userId,
             email: email,
-            name: profile.name || email.split('@')[0],
+            name: user.name,
             avatar: profile.picture || '',
             provider: 'google',
             googleSub: profile.sub,

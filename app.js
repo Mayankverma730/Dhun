@@ -3177,15 +3177,10 @@ const DhunAuth = {
             return;
           }
         }
+        showToast('⚠️ Google sign-in verification failed on server.');
       } catch (srvErr) {
-        console.warn('[Google Auth] Server verification offline, using client validation:', srvErr);
-      }
-
-      // Client-side fallback if server is unreachable
-      const parts = token.split('.');
-      if (parts.length >= 2) {
-        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-        this.applyGoogleProfile(payload);
+        console.warn('[Google Auth] Server verification offline:', srvErr);
+        showToast('⚠️ Google sign-in requires online server verification. Please check your connection and try again.');
       }
     } catch(e) {
       showToast('⚠️ Google sign-in failed. Please try again.');
@@ -4635,17 +4630,27 @@ function _csB64ToU8(b64) {
   return bytes;
 }
 
-/** Derive a 256-bit AES-GCM key from the user's email via PBKDF2 */
+/** Derive a 256-bit AES-GCM key from high-entropy client secret & user identity [Finding 04] */
 async function deriveCloudSyncKey(email) {
   if (!email || typeof crypto === 'undefined' || !crypto.subtle) return null;
   try {
     const enc = new TextEncoder();
     const normEmail = email.toLowerCase().trim();
+
+    // Finding 04: Require an independent 256-bit secret stored on device rather than deriving solely from public email
+    let clientSyncSecret = localStorage.getItem('dhun_sync_secret_' + normEmail);
+    if (!clientSyncSecret) {
+      const randBytes = new Uint8Array(32);
+      crypto.getRandomValues(randBytes);
+      clientSyncSecret = Array.from(randBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+      try { localStorage.setItem('dhun_sync_secret_' + normEmail, clientSyncSecret); } catch(e){}
+    }
+
     const keyMaterial = await crypto.subtle.importKey(
-      'raw', enc.encode(normEmail), { name: 'PBKDF2' }, false, ['deriveKey']
+      'raw', enc.encode(clientSyncSecret + ':' + normEmail), { name: 'PBKDF2' }, false, ['deriveKey']
     );
     return await crypto.subtle.deriveKey(
-      { name: 'PBKDF2', salt: enc.encode('dhun_cloud_sync_salt_v3_' + normEmail), iterations: 100000, hash: 'SHA-256' },
+      { name: 'PBKDF2', salt: enc.encode('dhun_cloud_sync_salt_v4_' + normEmail), iterations: 100000, hash: 'SHA-256' },
       keyMaterial,
       { name: 'AES-GCM', length: 256 },
       false,
@@ -5756,7 +5761,7 @@ function renderRecommended() {
       <span class="st-num">${i+1}</span>
       <div class="st-title-col">
         <div class="st-thumb" style="background:${gradientFor(s.id)}">
-          <img src="${s.thumbnail || imgFor(s.id)}" alt="${escapeHtmlAttr(s.title)}" data-song-id="${escapeHtmlAttr(String(s.id))}"/>
+          <img src="${escapeHtmlAttr(s.thumbnail || imgFor(s.id))}" alt="${escapeHtmlAttr(s.title)}" data-song-id="${escapeHtmlAttr(String(s.id))}"/>
         </div>
         <div>
           <p class="st-song-name">${escapeHtmlText(s.title)} ${isYTSong(s.id) ? '<span class="yt-badge">🔴 YT Music</span>' : ''}</p>
@@ -6556,7 +6561,7 @@ function renderLibrary(songs) {
       <span class="st-num">${i + 1}</span>
       <div class="st-title-col">
         <div class="st-thumb" style="background:${gradientFor(s.id)}">
-          <img src="${s.thumbnail || imgFor(s.id)}" alt="${escapeHtmlAttr(s.title)}" data-song-id="${escapeHtmlAttr(String(s.id))}"/>
+          <img src="${escapeHtmlAttr(s.thumbnail || imgFor(s.id))}" alt="${escapeHtmlAttr(s.title)}" data-song-id="${escapeHtmlAttr(String(s.id))}"/>
         </div>
         <div>
           <p class="st-song-name">${escapeHtmlText(s.title)} ${isYTSong(s.id) ? '<span class="yt-badge">🔴 YT Music</span>' : ''}</p>
@@ -7734,6 +7739,7 @@ function broadcastJam(payload, onSent) {
     roomId: targetRoomId,
     sender: jamState.userName,
     senderId: jamState.peerId,
+    hostToken: jamState.isHost ? jamState.hostToken : undefined,
     timestamp: Date.now()
   };
 
@@ -7868,7 +7874,20 @@ function handleJamMessageData(data) {
         break;
       }
 
+      case 'ROOM_ANNOUNCE':
+      case 'ROOM_STATE': {
+        if (data.hostToken && !jamState.isHost) {
+          jamState.hostToken = data.hostToken;
+          jamState.hostPeerId = data.senderId;
+        }
+        break;
+      }
+
       case 'KICK_MEMBER': {
+        if (jamState.hostToken && data.hostToken !== jamState.hostToken) {
+          console.warn('[Jam] Dropped unauthenticated kick command from:', data.senderId);
+          break;
+        }
         if (data.targetId === jamState.peerId) {
           showToast('⚠️ You were removed from the room by the host');
           leaveJamSession(false, 'silent');
@@ -7885,6 +7904,10 @@ function handleJamMessageData(data) {
       }
 
       case 'ROOM_CLOSED': {
+        if (jamState.hostToken && data.hostToken !== jamState.hostToken) {
+          console.warn('[Jam] Dropped unauthenticated room_closed command from:', data.senderId);
+          break;
+        }
         showToast('🔒 The host has closed this Jam room');
         leaveJamSession(false, 'silent');
         closeListenTogetherModal();
@@ -7892,6 +7915,10 @@ function handleJamMessageData(data) {
       }
 
       case 'HOST_TAKEOVER':
+        if (jamState.hostToken && data.hostToken !== jamState.hostToken) {
+          console.warn('[Jam] Dropped unauthenticated takeover command from:', data.senderId);
+          break;
+        }
         if (data.newHost) {
           jamState.hostName = data.newHost;
           jamState.isHost = false;
@@ -8280,8 +8307,10 @@ async function startJamSession() {
   const djAvatar = getProfileInitials(djName);
   const djColor = (authState.currentUser && authState.currentUser.avatarColor) || '#829779';
 
-  // Real member list: ONLY Host with unique peerId
+  // Finding 05: Generate unique peerId and host authentication token
   jamState.peerId = 'peer_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
+  jamState.hostPeerId = jamState.peerId;
+  jamState.hostToken = 'htok_' + Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
   jamState.members = [
     { id: jamState.peerId, name: djName, avatar: djAvatar, color: djColor, isHost: true, lastSeen: Date.now(), isOnline: true }
   ];
@@ -8962,7 +8991,10 @@ function addJamChatMessage(sender, message, isOwn, msgId, isReadByBoth) {
   const emptyState = document.getElementById('jam-chat-empty');
   if (emptyState) emptyState.style.display = 'none';
 
-  const id = msgId || ('msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
+  // Finding 06: Strictly validate msgId against regex to prevent DOM attribute breakout / XSS
+  const id = (msgId && typeof msgId === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(msgId))
+    ? msgId
+    : ('msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
 
   // Avoid duplicate message elements
   if (document.getElementById(`jam-msg-${id}`)) return;
@@ -10568,7 +10600,7 @@ function renderSimilarDhunUI(currentSong) {
     return `
       <div class="dhun-similar-card" onclick="openPlayerById('${songIdStr}')" title="Play ${escapeHtmlAttr(s.title)}">
         <div class="similar-left">
-          <img class="similar-thumb" src="${thumb}" alt="${escapeHtmlAttr(s.title)}" onerror="this.src='album1.jpg'" />
+          <img class="similar-thumb" src="${escapeHtmlAttr(thumb)}" alt="${escapeHtmlAttr(s.title)}" onerror="this.src='album1.jpg'" />
           <div class="similar-meta">
             <span class="similar-title">${escapeHtmlText(s.title)}</span>
             <span class="similar-artist">${escapeHtmlText(s.artist)}</span>

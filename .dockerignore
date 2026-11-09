@@ -12,3 +12,4 @@ test_*.js
 test_*.exe
 benchmark.exe
 media_*
+

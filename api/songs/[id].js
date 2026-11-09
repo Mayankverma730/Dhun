@@ -31,15 +31,23 @@ module.exports = async (req, res) => {
     return res.status(200).json(songs[idx]);
   }
 
-  // PUT /api/songs/:id/play — increment play count
+  // PUT /api/songs/:id/play — increment play count (Finding 02: Authorization check)
   if (req.method === 'PUT' && action === 'play') {
+    const identity = getCallerIdentity(req);
+    if (!identity.authenticated) {
+      return res.status(401).json({ error: 'Unauthorized: Sign in required to record play' });
+    }
     songs[idx].play_count = Math.min((songs[idx].play_count || 0) + 1, 100000000);
     saveStore(store);
     return res.status(200).json(songs[idx]);
   }
 
-  // PUT /api/songs/:id/like — toggle like
+  // PUT /api/songs/:id/like — toggle like (Finding 02: Authorization check)
   if (req.method === 'PUT' && action === 'like') {
+    const identity = getCallerIdentity(req);
+    if (!identity.authenticated) {
+      return res.status(401).json({ error: 'Unauthorized: Sign in required to like songs' });
+    }
     songs[idx].liked = songs[idx].liked ? 0 : 1;
     saveStore(store);
     return res.status(200).json(songs[idx]);

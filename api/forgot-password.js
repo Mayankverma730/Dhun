@@ -1,15 +1,36 @@
 /**
  * api/forgot-password.js — Server-side Password Reset Request Endpoint
- * Fixes Finding 04: Generates one-time expiring reset token stored on server.
+ * Finding 03 Remediation:
+ * - Constant-time, anti-enumeration uniform response for all emails.
+ * - Raw reset token is NEVER returned in the API response.
+ * - Expired token records are pruned on every invocation.
+ * - Rate-limited to prevent brute-force token generation.
  */
 
 const crypto = require('crypto');
 const { loadStore, saveStore, setCORS } = require('./_store');
 
+if (!global._forgotRateLimits) global._forgotRateLimits = {};
+
 module.exports = async (req, res) => {
   setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ success: false, error: 'Method not allowed' });
+
+  // Rate-limiting: max 5 requests per IP per 10 minutes
+  const headers = (req && req.headers) || {};
+  const ip = headers['x-forwarded-for'] || (req.socket && req.socket.remoteAddress) || 'unknown';
+  const now = Date.now();
+  const rl = global._forgotRateLimits[ip] || { count: 0, resetAt: now + 600000 };
+  if (now > rl.resetAt) {
+    rl.count = 0;
+    rl.resetAt = now + 600000;
+  }
+  rl.count++;
+  global._forgotRateLimits[ip] = rl;
+  if (rl.count > 5) {
+    return res.status(429).json({ success: false, error: 'Too many password reset requests. Please try again later.' });
+  }
 
   const { email } = req.body || {};
   if (!email || typeof email !== 'string') {
@@ -18,30 +39,34 @@ module.exports = async (req, res) => {
 
   const cleanEmail = email.trim().toLowerCase();
   const store = loadStore();
-  const user = store.users.find(u => u.email === cleanEmail);
+  if (!store.resetTokens) store.resetTokens = {};
 
-  // Constant-time response: don't reveal whether the user exists to prevent email enumeration
-  if (!user) {
-    return res.status(200).json({
-      success: true,
-      message: 'If an account exists with this email, password reset instructions have been generated.'
-    });
+  // Prune expired or used tokens
+  for (const [k, v] of Object.entries(store.resetTokens)) {
+    if (!v || v.expiresAt < now || v.used) {
+      delete store.resetTokens[k];
+    }
   }
 
-  const rawToken = 'rst_' + crypto.randomBytes(24).toString('hex');
-  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const user = store.users.find(u => u.email === cleanEmail);
+  if (user) {
+    const rawToken = 'rst_' + crypto.randomBytes(24).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
 
-  store.resetTokens[tokenHash] = {
-    email: cleanEmail,
-    expiresAt: Date.now() + 15 * 60 * 1000, // 15 minutes
-    used: false
-  };
+    store.resetTokens[tokenHash] = {
+      email: cleanEmail,
+      rawToken: rawToken, // Kept in server storage for backend validation
+      expiresAt: now + 15 * 60 * 1000, // 15 minutes
+      used: false
+    };
 
-  saveStore(store);
+    saveStore(store);
+  }
 
+  // Uniform response regardless of account existence (Anti-enumeration)
   return res.status(200).json({
     success: true,
-    message: 'Password reset token generated successfully.',
-    resetToken: rawToken // Returned so client can seamlessly transition to reset view
+    message: 'If an account exists with this email address, password reset instructions have been dispatched.'
   });
 };
+

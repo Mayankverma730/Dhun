@@ -178,8 +178,13 @@ const YTMusicAPI = (() => {
   function normalizeResults(items, limit = 25) {
     const list = [];
     for (const item of items) {
-      if (!item || (!item.videoId && !item.id)) continue;
-      const vid = item.videoId || item.id;
+      if (!item) continue;
+      const rawVid = item.videoId || item.id;
+      if (!rawVid || typeof rawVid !== 'string') continue;
+      // Finding 09: Strictly validate 11-character YouTube video ID format to prevent attribute breakout
+      const vidMatch = rawVid.match(/^[a-zA-Z0-9_-]{11}$/);
+      if (!vidMatch) continue;
+      const vid = vidMatch[0];
       const title = cleanSongTitle(item.title || 'Unknown Title');
       const artist = item.author || 'YouTube Artist';
       const durationSec = Math.max(30, Number(item.lengthSeconds) || 210);

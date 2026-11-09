@@ -18,7 +18,7 @@ WORKDIR /app
 COPY --from=builder /build/vibe_server /app/vibe_server
 COPY index.html style.css app.js ytmusic_api.js recommend.js presentation.html logo.svg /app/
 COPY js/ /app/js/
-COPY album1.jpg album2.jpg tujhko.mp3 /app/
+COPY album1.jpg album2.jpg album3.jpg cover_bg.jpg cover_light_bg.jpg logo.jpg logo.png logo.svg tujhko.mp3 /app/
 
 # Run as non-root user for container security
 RUN useradd -u 10001 -m -s /bin/sh appuser \

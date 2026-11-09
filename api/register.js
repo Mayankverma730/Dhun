@@ -79,3 +79,4 @@ module.exports = async (req, res) => {
     user: store.sessions[token].user
   });
 };
+
