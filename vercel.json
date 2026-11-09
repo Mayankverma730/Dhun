@@ -3,21 +3,7 @@
   "redirects": [
     { "source": "/:file.c", "destination": "/", "permanent": false },
     { "source": "/:file.h", "destination": "/", "permanent": false },
-    { "source": "/:file.exe", "destination": "/", "permanent": false },
-    { "source": "/:file.o", "destination": "/", "permanent": false },
-    { "source": "/:file.obj", "destination": "/", "permanent": false },
-    { "source": "/:file.sh", "destination": "/", "permanent": false },
-    { "source": "/:file.bat", "destination": "/", "permanent": false },
-    { "source": "/:file.cmd", "destination": "/", "permanent": false },
-    { "source": "/:file.log", "destination": "/", "permanent": false },
-    { "source": "/:file.env", "destination": "/", "permanent": false },
-    { "source": "/:file.yml", "destination": "/", "permanent": false },
-    { "source": "/:file.yaml", "destination": "/", "permanent": false },
-    { "source": "/Makefile", "destination": "/", "permanent": false },
-    { "source": "/Dockerfile", "destination": "/", "permanent": false },
-    { "source": "/:dir/:file.c", "destination": "/", "permanent": false },
-    { "source": "/:dir/:file.h", "destination": "/", "permanent": false },
-    { "source": "/:dir/:file.exe", "destination": "/", "permanent": false }
+    { "source": "/:file.exe", "destination": "/", "permanent": false }
   ],
   "rewrites": [
     { "source": "/api/songs/:id/play",    "destination": "/api/songs/[id]?action=play" },
@@ -29,6 +15,26 @@
     { "source": "/api/playlists/:id/songs", "destination": "/api/playlists/[id]" },
     { "source": "/api/playlists/:id",     "destination": "/api/playlists/[id]" },
     { "source": "/api/history/back",      "destination": "/api/history?action=back" },
-    { "source": "/api/search",            "destination": "/api/search" }
+    { "source": "/api/search",            "destination": "/api/search" },
+    { "source": "/api/:path*",            "destination": "/api/:path*" },
+    { "source": "/((?!api/).*)",          "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,DELETE,OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type,Authorization,X-User-Id,X-Host-Token" },
+        { "key": "Vary",                         "value": "Origin" }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options",        "value": "SAMEORIGIN" },
+        { "key": "X-XSS-Protection",       "value": "1; mode=block" }
+      ]
+    }
   ]
 }
