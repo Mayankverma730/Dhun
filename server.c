@@ -56,7 +56,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
+#include <strings.h>
+#endif
 #include <ctype.h>
+#include <limits.h>
 #include <math.h>
 
 #include "song.h"
@@ -153,6 +157,32 @@ static int song_to_json_liked(const Song *s, char *buf, int maxlen)
 }
 
 /* ── HTTP helpers ─────────────────────────────── */
+static int send_all(SOCKET sock, const char *data, size_t length)
+{
+    size_t sent = 0;
+    while (sent < length) {
+        size_t remaining = length - sent;
+        if (remaining > INT_MAX) remaining = INT_MAX;
+#ifdef MSG_NOSIGNAL
+        int flags = MSG_NOSIGNAL;
+#else
+        int flags = 0;
+#endif
+        int n = send(sock, data + sent, (int)remaining, flags);
+        if (n == SOCKET_ERROR) {
+#ifdef _WIN32
+            if (WSAGetLastError() == WSAEINTR) continue;
+#else
+            if (errno == EINTR) continue;
+#endif
+            return 0;
+        }
+        if (n == 0) return 0;
+        sent += (size_t)n;
+    }
+    return 1;
+}
+
 static void send_response(SOCKET sock, int status, const char *body)
 {
     const char *status_text = "OK";
@@ -164,6 +194,7 @@ static void send_response(SOCKET sock, int status, const char *body)
     else if (status == 405) status_text = "Method Not Allowed";
     else if (status == 409) status_text = "Conflict";
     else if (status == 410) status_text = "Gone";
+    else if (status == 413) status_text = "Payload Too Large";
     else if (status == 429) status_text = "Too Many Requests";
     else if (status == 500) status_text = "Internal Server Error";
     else if (status == 501) status_text = "Not Implemented";
@@ -172,6 +203,7 @@ static void send_response(SOCKET sock, int status, const char *body)
     /* Fix C-05: Restrict CORS to configured origin, not wildcard */
     const char *allowed_origin = getenv("DHUN_ALLOWED_ORIGIN");
     if (!allowed_origin || !allowed_origin[0]) allowed_origin = "http://localhost:3000";
+    if (strlen(allowed_origin) > 256) allowed_origin = "http://localhost:3000";
 
     int hlen = snprintf(header, sizeof(header),
         "HTTP/1.1 %d %s\r\n"
@@ -187,8 +219,8 @@ static void send_response(SOCKET sock, int status, const char *body)
         "\r\n",
         status, status_text, allowed_origin, (int)strlen(body));
 
-    send(sock, header, hlen, 0);
-    send(sock, body, (int)strlen(body), 0);
+    if (hlen <= 0 || hlen >= (int)sizeof(header) || !send_all(sock, header, (size_t)hlen)) return;
+    send_all(sock, body, strlen(body));
 }
 
 static void send_ok(SOCKET sock, const char *body)   { send_response(sock, 200, body); }
@@ -205,6 +237,7 @@ static void send_options(SOCKET sock) {
     /* Fix M-02: Use configured origin and allow Authorization/custom headers in preflight */
     const char *allowed_origin = getenv("DHUN_ALLOWED_ORIGIN");
     if (!allowed_origin || !allowed_origin[0]) allowed_origin = "http://localhost:3000";
+    if (strlen(allowed_origin) > 256) allowed_origin = "http://localhost:3000";
 
     char header[512];
     int hlen = snprintf(header, sizeof(header),
@@ -215,7 +248,7 @@ static void send_options(SOCKET sock) {
         "Content-Length: 0\r\n"
         "Connection: close\r\n\r\n",
         allowed_origin);
-    send(sock, header, hlen, 0);
+    if (hlen > 0 && hlen < (int)sizeof(header)) send_all(sock, header, (size_t)hlen);
 }
 
 /* ── Static file server ──────────────────── */
@@ -272,13 +305,13 @@ static void serve_static(SOCKET sock, const char *url_path)
     /* Fix C-01: Reject directory traversal, dotfiles (.git, .env), and non-whitelisted files */
     if (strstr(rel, "..") || rel[0] == '.' || strstr(rel, "/.") || strstr(rel, "\\.")) {
         const char *h = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-        send(sock, h, (int)strlen(h), 0);
+        send_all(sock, h, strlen(h));
         return;
     }
 
     if (!is_allowed_static_ext(rel)) {
         const char *h = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-        send(sock, h, (int)strlen(h), 0);
+        send_all(sock, h, strlen(h));
         return;
     }
 
@@ -295,7 +328,7 @@ static void serve_static(SOCKET sock, const char *url_path)
         }
         if (!f) {
             const char *h = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-            send(sock, h, (int)strlen(h), 0);
+            send_all(sock, h, strlen(h));
             return;
         }
     }
@@ -303,6 +336,13 @@ static void serve_static(SOCKET sock, const char *url_path)
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
+
+    char *buf = malloc(65536);
+    if (!buf) {
+        fclose(f);
+        send_error(sock, 500, "out of memory");
+        return;
+    }
 
     char header[1024];
     int hlen = snprintf(header, sizeof(header),
@@ -316,15 +356,17 @@ static void serve_static(SOCKET sock, const char *url_path)
         "Connection: close\r\n"
         "\r\n",
         mime_type(rel), size);
-    send(sock, header, hlen, 0);
-
-    char *buf = malloc(65536);
-    if (buf) {
-        size_t n;
-        while ((n = fread(buf, 1, 65536, f)) > 0)
-            send(sock, buf, (int)n, 0);
+    if (hlen <= 0 || hlen >= (int)sizeof(header) || !send_all(sock, header, (size_t)hlen)) {
         free(buf);
+        fclose(f);
+        return;
     }
+
+    size_t n;
+    while ((n = fread(buf, 1, 65536, f)) > 0) {
+        if (!send_all(sock, buf, n)) break;
+    }
+    free(buf);
     fclose(f);
 }
 
@@ -458,6 +500,21 @@ static int get_path_segment(const char *path, int seg, char *out, int maxlen)
         } else p++;
     }
     out[0]='\0'; return 0;
+}
+
+/* Path IDs must be complete positive integers; atoi silently accepts junk. */
+static int parse_positive_id(const char *text, int *id)
+{
+    if (!text || !text[0]) return 0;
+    for (const unsigned char *p = (const unsigned char *)text; *p; p++) {
+        if (!isdigit(*p)) return 0;
+    }
+    errno = 0;
+    char *end = NULL;
+    long value = strtol(text, &end, 10);
+    if (errno == ERANGE || end == text || *end || value <= 0 || value > INT_MAX) return 0;
+    *id = (int)value;
+    return 1;
 }
 
 static void get_query_param(const char *path, const char *key, char *out, int maxlen)
@@ -673,6 +730,16 @@ static void route_song_similar(SOCKET sock, int id)
 }
 
 /* POST /api/songs  body: {title,artist,album,genre,duration,rating} */
+/* Trim field boundaries so whitespace-only input cannot enter the library. */
+static void trim_ascii(char *value)
+{
+    size_t start = 0, end = strlen(value);
+    while (start < end && isspace((unsigned char)value[start])) start++;
+    while (end > start && isspace((unsigned char)value[end - 1])) end--;
+    if (start) memmove(value, value + start, end - start);
+    value[end - start] = '\0';
+}
+
 static void route_add_song(SOCKET sock, const char *body)
 {
     LOG_DEBUG("add_song body=%.200s", body ? body : "(null)");
@@ -694,14 +761,17 @@ static void route_add_song(SOCKET sock, const char *body)
     if (!title[0] || !artist[0]) { send_error(sock,400,"title and artist required"); return; }
     if (strlen(title) > MAX_TITLE - 1) { send_error(sock,400,"title too long (max 255 chars)"); return; }
     if (strlen(artist) > MAX_ARTIST - 1) { send_error(sock,400,"artist name too long (max 255 chars)"); return; }
-    if (duration <= 0 || duration > 600) { send_error(sock,400,"duration must be between 0 and 600 minutes"); return; }
-    if (rating < 0 || rating > 5) { send_error(sock,400,"rating must be between 0 and 5"); return; }
+    if (!isfinite(duration) || duration <= 0 || duration > 600) { send_error(sock,400,"duration must be between 0 and 600 minutes"); return; }
+    if (!isfinite(rating) || rating < 0 || rating > 5) { send_error(sock,400,"rating must be between 0 and 5"); return; }
 
     /* Sanitize inputs - remove control characters */
     for (int i = 0; title[i]; i++) if ((unsigned char)title[i] < 32) title[i] = ' ';
     for (int i = 0; artist[i]; i++) if ((unsigned char)artist[i] < 32) artist[i] = ' ';
     for (int i = 0; album[i]; i++) if ((unsigned char)album[i] < 32) album[i] = ' ';
     for (int i = 0; genre[i]; i++) if ((unsigned char)genre[i] < 32) genre[i] = ' ';
+    trim_ascii(title);
+    trim_ascii(artist);
+    if (!title[0] || !artist[0]) { send_error(sock,400,"title and artist required"); return; }
 
     /* Inbuilt duplicate check: Reject copy if title and artist already exist in library */
     if (g_lib) {
@@ -2208,9 +2278,9 @@ static void handle_request(SOCKET sock, char *req, int req_len, const char *clie
             route_avl_search(sock, q); return;
         }
 
-        int song_id = atoi(seg3);
-        /* Fix H-05: Reject invalid/out-of-range IDs before touching any array */
-        if (song_id < 0 || song_id >= MAX_SONGS) {
+        int song_id = 0;
+        /* Reject malformed, zero, and out-of-range IDs before touching arrays. */
+        if (!parse_positive_id(seg3, &song_id) || song_id >= MAX_SONGS) {
             send_error(sock, 400, "invalid song id"); return;
         }
 
@@ -2289,7 +2359,10 @@ static void handle_request(SOCKET sock, char *req, int req_len, const char *clie
             send_error(sock,405,"method not allowed"); return;
         }
 
-        int pl_id = atoi(seg3);
+        int pl_id = 0;
+        if (!parse_positive_id(seg3, &pl_id)) {
+            send_error(sock, 400, "invalid playlist id"); return;
+        }
 
         if (seg4[0]=='\0') {
             if (strcmp(method,"DELETE")==0) { route_delete_playlist(sock, pl_id); return; }
@@ -2300,7 +2373,11 @@ static void handle_request(SOCKET sock, char *req, int req_len, const char *clie
             if (strcmp(method,"GET")==0)  { route_playlist_songs(sock, pl_id); return; }
             if (strcmp(method,"POST")==0) { route_playlist_add_song(sock, pl_id, body); return; }
             if (strcmp(method,"DELETE")==0 && seg5[0]) {
-                route_playlist_remove_song(sock, pl_id, atoi(seg5)); return;
+                int song_id = 0;
+                if (!parse_positive_id(seg5, &song_id)) {
+                    send_error(sock, 400, "invalid song id"); return;
+                }
+                route_playlist_remove_song(sock, pl_id, song_id); return;
             }
         }
         send_error(sock,404,"not found"); return;
@@ -2378,6 +2455,46 @@ static int get_server_port(void)
 {
     const char *p = getenv("DHUN_PORT");
     return p ? atoi(p) : PORT;
+}
+
+/* Parse request framing before dispatch so a timed-out or oversized body is
+ * never treated as a complete JSON request. Header names are case-insensitive. */
+static int parse_content_length(const char *request, const char *headers_end,
+                                long *content_length, int *found)
+{
+    *content_length = 0;
+    *found = 0;
+    const char *line = strstr(request, "\r\n");
+    if (!line) return 0;
+    line += 2;
+
+    while (line < headers_end) {
+        const char *line_end = strstr(line, "\r\n");
+        if (!line_end || line_end > headers_end) line_end = headers_end;
+        const char *colon = memchr(line, ':', (size_t)(line_end - line));
+        if (colon) {
+            size_t name_len = (size_t)(colon - line);
+            if (name_len == 14 && strncasecmp(line, "Content-Length", 14) == 0) {
+                const char *value = colon + 1;
+                while (value < line_end && (*value == ' ' || *value == '\t')) value++;
+                if (value == line_end || !isdigit((unsigned char)*value)) return 0;
+                errno = 0;
+                char *value_end = NULL;
+                long parsed = strtol(value, &value_end, 10);
+                if (errno == ERANGE || value_end == value || parsed < 0) return 0;
+                while (value_end < line_end && (*value_end == ' ' || *value_end == '\t')) value_end++;
+                if (value_end != line_end || (*found && parsed != *content_length)) return 0;
+                *content_length = parsed;
+                *found = 1;
+            } else if (name_len == 17 && strncasecmp(line, "Transfer-Encoding", 17) == 0) {
+                /* Chunked bodies are not supported by this small HTTP server. */
+                return 0;
+            }
+        }
+        if (line_end == headers_end) break;
+        line = line_end + 2;
+    }
+    return 1;
 }
 
 /* ── Seed sample songs ────────────────────────── */
@@ -2539,6 +2656,9 @@ int main(void)
         /* Receive full request — loop until \r\n\r\n found with strict absolute deadline */
         int total = 0;
         int done  = 0;
+        int request_complete = 0;
+        int request_bad = 0;
+        int request_too_large = 0;
         time_t req_start = time(NULL);
         const int MAX_REQ_TIME = 3; /* 3-second total request deadline (Finding 19) */
         /* Set a 1000ms receive timeout so slow clients cannot monopolize the worker */
@@ -2559,37 +2679,47 @@ int main(void)
             req_buf[total] = '\0';
             /* Stop once we have full headers */
             if (strstr(req_buf, "\r\n\r\n")) {
-                /* Check for body: if Content-Length present, read body too */
-                const char *cl = strstr(req_buf, "Content-Length:");
-                if (!cl) cl = strstr(req_buf, "content-length:");
-                if (cl) {
-                    long parsed_len = strtol(cl + 15, NULL, 10);
-                    int body_len = (parsed_len > 0) ? (int)parsed_len : 0;
-                    /* Fix L-02: Cap body_len to the space remaining in buffer
-                     * to prevent an attacker with a huge Content-Length from
-                     * keeping the recv loop running indefinitely. */
-                    int max_body = BUF - 1 - (int)(strstr(req_buf, "\r\n\r\n") - req_buf) - 4;
-                    if (body_len > max_body) body_len = max_body;
-                    const char *hdr_end = strstr(req_buf, "\r\n\r\n");
-                    int hdr_len = (int)(hdr_end - req_buf) + 4;
-                    int body_received = total - hdr_len;
-                    while (body_received < body_len && total < BUF - 1) {
-                        if (time(NULL) - req_start > MAX_REQ_TIME) break;
-                        int m = recv(client, req_buf + total, BUF - 1 - total, 0);
-                        if (m <= 0) break;
-                        total += m;
-                        req_buf[total] = '\0';
-                        body_received += m;
-                    }
+                const char *hdr_end = strstr(req_buf, "\r\n\r\n");
+                int hdr_len = (int)(hdr_end - req_buf) + 4;
+                long body_len = 0;
+                int has_content_length = 0;
+                if (!parse_content_length(req_buf, hdr_end, &body_len, &has_content_length)) {
+                    request_bad = 1;
+                    done = 1;
+                    break;
                 }
+                int max_body = BUF - 1 - hdr_len;
+                if (has_content_length && body_len > max_body) {
+                    request_too_large = 1;
+                    done = 1;
+                    break;
+                }
+
+                int expected_body = has_content_length ? (int)body_len : 0;
+                int body_received = total - hdr_len;
+                while (body_received < expected_body && total < BUF - 1) {
+                    if (time(NULL) - req_start > MAX_REQ_TIME) break;
+                    int m = recv(client, req_buf + total, BUF - 1 - total, 0);
+                    if (m <= 0) break;
+                    total += m;
+                    req_buf[total] = '\0';
+                    body_received += m;
+                }
+                request_complete = body_received >= expected_body;
                 done = 1;
             }
         }
         if (total > 0) {
-            char client_ip[64] = "127.0.0.1";
-            char *ip_str = inet_ntoa(client_addr.sin_addr);
-            if (ip_str) strncpy(client_ip, ip_str, sizeof(client_ip) - 1);
-            handle_request(client, req_buf, total, client_ip);
+            if (request_too_large) {
+                send_response(client, 413, "{\"error\":\"request body too large\"}");
+            } else if (request_bad || !request_complete) {
+                send_error(client, 400, "incomplete or malformed request");
+            } else {
+                char client_ip[64] = "127.0.0.1";
+                char *ip_str = inet_ntoa(client_addr.sin_addr);
+                if (ip_str) strncpy(client_ip, ip_str, sizeof(client_ip) - 1);
+                handle_request(client, req_buf, total, client_ip);
+            }
         }
         closesocket(client);
     }

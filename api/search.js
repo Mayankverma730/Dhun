@@ -92,26 +92,30 @@ module.exports = async (req, res) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 6000);
 
-    const ytRes = await fetch('https://www.youtube.com/youtubei/v1/search?prettyPrint=false', {
-      method: 'POST',
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
-      },
-      body: JSON.stringify({
-        context: {
-          client: {
-            clientName: 'WEB',
-            clientVersion: '2.20240101.00.00',
-            hl: 'en',
-            gl: 'US'
-          }
+    let ytRes;
+    try {
+      ytRes = await fetch('https://www.youtube.com/youtubei/v1/search?prettyPrint=false', {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
         },
-        query: musicQuery
-      })
-    });
-    clearTimeout(timeout);
+        body: JSON.stringify({
+          context: {
+            client: {
+              clientName: 'WEB',
+              clientVersion: '2.20240101.00.00',
+              hl: 'en',
+              gl: 'US'
+            }
+          },
+          query: musicQuery
+        })
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!ytRes.ok) {
       return res.status(200).json([]);
@@ -151,21 +155,29 @@ module.exports = async (req, res) => {
           continue;
         }
 
+        const rawArtist = v.ownerText?.runs?.[0]?.text || 'YouTube Artist';
+        let cleanArtist = rawArtist.replace(/\s*-\s*Topic$/i, '').trim();
+        // If channel is a known record label/distributor and the user searched for an artist, attribute to searched artist
+        if (/t-series|sony\s*music|zee\s*music|tips|speed\s*records|yrf|saregama|eros/i.test(cleanArtist) && !isCategory && q.length > 2) {
+          cleanArtist = q.charAt(0).toUpperCase() + q.slice(1);
+        }
+
         // Clean and extract core song title
         let cleanTitle = rawTitle;
         // A single slash may be part of a song title; only split on known suffix separators.
         cleanTitle = cleanTitle.split(/\||\/\/|•/)[0];
         // Remove known video labels while preserving meaningful parenthetical title text.
         cleanTitle = cleanTitle.replace(/\s*[\(\[]\s*(?:(?:official\s+)?(?:music\s+)?(?:video|audio|song|lyric\s+video|lyrics?|visualizer)|(?:hd|4k|8k|remix|remaster(?:ed)?))\s*[\)\]]/gi, '');
-        // If format 'Artist - Song' or 'Song - Artist'
+        // Remove a leading/trailing artist credit only when it matches channel metadata.
         if (cleanTitle.includes(' - ')) {
           const parts = cleanTitle.split(' - ');
-          if (/[,\&]|ft\b|feat\b|\bx\b/i.test(parts[0])) {
-            cleanTitle = parts[1];
-          } else if (/[,\&]|ft\b|feat\b|\bx\b/i.test(parts[1])) {
-            cleanTitle = parts[0];
-          } else {
-            cleanTitle = parts[0];
+          const artistKey = cleanArtist.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const firstKey = parts[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+          const lastKey = parts[parts.length - 1].toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (artistKey && firstKey === artistKey) {
+            cleanTitle = parts.slice(1).join(' - ');
+          } else if (artistKey && lastKey === artistKey) {
+            cleanTitle = parts.slice(0, -1).join(' - ');
           }
         }
         // Strip music boilerplate words
@@ -174,13 +186,6 @@ module.exports = async (req, res) => {
           .trim();
 
         if (!cleanTitle) cleanTitle = rawTitle.trim() || 'Track';
-
-        const rawArtist = v.ownerText?.runs?.[0]?.text || 'YouTube Artist';
-        let cleanArtist = rawArtist.replace(/\s*-\s*Topic$/i, '').trim();
-        // If channel is a known record label/distributor and the user searched for an artist, attribute to searched artist
-        if (/t-series|sony\s*music|zee\s*music|tips|speed\s*records|yrf|saregama|eros/i.test(cleanArtist) && !isCategory && q.length > 2) {
-          cleanArtist = q.charAt(0).toUpperCase() + q.slice(1);
-        }
 
         const normTitle = cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
         const normArtist = cleanArtist.toLowerCase().replace(/[^a-z0-9]/g, '');

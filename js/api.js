@@ -16,17 +16,21 @@ async function apiWithRetry(endpoint, options = {}, retries = 3, baseDelay = 100
             });
 
             if (!res.ok) {
-                // Do not retry client errors (4xx) except 429 Too Many Requests
+                let message = `HTTP ${res.status}: ${res.statusText}`;
                 if (res.status >= 400 && res.status < 500 && res.status !== 429) {
                     const errBody = await res.json().catch(() => ({ error: res.statusText }));
-                    throw new Error(errBody.error || `HTTP error ${res.status}`);
+                    message = errBody.error || `HTTP error ${res.status}`;
                 }
-                throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                const error = new Error(message);
+                error.status = res.status;
+                throw error;
             }
 
             return await res.json();
         } catch (err) {
             lastError = err;
+            // Client errors are final; only 429 is worth retrying.
+            if (err.status >= 400 && err.status < 500 && err.status !== 429) throw err;
             if (attempt < retries) {
                 const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 200;
                 console.warn(`[API] Retrying ${endpoint} in ${Math.round(delay)}ms (Attempt ${attempt + 1}/${retries})...`);

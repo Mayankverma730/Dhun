@@ -7,39 +7,22 @@
  * DELETE /api/playlists/:id/songs  → remove song from playlist
  */
 
-const { loadStore, saveStore, setCORS } = require('../_store');
-
-function getUserId(req) {
-  const auth = req.headers.authorization || '';
-  if (auth.startsWith('Bearer ')) {
-    const token = auth.slice(7).trim();
-    if (token && token.length >= 8) return token.slice(0, 64);
-  }
-  const clientHeader = req.headers['x-user-id'];
-  if (clientHeader && typeof clientHeader === 'string' && clientHeader.startsWith('guest_')) {
-    return clientHeader.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
-  }
-  return 'guest';
-}
+const { loadStore, saveStore, setCORS, getUserPlaylistBucket } = require('../_store');
 
 module.exports = async (req, res) => {
   setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const { id } = req.query;
-  const plId = parseInt(id, 10);
-  if (isNaN(plId) || plId <= 0) {
+  const plId = Number(id);
+  if (!Number.isSafeInteger(plId) || plId <= 0) {
     return res.status(400).json({ error: 'Valid positive integer playlist ID required' });
   }
 
   const store = loadStore();
   if (!store.userPlaylists) store.userPlaylists = {};
 
-  const userId = getUserId(req);
-  if (!store.userPlaylists[userId]) {
-    store.userPlaylists[userId] = [];
-  }
-  const playlists = store.userPlaylists[userId];
+  const { playlists } = getUserPlaylistBucket(req, store);
   const idx = playlists.findIndex(p => p.id === plId);
 
   if (idx === -1) {
@@ -59,13 +42,17 @@ module.exports = async (req, res) => {
     if (typeof body === 'string') {
       try { body = JSON.parse(body); } catch { return res.status(400).json({ error: 'Invalid JSON' }); }
     }
-    const songId = body && (body.song_id || body.songId);
-    if (!songId) {
+    let songId = body && (body.song_id ?? body.songId);
+    if (typeof songId === 'string') songId = songId.trim();
+    const validSongId = (typeof songId === 'number' && Number.isSafeInteger(songId) && songId > 0) ||
+      (typeof songId === 'string' && songId.length > 0 && songId.length <= 128 &&
+        (!/^\d+$/.test(songId) || (Number.isSafeInteger(Number(songId)) && Number(songId) > 0)));
+    if (!validSongId) {
       return res.status(400).json({ error: 'song_id required' });
     }
 
-    if (!playlist.songs) playlist.songs = [];
-    if (!playlist.songs.includes(songId)) {
+    if (!Array.isArray(playlist.songs)) playlist.songs = [];
+    if (!playlist.songs.some(id => String(id) === String(songId))) {
       playlist.songs.push(songId);
       playlist.song_count = playlist.songs.length;
     }

@@ -79,7 +79,7 @@ const YTMusicAPI = (() => {
     for (const t of tracks) {
       if (!t) continue;
       const vid = (t.videoId || (typeof t.id === 'string' && t.id.startsWith('yt_') ? t.id.replace(/^yt_/, '') : '') || '').trim();
-      const cleanT = cleanSongTitle(t.title || '');
+      const cleanT = cleanSongTitle(t.title || '', t.artist || '');
       const cleanA = cleanArtistName(t.artist || '');
       const normTitle = cleanT.toLowerCase().replace(/[^a-z0-9]/g, '');
       const normArtist = cleanA.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -216,7 +216,7 @@ const YTMusicAPI = (() => {
       const vid = vidMatch[0];
       if (seenIds.has(vid)) continue;
 
-      const title = cleanSongTitle(item.title || 'Unknown Title');
+      const title = cleanSongTitle(item.title || 'Unknown Title', item.author || item.artist || '');
       const artist = cleanArtistName(item.author || item.artist || 'YouTube Artist');
       const normTitle = title.toLowerCase().replace(/[^a-z0-9]/g, '');
       const normArtist = cleanArtistName(artist).toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -294,22 +294,23 @@ const YTMusicAPI = (() => {
   /**
    * Clean titles by removing redundant strings like "(Official Video)", "4K", movie suffixes, etc.
    */
-  function cleanSongTitle(str) {
+  function cleanSongTitle(str, artist = '') {
     if (!str) return 'Untitled';
     let s = String(str);
     // Treat separators as suffix markers only; a single slash can be part of a song title.
     s = s.split(/\||\/\/|•/)[0];
     // Remove known video labels without deleting meaningful title text in parentheses.
     s = s.replace(/\s*[\(\[]\s*(?:(?:official\s+)?(?:music\s+)?(?:video|audio|song|lyric\s+video|lyrics?|visualizer)|(?:hd|4k|8k|remix|remaster(?:ed)?))\s*[\)\]]/gi, '');
-    // If format 'Artist - Song' or 'Song - Artist'
+    // Remove a leading/trailing artist credit only when it matches YouTube's artist metadata.
     if (s.includes(' - ')) {
       const parts = s.split(' - ');
-      if (/[,\&]|ft\b|feat\b|\bx\b/i.test(parts[0])) {
-        s = parts[1];
-      } else if (/[,\&]|ft\b|feat\b|\bx\b/i.test(parts[1])) {
-        s = parts[0];
-      } else {
-        s = parts[0];
+      const artistKey = cleanArtistName(artist).toLowerCase().replace(/[^a-z0-9]/g, '');
+      const firstKey = parts[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+      const lastKey = parts[parts.length - 1].toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (artistKey && firstKey === artistKey) {
+        s = parts.slice(1).join(' - ');
+      } else if (artistKey && lastKey === artistKey) {
+        s = parts.slice(0, -1).join(' - ');
       }
     }
     // Strip music boilerplate words

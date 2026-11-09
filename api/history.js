@@ -16,8 +16,10 @@ module.exports = async (req, res) => {
   const userId = identity.authenticated ? identity.user.id : (identity.guestId || 'guest_default');
 
   const store = loadStore();
-  if (!store.histories) store.histories = {};
-  if (!store.histories[userId]) store.histories[userId] = [];
+  if (!store.histories || typeof store.histories !== 'object' || Array.isArray(store.histories)) {
+    store.histories = Object.create(null);
+  }
+  if (!Array.isArray(store.histories[userId])) store.histories[userId] = [];
   const history = store.histories[userId];
 
   if (req.method === 'GET') return res.status(200).json(history);
@@ -37,8 +39,8 @@ module.exports = async (req, res) => {
 
     // Push to history with validation
     if (body && body.song_id !== undefined) {
-      const songId = parseInt(body.song_id, 10);
-      if (isNaN(songId) || songId <= 0 || songId > 10000000) {
+      const songId = Number(body.song_id);
+      if (!Number.isSafeInteger(songId) || songId <= 0 || songId > 10000000) {
         return res.status(400).json({ error: 'Valid positive integer song_id required' });
       }
 

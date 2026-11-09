@@ -6,15 +6,15 @@
  * DELETE /api/songs/:id       → delete song (requires authorization)
  */
 
-const { loadStore, saveStore, setCORS, getCallerIdentity } = require('../_store');
+const { loadStore, saveStore, setCORS, getCallerIdentity, getUserSongLikes } = require('../_store');
 
 module.exports = async (req, res) => {
   setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const { id, action } = req.query;
-  const songId = parseInt(id, 10);
-  if (isNaN(songId) || songId <= 0) {
+  const songId = Number(id);
+  if (!Number.isSafeInteger(songId) || songId <= 0) {
     return res.status(400).json({ error: 'Valid positive integer song ID required' });
   }
 
@@ -28,7 +28,9 @@ module.exports = async (req, res) => {
 
   // GET /api/songs/:id
   if (req.method === 'GET') {
-    return res.status(200).json(songs[idx]);
+    const { songIds } = getUserSongLikes(req, store);
+    const liked = songIds.some(id => String(id) === String(songId));
+    return res.status(200).json({ ...songs[idx], liked: liked ? 1 : 0 });
   }
 
   // PUT /api/songs/:id/play — increment play count (Finding 02: Authorization check)
@@ -37,9 +39,15 @@ module.exports = async (req, res) => {
     if (!identity.authenticated) {
       return res.status(401).json({ error: 'Unauthorized: Sign in required to record play' });
     }
-    songs[idx].play_count = Math.min((songs[idx].play_count || 0) + 1, 100000000);
+    const currentPlayCount = Number(songs[idx].play_count);
+    songs[idx].play_count = Math.min(
+      (Number.isSafeInteger(currentPlayCount) && currentPlayCount >= 0 ? currentPlayCount : 0) + 1,
+      100000000
+    );
     saveStore(store);
-    return res.status(200).json(songs[idx]);
+    const { songIds } = getUserSongLikes(req, store);
+    const liked = songIds.some(id => String(id) === String(songId));
+    return res.status(200).json({ ...songs[idx], liked: liked ? 1 : 0 });
   }
 
   // PUT /api/songs/:id/like — toggle like (Finding 02: Authorization check)
@@ -48,9 +56,12 @@ module.exports = async (req, res) => {
     if (!identity.authenticated) {
       return res.status(401).json({ error: 'Unauthorized: Sign in required to like songs' });
     }
-    songs[idx].liked = songs[idx].liked ? 0 : 1;
+    const { songIds } = getUserSongLikes(req, store);
+    const likedIndex = songIds.findIndex(id => String(id) === String(songId));
+    if (likedIndex === -1) songIds.push(songId);
+    else songIds.splice(likedIndex, 1);
     saveStore(store);
-    return res.status(200).json(songs[idx]);
+    return res.status(200).json({ ...songs[idx], liked: likedIndex === -1 ? 1 : 0 });
   }
 
   // DELETE /api/songs/:id (Finding 02: Authorization check)

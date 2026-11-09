@@ -82,13 +82,24 @@ static int add_song_all(const char *title, const char *artist,
     if (id < 0) return -1;
 
     Song *s = lib_find_by_id(g_lib, id);
-    if (!s) return -1;
+    if (!s) {
+        lib_remove_song(g_lib, id);
+        return -1;
+    }
 
     /* 2. BST — search index */
-    bst_insert(g_bst, *s);
+    if (!bst_insert(g_bst, *s)) {
+        /* Roll back the master list if an index allocation fails. */
+        lib_remove_song(g_lib, id);
+        return -1;
+    }
 
     /* 3. Hash Table — O(1) lookup */
-    hash_insert(g_hash, *s);
+    if (!hash_insert(g_hash, *s)) {
+        bst_delete(g_bst, s->title);
+        lib_remove_song(g_lib, id);
+        return -1;
+    }
 
     /* 4. Heap — ranking (built on demand, skip here) */
 

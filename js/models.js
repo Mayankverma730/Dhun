@@ -10,11 +10,15 @@ class SongModel {
         this.artist = String(data.artist || 'Unknown Artist').trim().slice(0, 80);
         this.album = String(data.album || 'Unknown Album').trim().slice(0, 80);
         this.genre = String(data.genre || 'Other').trim().slice(0, 50);
-        this.duration = Number(data.duration) || 0.0;
-        this.play_count = Number(data.play_count || data.plays) || 0;
-        this.rating = Number(data.rating) || 4.5;
-        this.liked = Boolean(data.liked);
-        this.url = data.url || data.audioUrl || '';
+        const duration = Number(data.duration);
+        this.duration = Number.isFinite(duration) && duration >= 0 ? duration : 0;
+        const playCount = Number(data.play_count ?? data.plays ?? 0);
+        this.play_count = Number.isFinite(playCount) && playCount >= 0 ? Math.floor(playCount) : 0;
+        // Keep a valid zero rating instead of replacing it with the default.
+        const rating = data.rating === undefined || data.rating === null || data.rating === '' ? 4.5 : Number(data.rating);
+        this.rating = Number.isFinite(rating) ? Math.min(5, Math.max(0, rating)) : 4.5;
+        this.liked = data.liked === true || data.liked === 1 || (typeof data.liked === 'string' && /^(true|1)$/i.test(data.liked));
+        this.url = String(data.url || data.audioUrl || '');
         this.cover = data.cover || data.thumbnail || data.artwork || 'album1.jpg';
         this.source = data.source || (this.url.includes('youtube') ? 'youtube' : 'local');
         // Extended metadata [T3-16]
@@ -77,7 +81,10 @@ class PlaylistModel {
         this.id = Number(data.id) || Date.now();
         this.name = String(data.name || 'New Playlist').trim().slice(0, 80);
         this.userId = String(data.userId || 'guest');
-        this.songs = Array.isArray(data.songs) ? data.songs.map(s => new SongModel(s)) : [];
+        // Playlists may store either full song records or just catalog IDs.
+        this.songs = Array.isArray(data.songs)
+            ? data.songs.map(song => song && typeof song === 'object' ? new SongModel(song) : song)
+            : [];
         this.createdAt = data.createdAt || new Date().toISOString();
     }
 

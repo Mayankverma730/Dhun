@@ -148,7 +148,8 @@ module.exports = async (req, res) => {
           status: 'ok',
           token: sessionToken,
           user: {
-            id: userId,
+            // The returned identity must match the ID saved in the session for existing accounts.
+            id: user.id,
             email: email,
             name: user.name,
             avatar: info.picture || '',
@@ -199,6 +200,9 @@ module.exports = async (req, res) => {
           return res.status(401).json({ success: false, error: 'Google email is not verified' });
         }
         const email = (profile.email || '').toLowerCase().trim();
+        if (!email) {
+          return res.status(400).json({ success: false, error: 'No email returned in Google profile' });
+        }
         const sessionToken = 'sess_' + crypto.randomBytes(16).toString('hex');
         const userId = 'usr_g_' + crypto.createHash('sha256').update(profile.sub || email).digest('hex').slice(0, 16);
 
@@ -236,7 +240,8 @@ module.exports = async (req, res) => {
           status: 'ok',
           token: sessionToken,
           user: {
-            id: userId,
+            // The returned identity must match the ID saved in the session for existing accounts.
+            id: user.id,
             email: email,
             name: user.name,
             avatar: profile.picture || '',

@@ -46,9 +46,12 @@ module.exports = async (req, res) => {
     const url = `https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q=${encodeURIComponent(query)}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 3000);
-
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
+    let response;
+    try {
+      response = await fetch(url, { signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!response.ok) return res.status(200).json([]);
     const data = await response.json();

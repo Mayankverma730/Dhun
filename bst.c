@@ -34,7 +34,12 @@ static BSTNode *new_node(Song song)
 
 static BSTNode *insert_rec(BSTNode *node, Song song, int *added)
 {
-    if (!node) { *added = 1; return new_node(song); }
+    if (!node) {
+        BSTNode *created = new_node(song);
+        /* Keep tree->size accurate if node allocation fails. */
+        if (created) *added = 1;
+        return created;
+    }
     int cmp = strcmp(song.title, node->song.title);
     if (cmp < 0) node->left  = insert_rec(node->left,  song, added);
     else if (cmp > 0) node->right = insert_rec(node->right, song, added);

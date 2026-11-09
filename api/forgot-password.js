@@ -10,7 +10,7 @@
 const crypto = require('crypto');
 const { loadStore, saveStore, setCORS } = require('./_store');
 
-if (!global._forgotRateLimits) global._forgotRateLimits = {};
+if (!(global._forgotRateLimits instanceof Map)) global._forgotRateLimits = new Map();
 
 module.exports = async (req, res) => {
   setCORS(req, res);
@@ -21,13 +21,18 @@ module.exports = async (req, res) => {
   const headers = (req && req.headers) || {};
   const ip = headers['x-forwarded-for'] || (req.socket && req.socket.remoteAddress) || 'unknown';
   const now = Date.now();
-  const rl = global._forgotRateLimits[ip] || { count: 0, resetAt: now + 600000 };
-  if (now > rl.resetAt) {
-    rl.count = 0;
-    rl.resetAt = now + 600000;
+  const limits = global._forgotRateLimits;
+  let rl = limits.get(ip);
+  if (!rl || now > rl.resetAt) {
+    rl = { count: 0, resetAt: now + 600000 };
   }
   rl.count++;
-  global._forgotRateLimits[ip] = rl;
+  limits.set(ip, rl);
+  if (limits.size > 1000) {
+    for (const [key, value] of limits) {
+      if (now > value.resetAt) limits.delete(key);
+    }
+  }
   if (rl.count > 5) {
     return res.status(429).json({ success: false, error: 'Too many password reset requests. Please try again later.' });
   }

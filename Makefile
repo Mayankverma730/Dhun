@@ -19,14 +19,17 @@ TEST_BIN = test_dsa
 BENCH_BIN = benchmark
 
 # Detect OS
+# The C server uses native sockets on POSIX and links Winsock/BCrypt on Windows.
 ifeq ($(OS),Windows_NT)
     EXE_EXT = .exe
     RM      = del /Q
     SLASH   = \\
+    SERVER_LIBS = -lws2_32 -lbcrypt
 else
     EXE_EXT =
     RM      = rm -f
     SLASH   = /
+    SERVER_LIBS =
 endif
 
 COMMON_SRCS = song.c library.c stack.c queue.c bst.c heap.c hash.c sort.c playlist.c avl.c trie.c graph.c cache.c logger.c
@@ -56,7 +59,7 @@ $(TARGET)$(EXE_EXT): $(CLI_OBJS)
 
 # HTTP API server
 $(SERVER)$(EXE_EXT): $(SRV_OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ -lws2_32 -lbcrypt -lm
+	$(CC) $(CFLAGS) -o $@ $^ $(SERVER_LIBS) -lm
 	@echo "  ✓ Server built: $(SERVER)$(EXE_EXT)"
 
 # Test DSA binary

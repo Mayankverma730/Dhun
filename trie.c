@@ -29,6 +29,8 @@ Trie *trie_create(void) {
     Trie *trie = (Trie *)malloc(sizeof(Trie));
     if (!trie) return NULL;
     trie->root = trie_create_node();
+    /* A trie without a root cannot accept inserts or autocomplete requests. */
+    if (!trie->root) { free(trie); return NULL; }
     trie->word_count = 0;
     return trie;
 }
@@ -63,13 +65,14 @@ void trie_insert(Trie *trie, const char *word, int song_id, const char *title) {
         }
         curr = curr->children[c];
     }
+    /* Re-inserting a word updates its song but not the unique-word count. */
+    if (!curr->is_end_of_word) trie->word_count++;
     curr->is_end_of_word = 1;
     curr->song_id = song_id;
     if (title) {
         strncpy(curr->title, title, sizeof(curr->title) - 1);
         curr->title[sizeof(curr->title) - 1] = '\0';
     }
-    trie->word_count++;
 }
 
 /* ── Iterative DFS using an explicit stack ────────────────────────────────
@@ -77,8 +80,6 @@ void trie_insert(Trie *trie, const char *word, int song_id, const char *title) {
  * long song titles (up to MAX_TITLE = 100 chars, branching factor 128).
  * An explicit stack heap-allocated here removes that risk entirely.
  * --------------------------------------------------------------------------*/
-#define DFS_STACK_CAP 4096
-
 typedef struct { TrieNode *node; } DfsFrame;
 
 static void collect_suggestions(TrieNode *root,
@@ -89,10 +90,11 @@ static void collect_suggestions(TrieNode *root,
 {
     if (!root || !count || *count >= max_results) return;
 
-    DfsFrame *stack = (DfsFrame *)malloc(DFS_STACK_CAP * sizeof(DfsFrame));
+    size_t capacity = 128;
+    DfsFrame *stack = (DfsFrame *)malloc(capacity * sizeof(*stack));
     if (!stack) return; /* OOM — return what we have so far */
 
-    int top = 0;
+    size_t top = 0;
     stack[top++].node = root;
 
     while (top > 0 && *count < max_results) {
@@ -106,7 +108,14 @@ static void collect_suggestions(TrieNode *root,
 
         /* Push children in reverse order so we explore in alphabetical order */
         for (int i = TRIE_ALPHABET - 1; i >= 0; i--) {
-            if (node->children[i] && top < DFS_STACK_CAP - 1) {
+            if (node->children[i]) {
+                if (top == capacity) {
+                    size_t new_capacity = capacity * 2;
+                    DfsFrame *grown = (DfsFrame *)realloc(stack, new_capacity * sizeof(*stack));
+                    if (!grown) { free(stack); return; }
+                    stack = grown;
+                    capacity = new_capacity;
+                }
                 stack[top++].node = node->children[i];
             }
         }
@@ -118,7 +127,7 @@ static void collect_suggestions(TrieNode *root,
 int trie_autocomplete(const Trie *trie, const char *prefix,
                       int out_ids[], char out_titles[][128], int max_results)
 {
-    if (!trie || !prefix) return 0;
+    if (!trie || !trie->root || !prefix || !out_ids || !out_titles || max_results <= 0) return 0;
 
     TrieNode *curr = trie->root;
     for (int i = 0; prefix[i]; i++) {

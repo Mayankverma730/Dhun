@@ -29,46 +29,38 @@
    MERGE SORT
    ════════════════════════════════════════════ */
 
-/* Merge two sorted halves into arr[lo..hi] */
-static void merge(Song *arr, int lo, int mid, int hi, SongComparator cmp)
+/* Merge two sorted halves into one shared scratch array. */
+static void merge(Song *arr, Song *scratch, int lo, int mid, int hi,
+                  SongComparator cmp)
 {
-    int  left_size  = mid - lo + 1;
-    int  right_size = hi - mid;
-    if (left_size <= 0 || right_size <= 0) return;
-
-    /* Allocate temp arrays */
-    Song *L = (Song *)malloc(left_size  * sizeof(Song));
-    Song *R = (Song *)malloc(right_size * sizeof(Song));
-    if (!L || !R) { free(L); free(R); return; }
-
-    for (int i = 0; i < left_size;  i++) L[i] = arr[lo  + i];
-    for (int j = 0; j < right_size; j++) R[j] = arr[mid + 1 + j];
-
-    int i = 0, j = 0, k = lo;
-    while (i < left_size && j < right_size) {
-        if (cmp(&L[i], &R[j]) <= 0) arr[k++] = L[i++];
-        else                         arr[k++] = R[j++];
+    int left = lo, right = mid + 1, out = lo;
+    while (left <= mid && right <= hi) {
+        if (cmp(&arr[left], &arr[right]) <= 0) scratch[out++] = arr[left++];
+        else                                    scratch[out++] = arr[right++];
     }
-    while (i < left_size)  arr[k++] = L[i++];
-    while (j < right_size) arr[k++] = R[j++];
-
-    free(L);
-    free(R);
+    while (left <= mid)  scratch[out++] = arr[left++];
+    while (right <= hi)  scratch[out++] = arr[right++];
+    for (int i = lo; i <= hi; i++) arr[i] = scratch[i];
 }
 
-static void merge_sort_rec(Song *arr, int lo, int hi, SongComparator cmp)
+static void merge_sort_rec(Song *arr, Song *scratch, int lo, int hi,
+                           SongComparator cmp)
 {
     if (lo >= hi) return;
     int mid = lo + (hi - lo) / 2;
-    merge_sort_rec(arr, lo,      mid, cmp);
-    merge_sort_rec(arr, mid + 1, hi,  cmp);
-    merge(arr, lo, mid, hi, cmp);
+    merge_sort_rec(arr, scratch, lo,      mid, cmp);
+    merge_sort_rec(arr, scratch, mid + 1, hi,  cmp);
+    merge(arr, scratch, lo, mid, hi, cmp);
 }
 
 void merge_sort(Song *arr, int n, SongComparator cmp)
 {
-    if (!arr || n <= 1) return;
-    merge_sort_rec(arr, 0, n - 1, cmp);
+    if (!arr || !cmp || n <= 1) return;
+    /* One buffer replaces per-merge allocations and leaves input untouched on OOM. */
+    Song *scratch = (Song *)malloc((size_t)n * sizeof(*scratch));
+    if (!scratch) return;
+    merge_sort_rec(arr, scratch, 0, n - 1, cmp);
+    free(scratch);
 }
 
 /* ════════════════════════════════════════════
@@ -131,8 +123,11 @@ void sort_by_rating(Song *arr, int n) { merge_sort(arr, n, song_compare_rating);
 /* ── Convert library DLL to flat array ───────── */
 int lib_to_array(void *lib_ptr, Song **out)
 {
+    /* A missing output pointer is a caller error; avoid dereferencing it. */
+    if (!out) return 0;
+    *out = NULL;
     Library *lib = (Library *)lib_ptr;
-    if (!lib || lib->size == 0) { *out = NULL; return 0; }
+    if (!lib || lib->size == 0) return 0;
 
     *out = (Song *)malloc(lib->size * sizeof(Song));
     if (!*out) { perror("lib_to_array"); return 0; }

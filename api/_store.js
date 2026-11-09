@@ -31,16 +31,35 @@ const INITIAL_PLAYLISTS = [
 
 let _memoryStore = null;
 
+function safeDictionary(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return Object.create(null);
+  return Object.assign(Object.create(null), value);
+}
+
 function loadStore() {
   if (_memoryStore) return _memoryStore;
   try {
     if (fs.existsSync(STORE_PATH)) {
       const data = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
       if (data && Array.isArray(data.songs)) {
-        if (!data.sessions) data.sessions = {};
-        if (!data.users) data.users = [];
-        if (!data.resetTokens) data.resetTokens = {};
-        if (!data.userPlaylists) data.userPlaylists = {};
+        // Guest IDs can equal object prototype names; use safe maps for user-keyed data.
+        for (const key of ['sessions', 'resetTokens', 'userPlaylists', 'userLikes', 'queues', 'histories']) {
+          data[key] = safeDictionary(data[key]);
+        }
+        if (!Array.isArray(data.users)) data.users = [];
+        if (!Array.isArray(data.playlists)) data.playlists = [...INITIAL_PLAYLISTS];
+        const maxSongId = data.songs.reduce((max, song) =>
+          Number.isSafeInteger(song?.id) && song.id > max ? song.id : max, 0);
+        if (!Number.isSafeInteger(data.nextSongId) || data.nextSongId <= maxSongId) {
+          data.nextSongId = maxSongId + 1;
+        }
+        const userPlaylistIds = Object.values(data.userPlaylists).flatMap(list =>
+          Array.isArray(list) ? list.map(playlist => playlist?.id) : []);
+        const maxPlaylistId = [...data.playlists.map(playlist => playlist?.id), ...userPlaylistIds]
+          .reduce((max, id) => Number.isSafeInteger(id) && id > max ? id : max, 0);
+        if (!Number.isSafeInteger(data.nextPlaylistId) || data.nextPlaylistId <= maxPlaylistId) {
+          data.nextPlaylistId = maxPlaylistId + 1;
+        }
         _memoryStore = data;
         return _memoryStore;
       }
@@ -55,8 +74,12 @@ function loadStore() {
     playlists: [...INITIAL_PLAYLISTS],
     nextPlaylistId: 3,
     users: [],
-    sessions: {},
-    resetTokens: {}
+    sessions: safeDictionary(),
+    resetTokens: safeDictionary(),
+    userPlaylists: safeDictionary(),
+    userLikes: safeDictionary(),
+    queues: safeDictionary(),
+    histories: safeDictionary()
   };
   saveStore(_memoryStore);
   return _memoryStore;
@@ -128,11 +151,60 @@ function getCallerIdentity(req) {
   // Unauthenticated client: provide isolated guest ID for read-only user state
   const clientHeader = headers['x-user-id'] || headers['X-User-Id'];
   let guestId = 'guest_anonymous';
-  if (clientHeader && typeof clientHeader === 'string' && /^[a-zA-Z0-9_-]{4,64}$/.test(clientHeader)) {
+  // Never trust an unauthenticated header that names a signed-in account.
+  if (clientHeader === 'guest' ||
+      (typeof clientHeader === 'string' && /^guest_[a-zA-Z0-9_-]{0,58}$/.test(clientHeader))) {
     guestId = clientHeader;
   }
 
   return { authenticated: false, guestId };
+}
+
+function getUserPlaylistBucket(req, store = loadStore()) {
+  const identity = getCallerIdentity(req);
+  const userId = identity.authenticated ? identity.user.id : identity.guestId;
+  if (!store.userPlaylists || typeof store.userPlaylists !== 'object') {
+    store.userPlaylists = safeDictionary(store.userPlaylists);
+  }
+
+  const playlists = Array.isArray(store.userPlaylists[userId]) ? store.userPlaylists[userId] : [];
+  const legacyKeys = identity.authenticated
+    ? Object.entries(store.sessions || {})
+        .filter(([token, session]) => token !== userId && session?.user?.id === userId)
+        .map(([token]) => token)
+    : (userId === 'guest_anonymous' ? ['guest'] : []);
+  const playlistIds = new Set(playlists.map(playlist => String(playlist.id)));
+  let migrated = false;
+
+  for (const key of legacyKeys) {
+    const legacy = store.userPlaylists[key];
+    if (!Array.isArray(legacy)) continue;
+    for (const playlist of legacy) {
+      if (!playlist || typeof playlist !== 'object') continue;
+      const id = String(playlist.id);
+      if (!playlistIds.has(id)) {
+        playlists.push(playlist);
+        playlistIds.add(id);
+      }
+    }
+    delete store.userPlaylists[key];
+    migrated = true;
+  }
+
+  store.userPlaylists[userId] = playlists;
+  if (migrated) saveStore(store);
+  return { identity, userId, playlists };
+}
+
+function getUserSongLikes(req, store = loadStore()) {
+  const identity = getCallerIdentity(req);
+  const userId = identity.authenticated ? identity.user.id : identity.guestId;
+  if (!store.userLikes || typeof store.userLikes !== 'object') {
+    store.userLikes = safeDictionary(store.userLikes);
+  }
+  const songIds = Array.isArray(store.userLikes[userId]) ? store.userLikes[userId] : [];
+  store.userLikes[userId] = songIds;
+  return { identity, userId, songIds };
 }
 
 module.exports = {
@@ -141,5 +213,7 @@ module.exports = {
   hashPassword,
   verifyPasswordHash,
   setCORS,
-  getCallerIdentity
+  getCallerIdentity,
+  getUserPlaylistBucket,
+  getUserSongLikes
 };

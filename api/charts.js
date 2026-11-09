@@ -6,14 +6,17 @@
  * Finding 12: Reads from shared persistent store.
  */
 
-const { loadStore, setCORS } = require('./_store');
+const { loadStore, setCORS, getUserSongLikes } = require('./_store');
 
 module.exports = async (req, res) => {
   setCORS(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   const store = loadStore();
   const songs = [...(store.songs || [])];
+  const { songIds } = getUserSongLikes(req, store);
+  const likedIds = new Set(songIds.map(String));
   const { sort } = req.query || {};
 
   if (sort === 'rating') {
@@ -22,5 +25,9 @@ module.exports = async (req, res) => {
     songs.sort((a, b) => (b.play_count || 0) - (a.play_count || 0));
   }
 
-  return res.status(200).json(songs.slice(0, 10));
+  // Like state belongs to the caller, so never return the legacy shared flag.
+  return res.status(200).json(songs.slice(0, 10).map(song => ({
+    ...song,
+    liked: likedIds.has(String(song.id)) ? 1 : 0
+  })));
 };

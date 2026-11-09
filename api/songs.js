@@ -8,7 +8,14 @@
  * ══════════════════════════════════════════════════════════════════
  */
 
-const { loadStore, saveStore, setCORS, getCallerIdentity } = require('./_store');
+const { loadStore, saveStore, setCORS, getCallerIdentity, getUserSongLikes } = require('./_store');
+
+function finiteNumber(value) {
+  if (typeof value !== 'number' && typeof value !== 'string') return NaN;
+  if (typeof value === 'string' && !value.trim()) return NaN;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : NaN;
+}
 
 module.exports = async (req, res) => {
   setCORS(req, res);
@@ -18,7 +25,10 @@ module.exports = async (req, res) => {
   const songs = store.songs;
 
   if (req.method === 'GET') {
-    const q = (req.query.q || '').toLowerCase().trim();
+    const { songIds: likedIds } = getUserSongLikes(req, store);
+    const liked = new Set(likedIds.map(String));
+    const withUserLike = song => ({ ...song, liked: liked.has(String(song.id)) ? 1 : 0 });
+    const q = String(req.query.q || '').toLowerCase().trim();
     if (q) {
       const results = songs.filter(s =>
         s.title.toLowerCase().includes(q) ||
@@ -26,9 +36,9 @@ module.exports = async (req, res) => {
         (s.album || '').toLowerCase().includes(q) ||
         (s.genre || '').toLowerCase().includes(q)
       );
-      return res.status(200).json(results);
+      return res.status(200).json(results.map(withUserLike));
     }
-    return res.status(200).json(songs);
+    return res.status(200).json(songs.map(withUserLike));
   }
 
   if (req.method === 'POST') {
@@ -42,7 +52,8 @@ module.exports = async (req, res) => {
     if (typeof body === 'string') {
       try { body = JSON.parse(body); } catch { return res.status(400).json({ error: 'Invalid JSON' }); }
     }
-    if (!body || !body.title || typeof body.title !== 'string') {
+    // Reject whitespace-only titles before they become unsearchable catalog entries.
+    if (!body || typeof body.title !== 'string' || !body.title.trim()) {
       return res.status(400).json({ error: 'title required' });
     }
 
@@ -62,13 +73,15 @@ module.exports = async (req, res) => {
       return res.status(409).json({ error: 'A song with this title and artist already exists' });
     }
 
-    let duration = parseFloat(body.duration);
-    if (isNaN(duration) || duration <= 0 || duration > 600) {
+    const requestedDuration = finiteNumber(body.duration);
+    let duration = requestedDuration;
+    if (!Number.isFinite(duration) || duration <= 0 || duration > 600) {
       duration = 3.5;
     }
 
-    let rating = parseFloat(body.rating);
-    if (isNaN(rating) || rating < 0 || rating > 5.0) {
+    const requestedRating = finiteNumber(body.rating);
+    let rating = requestedRating;
+    if (!Number.isFinite(rating) || rating < 0 || rating > 5.0) {
       rating = 4.0;
     }
 

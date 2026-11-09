@@ -67,8 +67,10 @@ static int song_title_cmp(const char *t1, const char *t2) {
 
 static AVLNode *insert_rec(AVLNode *node, Song song, int *inserted) {
     if (!node) {
-        *inserted = 1;
-        return create_node(song);
+        AVLNode *created = create_node(song);
+        /* Keep tree->size accurate if node allocation fails. */
+        if (created) *inserted = 1;
+        return created;
     }
 
     int cmp = song_title_cmp(song.title, node->song.title);
