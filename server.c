@@ -2,7 +2,7 @@
  * ╔══════════════════════════════════════════════════════════════════╗
  * ║          VIBE — HTTP REST API Server  (server.c)                ║
  * ║                                                                  ║
- * ║  Pure C, Winsock2, no external dependencies.                    ║
+ * ║  C sockets; PBKDF2 uses Windows BCrypt or POSIX OpenSSL.         ║
  * ║  Listens on  http://localhost:3000                              ║
  * ║                                                                  ║
  * ║  Endpoints:                                                      ║
@@ -59,6 +59,8 @@
 #include <string.h>
 #ifndef _WIN32
 #include <strings.h>
+#include <openssl/evp.h>
+#include <openssl/rand.h>
 #endif
 #include <ctype.h>
 #include <limits.h>
@@ -1256,42 +1258,30 @@ static int check_rate_limit(const char *ip) {
     return 0;
 }
 
-/* TODO: Replace this custom hash with a standard password KDF (PBKDF2, scrypt, or Argon2).
- * A salt and repeated custom mixing do not make this a password-safe cryptographic hash. */
-static void hash_password_salted(const char *password, const char *custom_salt, char *out_hash, size_t out_size)
+/* PBKDF2-HMAC-SHA256 replaces the old fast custom mixer. Windows uses BCrypt;
+ * POSIX uses OpenSSL. A standard slow KDF raises the cost of offline guessing. */
+static int hash_password_salted(const char *password, const char *salt, char *out_hash, size_t out_size)
 {
-    unsigned long long h1 = 14695981039346656037ULL;
-    unsigned long long h2 = 0xabcdef0123456789ULL;
-    const char *base_salt = "Dhun_Auth_Salt_v2_2026_SecureKey#99";
-    const char *salt = (custom_salt && custom_salt[0]) ? custom_salt : base_salt;
-
-    for (const char *p = salt; *p; p++) {
-        h1 ^= (unsigned char)(*p);
-        h1 *= 1099511628211ULL;
-        h2 = ((h2 << 7) | (h2 >> 57)) ^ (unsigned char)(*p);
+    if (!password || !salt || !salt[0] || !out_hash || out_size < 65) return 0;
+    unsigned char derived[32];
+#ifdef _WIN32
+    BCRYPT_ALG_HANDLE algorithm = NULL;
+    NTSTATUS status = BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, NULL,
+                                                   BCRYPT_ALG_HANDLE_HMAC_FLAG);
+    if (status >= 0) {
+        status = BCryptDeriveKeyPBKDF2(algorithm, (PUCHAR)password, (ULONG)strlen(password),
+            (PUCHAR)salt, (ULONG)strlen(salt), 150000, derived, (ULONG)sizeof(derived), 0);
+        BCryptCloseAlgorithmProvider(algorithm, 0);
     }
-    for (const char *p = base_salt; *p; p++) {
-        h1 ^= (unsigned char)(*p);
-        h1 *= 1099511628211ULL;
-        h2 = ((h2 << 5) | (h2 >> 59)) ^ (unsigned char)(*p);
-    }
-    for (const char *p = password; *p; p++) {
-        h1 ^= (unsigned char)(*p);
-        h1 *= 1099511628211ULL;
-        h2 = ((h2 << 11) | (h2 >> 53)) ^ (unsigned char)(*p);
-    }
-    for (int round = 0; round < 2500; round++) {
-        h1 ^= (h2 + round);
-        h1 = ((h1 << 13) | (h1 >> 51)) * 1099511628211ULL;
-        h2 ^= (h1 + 0x9e3779b97f4a7c15ULL);
-        h2 = ((h2 << 17) | (h2 >> 47)) * 0x517cc1b727220a95ULL;
-    }
-    snprintf(out_hash, out_size, "%016llx%016llx", h1, h2);
-}
-
-static void hash_password(const char *password, char *out_hash, size_t out_size)
-{
-    hash_password_salted(password, NULL, out_hash, out_size);
+    if (status < 0) return 0;
+#else
+    if (PKCS5_PBKDF2_HMAC(password, (int)strlen(password), (const unsigned char *)salt,
+                          (int)strlen(salt), 150000, EVP_sha256(), (int)sizeof(derived), derived) != 1) return 0;
+#endif
+    for (size_t i = 0; i < sizeof(derived); i++) snprintf(out_hash + i * 2, out_size - i * 2, "%02x", derived[i]);
+    out_hash[64] = '\0';
+    memset(derived, 0, sizeof(derived));
+    return 1;
 }
 
 /* Input validation helper [T1-05] */
@@ -1304,7 +1294,7 @@ static int validate_email_syntax(const char *email) {
     return 1;
 }
 
-static void generate_secure_token(char *out, size_t out_size, const char *prefix);
+static int generate_secure_token(char *out, size_t out_size, const char *prefix);
 
 /* ═══════════════════════════════════════════════
    LISTEN TOGETHER / JAM SESSION DSA & ROUTES [T1-06]
@@ -1335,6 +1325,7 @@ typedef struct JamRoom {
     char host_token[64];
     int allow_control;
     char password_hash[128];
+    char password_salt[40];
     int has_password;
     time_t expires_at;
     JamMember members[MAX_JAM_MEMBERS];
@@ -1487,13 +1478,22 @@ static void route_jam_create(SOCKET sock, const char *body)
     r->last_activity = r->created_at;
     r->expires_at = r->created_at + 3600; /* 60 minutes automatic room expiry [T1-06] */
     /* Fix C-02: Cryptographically random token for DJ/host authorization */
-    generate_secure_token(r->host_token, sizeof(r->host_token), "host_");
+    if (!generate_secure_token(r->host_token, sizeof(r->host_token), "host_")) {
+        free(r);
+        send_error(sock, 500, "secure random generator unavailable");
+        return;
+    }
 
     /* Optional room password protection [T1-06] */
     char raw_password[128] = {0};
     json_str(body, "password", raw_password, sizeof(raw_password));
     if (raw_password[0]) {
-        hash_password(raw_password, r->password_hash, sizeof(r->password_hash));
+        if (!generate_secure_token(r->password_salt, sizeof(r->password_salt), "s_") ||
+            !hash_password_salted(raw_password, r->password_salt, r->password_hash, sizeof(r->password_hash))) {
+            free(r);
+            send_error(sock, 500, "password hashing unavailable");
+            return;
+        }
         r->has_password = 1;
     } else {
         r->password_hash[0] = '\0';
@@ -1559,7 +1559,10 @@ static void route_jam_join(SOCKET sock, const char *body)
         char prov_password[128] = {0};
         json_str(body, "password", prov_password, sizeof(prov_password));
         char prov_hash[128];
-        hash_password(prov_password, prov_hash, sizeof(prov_hash));
+        if (!hash_password_salted(prov_password, r->password_salt, prov_hash, sizeof(prov_hash))) {
+            send_error(sock, 500, "password hashing unavailable");
+            return;
+        }
         if (!constant_time_eq(r->password_hash, prov_hash)) {
             send_error(sock, 401, "Invalid room password");
             return;
@@ -1843,7 +1846,7 @@ typedef struct {
     char name[64];
     char email[128];
     char password_hash[128];
-    char salt[32];
+    char salt[40];
     char avatar_color[16];
     char provider[16];
     char session_token[64];
@@ -1878,29 +1881,20 @@ static AuthUser* auth_find_user_by_email(const char *email)
     return NULL;
 }
 
-/* Fix C-03: Use BCryptGenRandom (Windows) / /dev/urandom (POSIX) for secure token generation */
-static void generate_secure_token(char *out, size_t out_size, const char *prefix) {
+/* Never downgrade to rand(): fail closed if the operating-system CSPRNG fails. */
+static int generate_secure_token(char *out, size_t out_size, const char *prefix) {
+    if (!out || !prefix || out_size < strlen(prefix) + 33) return 0;
     unsigned char raw[16];
-    int success = 0;
 #ifdef _WIN32
-    if (BCryptGenRandom(NULL, raw, sizeof(raw), BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0) {
-        success = 1;
-    }
+    if (BCryptGenRandom(NULL, raw, sizeof(raw), BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0) return 0;
 #else
-    FILE *urandom = fopen("/dev/urandom", "rb");
-    if (urandom) {
-        if (fread(raw, 1, sizeof(raw), urandom) == sizeof(raw)) success = 1;
-        fclose(urandom);
-    }
+    if (RAND_bytes(raw, (int)sizeof(raw)) != 1) return 0;
 #endif
-    if (!success) {
-        srand((unsigned)time(NULL) ^ (unsigned)(uintptr_t)out);
-        for (int i = 0; i < (int)sizeof(raw); i++) raw[i] = (unsigned char)(rand() & 0xff);
-    }
-    /* Encode as hex */
     char hex[33] = {0};
     for (int i = 0; i < 16; i++) snprintf(hex + i * 2, 3, "%02x", raw[i]);
-    snprintf(out, out_size, "%s%s", prefix, hex);
+    int written = snprintf(out, out_size, "%s%s", prefix, hex);
+    memset(raw, 0, sizeof(raw));
+    return written > 0 && (size_t)written < out_size;
 }
 
 /* Helper: find a user by their session token */
@@ -1968,14 +1962,23 @@ static void route_register(SOCKET sock, const char *body)
 
     AuthUser *u = &g_auth_users[g_auth_user_count++];
     /* Fix C-03 & Finding 14: Use secure token and per-user salt */
-    generate_secure_token(u->id, sizeof(u->id), "usr_");
-    generate_secure_token(u->salt, sizeof(u->salt), "s_");
+    if (!generate_secure_token(u->id, sizeof(u->id), "usr_") ||
+        !generate_secure_token(u->salt, sizeof(u->salt), "s_")) {
+        memset(u, 0, sizeof(*u)); g_auth_user_count--;
+        send_error(sock, 500, "secure random generator unavailable"); return;
+    }
     snprintf(u->name, sizeof(u->name), "%s", name);
     snprintf(u->email, sizeof(u->email), "%s", email);
-    hash_password_salted(password, u->salt, u->password_hash, sizeof(u->password_hash));
+    if (!hash_password_salted(password, u->salt, u->password_hash, sizeof(u->password_hash))) {
+        memset(u, 0, sizeof(*u)); g_auth_user_count--;
+        send_error(sock, 500, "password hashing unavailable"); return;
+    }
     strcpy(u->avatar_color, "#829779");
     strcpy(u->provider, "email");
-    generate_secure_token(u->session_token, sizeof(u->session_token), "sess_");
+    if (!generate_secure_token(u->session_token, sizeof(u->session_token), "sess_")) {
+        memset(u, 0, sizeof(*u)); g_auth_user_count--;
+        send_error(sock, 500, "secure random generator unavailable"); return;
+    }
     u->created_at = time(NULL);
 
     /* Fix M-04: Escape user fields in JSON responses */
@@ -2009,14 +2012,20 @@ static void route_login(SOCKET sock, const char *body)
     }
 
     char pass_hash[128];
-    hash_password_salted(password, u->salt[0] ? u->salt : NULL, pass_hash, sizeof(pass_hash));
+    if (!hash_password_salted(password, u->salt, pass_hash, sizeof(pass_hash))) {
+        send_error(sock, 500, "password hashing unavailable"); return;
+    }
     if (!constant_time_eq(u->password_hash, pass_hash)) {
         send_error(sock, 401, "Invalid email or password");
         return;
     }
 
     /* Fix C-03: Rotate session token using secure generator */
-    generate_secure_token(u->session_token, sizeof(u->session_token), "sess_");
+    char new_session[sizeof(u->session_token)];
+    if (!generate_secure_token(new_session, sizeof(new_session), "sess_")) {
+        send_error(sock, 500, "secure random generator unavailable"); return;
+    }
+    snprintf(u->session_token, sizeof(u->session_token), "%s", new_session);
 
     /* Fix M-04: Escape user fields in JSON responses */
     char esc_name[128], esc_email[128];
@@ -2056,49 +2065,11 @@ static void route_google_login(SOCKET sock, const char *body)
     send_error(sock, 501, "Google Sign-In on C daemon is disabled. Please authenticate via the verified serverless endpoint /api/auth/google.");
 }
 
-/* POST /api/forgot-password (Section 8: Anti-Enumeration Generic Notice) */
+/* The C daemon has no mail transport; don't issue a token the user cannot receive. */
 static void route_forgot_password(SOCKET sock, const char *body)
 {
-    char email[128] = {0};
-    json_str(body, "email", email, sizeof(email));
-
-    if (!email[0]) {
-        send_error(sock, 400, "email required");
-        return;
-    }
-
-    time_t now = time(NULL);
-
-    /* Fix H-03: Prune expired or already used reset tokens to prevent table exhaustion DoS */
-    int write_idx = 0;
-    for (int i = 0; i < g_reset_token_count; i++) {
-        if (!g_reset_tokens[i].used && g_reset_tokens[i].expires_at > now) {
-            if (write_idx != i) {
-                g_reset_tokens[write_idx] = g_reset_tokens[i];
-            }
-            write_idx++;
-        }
-    }
-    g_reset_token_count = write_idx;
-
-    AuthUser *u = auth_find_user_by_email(email);
-    char reset_token[64] = "";
-    if (u && g_reset_token_count < MAX_RESET_TOKENS) {
-        /* Fix C-03: Use cryptographically secure token generator instead of weak rand() */
-        generate_secure_token(reset_token, sizeof(reset_token), "rst_");
-
-        AuthResetToken *rt = &g_reset_tokens[g_reset_token_count++];
-        snprintf(rt->token, sizeof(rt->token), "%s", reset_token);
-        snprintf(rt->email, sizeof(rt->email), "%s", u->email);
-        rt->expires_at = now + (15 * 60); /* 15 minutes */
-        rt->used = 0;
-    }
-
-    /* Fix C-02: NEVER return the reset token in the HTTP response body or log it to stderr.
-     * In production, dispatch the token via an email service provider. */
-
-    /* Always return generic message (anti-enumeration) */
-    send_ok(sock, "{\"status\":\"ok\",\"message\":\"If an account exists for this email, you will receive a password reset link.\"}");
+    (void)body;
+    send_error(sock, 503, "Password reset email is not configured for the C server. Use the serverless reset endpoint.");
 }
 
 /* POST /api/reset-password */
@@ -2145,8 +2116,13 @@ static void route_reset_password(SOCKET sock, const char *body)
         return;
     }
 
-    generate_secure_token(u->salt, sizeof(u->salt), "s_");
-    hash_password_salted(password, u->salt, u->password_hash, sizeof(u->password_hash));
+    char new_salt[sizeof(u->salt)], new_hash[sizeof(u->password_hash)];
+    if (!generate_secure_token(new_salt, sizeof(new_salt), "s_") ||
+        !hash_password_salted(password, new_salt, new_hash, sizeof(new_hash))) {
+        send_error(sock, 500, "password hashing unavailable"); return;
+    }
+    snprintf(u->salt, sizeof(u->salt), "%s", new_salt);
+    snprintf(u->password_hash, sizeof(u->password_hash), "%s", new_hash);
     memset(u->session_token, 0, sizeof(u->session_token)); /* Finding 15: Revoke all active sessions on password reset */
     found_token->used = 1;
 

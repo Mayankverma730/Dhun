@@ -11,7 +11,8 @@ module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ success: false, error: 'Method not allowed' });
 
-  const { token, newPassword } = req.body || {};
+  const { token } = req.body || {};
+  const newPassword = req.body?.newPassword ?? req.body?.password;
 
   if (!token || !newPassword) {
     return res.status(400).json({ success: false, error: 'Reset token and new password are required' });
