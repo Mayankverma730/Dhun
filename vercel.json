@@ -1,26 +1,9 @@
 {
-  "version": 2,
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "redirects": [
     { "source": "/test_dsa.c", "destination": "/", "permanent": false },
     { "source": "/server.c", "destination": "/", "permanent": false },
-    { "source": "/benchmark.c", "destination": "/", "permanent": false },
-    { "source": "/main.c", "destination": "/", "permanent": false },
-    { "source": "/avl.c", "destination": "/", "permanent": false },
-    { "source": "/bst.c", "destination": "/", "permanent": false },
-    { "source": "/hash.c", "destination": "/", "permanent": false },
-    { "source": "/heap.c", "destination": "/", "permanent": false },
-    { "source": "/queue.c", "destination": "/", "permanent": false },
-    { "source": "/stack.c", "destination": "/", "permanent": false },
-    { "source": "/trie.c", "destination": "/", "permanent": false },
-    { "source": "/graph.c", "destination": "/", "permanent": false },
-    { "source": "/cache.c", "destination": "/", "permanent": false },
-    { "source": "/logger.c", "destination": "/", "permanent": false },
-    { "source": "/library.c", "destination": "/", "permanent": false },
-    { "source": "/song.c", "destination": "/", "permanent": false },
-    { "source": "/sort.c", "destination": "/", "permanent": false },
-    { "source": "/playlist.c", "destination": "/", "permanent": false },
-    { "source": "/Makefile", "destination": "/", "permanent": false },
-    { "source": "/Dockerfile", "destination": "/", "permanent": false }
+    { "source": "/benchmark.c", "destination": "/", "permanent": false }
   ],
   "rewrites": [
     { "source": "/api/songs/:id/play",    "destination": "/api/songs/[id]?action=play" },
@@ -38,7 +21,7 @@
   ],
   "headers": [
     {
-      "source": "/api/(.*)",
+      "source": "/api/:path*",
       "headers": [
         { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,DELETE,OPTIONS" },
         { "key": "Access-Control-Allow-Headers", "value": "Content-Type,Authorization,X-User-Id,X-Host-Token" },
@@ -46,7 +29,7 @@
       ]
     },
     {
-      "source": "/(.*)",
+      "source": "/:path*",
       "headers": [
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "X-Frame-Options",        "value": "SAMEORIGIN" },
