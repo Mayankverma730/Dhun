@@ -24,9 +24,10 @@ jobs:
 
       - name: Run DSA test suite
         run: |
-          ./test_dsa 2>&1 | while IFS= read -r line; do
-            echo "::notice::$line"
-          done
+          OUT=$(./test_dsa 2>&1) || true
+          # Replace newlines with %0A for GitHub annotation format
+          ESCAPED="${OUT//$'\n'/'%0A'}"
+          echo "::error title=DSA_OUTPUT::$ESCAPED"
           ./test_dsa
 
       - name: Compile and run performance benchmarks
