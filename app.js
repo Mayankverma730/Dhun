@@ -7602,14 +7602,22 @@ function connectJamMqtt(roomId, onReady) {
 
 function disconnectJamMqtt() {
   if (jamState.mqttClient) {
-    try {
-      if (jamState.roomId) {
-        jamState.mqttClient.unsubscribe(`dhun/v2/rooms/${jamState.roomId}`);
-      }
-      jamState.mqttClient.end(true);
-    } catch(e){}
+    const client = jamState.mqttClient;
+    const room = jamState.roomId;
     jamState.mqttClient = null;
     jamState.mqttConnected = false;
+    try {
+      if (room) {
+        client.unsubscribe(`dhun/v2/rooms/${room}`);
+      }
+      // Graceful end: flush outgoing buffer before terminating
+      client.end(false, () => {
+        try { client.end(true); } catch(e){}
+      });
+      setTimeout(() => {
+        try { client.end(true); } catch(e){}
+      }, 350);
+    } catch(e){}
   }
 }
 
@@ -7656,8 +7664,12 @@ function initJamChannel() {
   } catch(e){}
 }
 
-function broadcastJam(payload) {
-  if (!jamState.active || jamState._isRemoteSync) return;
+function broadcastJam(payload, onSent) {
+  const isCriticalCtrl = (payload && (payload.type === 'ROOM_CLOSED' || payload.type === 'LEAVE_ROOM' || payload.type === 'KICK_MEMBER'));
+  if ((!jamState.active && !isCriticalCtrl) || jamState._isRemoteSync) return;
+
+  const targetRoomId = (payload && payload.roomId) || jamState.roomId;
+  if (!targetRoomId) return;
 
   let songPayload = payload.song || null;
   if (!songPayload && state.currentSong) {
@@ -7685,22 +7697,39 @@ function broadcastJam(payload) {
   const msg = {
     ...payload,
     song: songPayload,
-    roomId: jamState.roomId,
+    roomId: targetRoomId,
     sender: jamState.userName,
     senderId: jamState.peerId,
     timestamp: Date.now()
   };
 
-  // 1. MQTT Cloud Real-Time Broker — AES-256-GCM E2E Encrypted
-  if (jamState.mqttClient && jamState.mqttConnected) {
+  const targetTopic = `dhun/v2/rooms/${targetRoomId}`;
+  const mqtt = jamState.mqttClient;
+
+  // 1. MQTT Cloud Real-Time Broker
+  if (mqtt && jamState.mqttConnected) {
+    // Critical control signals (ROOM_CLOSED) are published in plain JSON immediately for zero-delay delivery
+    if (isCriticalCtrl) {
+      try {
+        mqtt.publish(targetTopic, JSON.stringify(msg), { qos: 1 });
+      } catch(e){}
+    }
+
     jamE2EEncrypt(msg).then(encrypted => {
       try {
-        const topic = `dhun/v2/rooms/${jamState.roomId}`;
-        jamState.mqttClient.publish(topic, encrypted, { qos: 1 });
+        if (mqtt) {
+          mqtt.publish(targetTopic, encrypted, { qos: 1 }, () => {
+            if (typeof onSent === 'function') onSent();
+          });
+        }
       } catch(e) {
-        console.warn('[Jam MQTT] Publish error:', e);
+        if (typeof onSent === 'function') onSent();
       }
-    }).catch(e => console.warn('[Jam E2E] Encrypt error:', e));
+    }).catch(e => {
+      if (typeof onSent === 'function') onSent();
+    });
+  } else {
+    if (typeof onSent === 'function') onSent();
   }
 
   // 2. Cross-tab BroadcastChannel fallback (same-origin; plaintext is safe)
@@ -7710,7 +7739,7 @@ function broadcastJam(payload) {
 
   // 3. Cross-window localStorage fallback (same-origin only; plaintext OK)
   try {
-    localStorage.setItem('dhun_jam_last_event', JSON.stringify(msg));
+    localStorage.setItem('dhun_jam_last_event', JSON.stringify({ ...msg, _ts: Date.now(), _rand: Math.random() }));
   } catch(e){}
 
   // 4. Central C Backend Server sync fallback
@@ -7808,7 +7837,8 @@ function handleJamMessageData(data) {
       case 'KICK_MEMBER': {
         if (data.targetId === jamState.peerId) {
           showToast('⚠️ You were removed from the room by the host');
-          leaveJamSession();
+          leaveJamSession(false, 'silent');
+          closeListenTogetherModal();
         } else {
           jamState.members = jamState.members.filter(m => m.id !== data.targetId);
           renderJamMembers();
@@ -7821,8 +7851,9 @@ function handleJamMessageData(data) {
       }
 
       case 'ROOM_CLOSED': {
-        showToast('🔒 The host has ended this Jam session');
-        leaveJamSession();
+        showToast('🔒 The host has closed this Jam room');
+        leaveJamSession(false, 'silent');
+        closeListenTogetherModal();
         break;
       }
 
@@ -8410,22 +8441,24 @@ async function joinJamSession(prefilledCode) {
   });
 }
 
-function leaveJamSession(isUnload) {
+function leaveJamSession(isUnload, reason) {
   if (jamState.active && jamState.roomId) {
     const room = jamState.roomId;
     const user = jamState.userName;
     const wasHost = jamState.isHost;
 
     if (wasHost) {
-      // If host leaves, broadcast ROOM_CLOSED so all connected listeners cleanly exit and room terminates
+      // Broadcast ROOM_CLOSED so all connected listeners cleanly exit and room terminates
       broadcastJam({ type: 'ROOM_CLOSED', roomId: room, host: user });
     } else {
       // Broadcast leave event across all channels
-      broadcastJam({ type: 'LEAVE_ROOM', sender: user, senderId: jamState.peerId });
+      broadcastJam({ type: 'LEAVE_ROOM', sender: user, senderId: jamState.peerId, roomId: room });
     }
 
-    // Disconnect MQTT
-    disconnectJamMqtt();
+    // Give network buffer 250ms to flush final packet before disconnecting MQTT socket
+    setTimeout(() => {
+      disconnectJamMqtt();
+    }, 250);
 
     // Notify local backend if any
     if (isUnload && navigator.sendBeacon) {
@@ -8468,10 +8501,18 @@ function leaveJamSession(isUnload) {
     chatMsgs.innerHTML = `<div class="jam-chat-empty-state" id="jam-chat-empty">💬 <strong>Live Room Chat:</strong> Messages disappear automatically once read by both listeners.</div>`;
   }
 
+  // WIPE ACTIVE INTERFACE DOM COMPLETELY
+  renderJamMembers();
+  updateJamTrackCard();
+
   showJamPanel('host');
   updateJamUI();
-  if (!isUnload) {
-    showToast('👋 Left the Jam session');
+
+  // Close modal so listener does not get stuck on old interface
+  closeListenTogetherModal();
+
+  if (!isUnload && reason !== 'silent') {
+    showToast(reason || '👋 Left the Jam session');
   }
 }
 
@@ -9023,34 +9064,19 @@ function burnAndRemoveMessage(msgId) {
   }, 650);
 }
 
-// Host inactivity detection and takeover [T3-06]
+// Host inactivity detection & automatic exit for listeners [T3-06]
 setInterval(() => {
-  if (jamState.active && !jamState.isHost && jamState.lastHostHeartbeat) {
-    const elapsed = Date.now() - jamState.lastHostHeartbeat;
-    if (elapsed > 20000 && !jamState._hostWarningShown) {
-      jamState._hostWarningShown = true;
-      if (typeof toastManager !== 'undefined') {
-        toastManager.show('⚠️ Host seems disconnected', {
-          type: 'warning',
-          duration: 10000,
-          action: {
-            label: 'Take Over',
-            callback: () => {
-              jamState.isHost = true;
-              jamState.userName = `${jamState.userName} (Host)`;
-              jamState.members.forEach(m => {
-                if (m.name.includes(jamState.userName)) m.isHost = true;
-              });
-              renderJamMembers();
-              broadcastJam({ type: 'HOST_TAKEOVER', newHost: jamState.userName });
-              showToast('👑 You are now the Jam Session Host!');
-            }
-          }
-        });
+  if (jamState.active && !jamState.isHost) {
+    if (jamState.lastHostHeartbeat) {
+      const elapsed = Date.now() - jamState.lastHostHeartbeat;
+      if (elapsed > 18000) {
+        showToast('🔒 Host disconnected. Jam room ended.');
+        leaveJamSession(false, 'silent');
+        closeListenTogetherModal();
       }
     }
   }
-}, 7000);
+}, 3500);
 
 window.sendJamChatMessage = sendJamChatMessage;
 window.addJamChatMessage = addJamChatMessage;
