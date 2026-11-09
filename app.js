@@ -5745,6 +5745,22 @@ function renderRecommended() {
     songs = YTMusicAPI.getTrending('trending').slice(0, 8);
   }
 
+  // Strict deduplication by videoId and normalized title/artist
+  const seenRecVids = new Set();
+  const seenRecTitles = new Set();
+  songs = (songs || []).filter(s => {
+    if (!s) return false;
+    const vid = (s.videoId || (typeof s.id === 'string' && s.id.startsWith('yt_') ? s.id.replace(/^yt_/, '') : '') || '').trim();
+    const cleanT = (s.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanA = (s.artist || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const key = cleanT ? `${cleanT}:::${cleanA}` : '';
+    if (vid && seenRecVids.has(vid)) return false;
+    if (key && seenRecTitles.has(key)) return false;
+    if (vid) seenRecVids.add(vid);
+    if (key) seenRecTitles.add(key);
+    return true;
+  });
+
   if (songs.length === 0) {
     container.innerHTML = `
       <div style="padding:40px 20px;text-align:center;color:var(--text-muted)">
@@ -5850,8 +5866,11 @@ function getAutoRecommendations(currentSong, limit = 6) {
 
   const seenIds = new Set();
   const seenTitles = new Set();
-  if (curr && curr.title) seenTitles.add(curr.title.toLowerCase().trim());
+  if (curr && curr.title) {
+    seenTitles.add(curr.title.toLowerCase().replace(/[^a-z0-9]/g, ''));
+  }
   if (currId) seenIds.add(currId);
+  if (curr && curr.videoId) seenIds.add(String(curr.videoId).trim());
 
   const allRecommendations = [];
 
@@ -5859,10 +5878,12 @@ function getAutoRecommendations(currentSong, limit = 6) {
   for (const track of ytCandidates) {
     if (!track || !track.id) continue;
     const tId = String(track.id);
-    const tTitle = (track.title || '').toLowerCase().trim();
-    if (seenIds.has(tId) || seenTitles.has(tTitle)) continue;
+    const vid = (track.videoId || '').trim();
+    const tTitle = (track.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if ((vid && seenIds.has(vid)) || seenIds.has(tId) || (tTitle && seenTitles.has(tTitle))) continue;
+    if (vid) seenIds.add(vid);
     seenIds.add(tId);
-    seenTitles.add(tTitle);
+    if (tTitle) seenTitles.add(tTitle);
 
     if (!pcSongAudioMap.has(tId)) {
       const ytData = {
@@ -5901,8 +5922,9 @@ function getAutoRecommendations(currentSong, limit = 6) {
   for (const s of candidates) {
     if (!s) continue;
     const sId = String(s.id);
-    const sTitle = (s.title || '').toLowerCase().trim();
-    if (seenIds.has(sId) || seenTitles.has(sTitle)) continue;
+    const vid = (s.videoId || '').trim();
+    const sTitle = (s.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if ((vid && seenIds.has(vid)) || seenIds.has(sId) || (sTitle && seenTitles.has(sTitle))) continue;
 
     let score = 0;
     let reason = s.genre || 'Recommended';
@@ -10998,11 +11020,14 @@ async function autoSeedLibraryWithOnlineMedia() {
       } catch (e) {}
     }
 
-    const seedCatalog = [
+    const rawCatalog = [
       ...YTMusicAPI.getTrending('trending'),
       ...YTMusicAPI.getTrending('bollywood').slice(0, 4),
       ...YTMusicAPI.getTrending('punjabi').slice(0, 2)
     ];
+    const seedCatalog = (typeof YTMusicAPI.deduplicateTracks === 'function')
+      ? YTMusicAPI.deduplicateTracks(rawCatalog)
+      : rawCatalog;
 
     let deletedSongTitles = new Set();
     try {
@@ -11032,6 +11057,7 @@ async function autoSeedLibraryWithOnlineMedia() {
         }
         continue;
       }
+      existingTitleSet.add(key);
 
       const durMin = track.duration || +(track.durationSec / 60).toFixed(2) || 4.0;
       let res = await apiPost('/songs', {
@@ -11264,12 +11290,20 @@ function getPersonalizedDiscoverTracks(vibe = 'auto') {
     ...(typeof YTMusicAPI.getTrending === 'function' ? YTMusicAPI.getTrending('pop') : [])
   ];
 
-  // Deduplicate by videoId
+  // Deduplicate by videoId and normalized title
   const seenIds = new Set();
+  const seenTitles = new Set();
   const uniqueTracks = [];
   for (const t of allTracks) {
-    if (!t.videoId || seenIds.has(t.videoId)) continue;
-    seenIds.add(t.videoId);
+    if (!t) continue;
+    const vid = (t.videoId || '').trim();
+    const normT = (t.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normA = (t.artist || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const key = normT ? `${normT}:::${normA}` : '';
+    if (vid && seenIds.has(vid)) continue;
+    if (key && seenTitles.has(key)) continue;
+    if (vid) seenIds.add(vid);
+    if (key) seenTitles.add(key);
     uniqueTracks.push({ ...t });
   }
 

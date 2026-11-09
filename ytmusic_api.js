@@ -324,14 +324,14 @@ const YTMusicAPI = (() => {
    */
   const TRENDING_FEEDS = {
     trending: [
-      { videoId: 'fsiPzT50ZiM', title: 'Tum Hi Ho', artist: 'Arijit Singh', album: 'Aashiqui 2', genre: 'Bollywood', duration: 4.37, durationSec: 262 },
-      { videoId: 'brnIlxX_XKs', title: 'Kesariya', artist: 'Arijit Singh, Pritam', album: 'Brahmāstra', genre: 'Bollywood', duration: 4.47, durationSec: 268 },
-      { videoId: 'kJQP7kiw5Fk', title: 'Despacito', artist: 'Luis Fonsi ft. Daddy Yankee', album: 'Vida', genre: 'Pop', duration: 4.42, durationSec: 265 },
-      { videoId: 'fJ9rUzIMcZQ', title: 'Bohemian Rhapsody', artist: 'Queen', album: 'A Night at the Opera', genre: 'Rock', duration: 5.98, durationSec: 359 },
-      { videoId: 'JGwWNGJdvx8', title: 'Shape of You', artist: 'Ed Sheeran', album: '÷ (Divide)', genre: 'Pop', duration: 3.88, durationSec: 233 },
-      { videoId: '4NRXx6U8ABQ', title: 'Blinding Lights', artist: 'The Weeknd', album: 'After Hours', genre: 'Pop', duration: 3.33, durationSec: 200 },
-      { videoId: '5qap5aO4i9A', title: 'Lofi Chill Study Beats', artist: 'ChilledCow', album: 'Midnight Lo-Fi', genre: 'Lo-Fi', duration: 4.0, durationSec: 240 },
-      { videoId: '60ItHLz5WEA', title: 'Faded', artist: 'Alan Walker', album: 'Different World', genre: 'Electronic', duration: 3.53, durationSec: 212 }
+      { videoId: 'LK7-_dgAVQE', title: 'Tauba Tauba', artist: 'Karan Aujla', album: 'Bad Newz', genre: 'Trending', duration: 3.45, durationSec: 207 },
+      { videoId: 'Etkd-07gnxM', title: 'O Maahi', artist: 'Arijit Singh, Pritam', album: 'Dunki', genre: 'Trending', duration: 3.9, durationSec: 234 },
+      { videoId: 'eVli-tstM5E', title: 'Espresso', artist: 'Sabrina Carpenter', album: 'Short n Sweet', genre: 'Trending', duration: 2.92, durationSec: 175 },
+      { videoId: 'd5gf9dXHeG4', title: 'Birds of a Feather', artist: 'Billie Eilish', album: 'Hit Me Hard and Soft', genre: 'Trending', duration: 3.5, durationSec: 210 },
+      { videoId: 'edZZ0mFwZ-M', title: 'Greedy', artist: 'Tate McRae', album: 'Think Later', genre: 'Trending', duration: 2.18, durationSec: 131 },
+      { videoId: 'bO69qXl6R4g', title: 'Gata Only', artist: 'FloyyMenor, Cris Mj', album: 'Gata Only Single', genre: 'Trending', duration: 3.7, durationSec: 222 },
+      { videoId: 'em0MknB6wFo', title: 'Illusion', artist: 'Dua Lipa', album: 'Radical Optimism', genre: 'Trending', duration: 3.13, durationSec: 188 },
+      { videoId: 'GZ3zL7kT6_c', title: 'Lose Control', artist: 'Teddy Swims', album: "I've Tried Everything But Therapy", genre: 'Trending', duration: 3.5, durationSec: 210 }
     ],
     bollywood: [
       { videoId: 'fsiPzT50ZiM', title: 'Tum Hi Ho', artist: 'Arijit Singh', album: 'Aashiqui 2', genre: 'Bollywood', duration: 4.37, durationSec: 262 },
@@ -384,18 +384,20 @@ const YTMusicAPI = (() => {
       { videoId: '1w7OgIMMRc4', title: 'Sweet Child O Mine', artist: "Guns N' Roses", album: 'Appetite for Destruction', genre: 'Rock', duration: 5.05, durationSec: 303 }
     ],
     romantic: [
-      { videoId: 'fsiPzT50ZiM', title: 'Tum Hi Ho', artist: 'Arijit Singh', album: 'Aashiqui 2', genre: 'Romantic', duration: 4.37, durationSec: 262 },
-      { videoId: 'brnIlxX_XKs', title: 'Kesariya', artist: 'Arijit Singh, Pritam', album: 'Brahmāstra', genre: 'Romantic', duration: 4.47, durationSec: 268 },
-      { videoId: 'rtOvBOTyX00', title: 'Dil Diyan Gallan', artist: 'Atif Aslam', album: 'Tiger Zinda Hai', genre: 'Romantic', duration: 4.34, durationSec: 260 },
-      { videoId: '2Vv-BfVoq4g', title: 'Perfect', artist: 'Ed Sheeran', album: '÷ (Divide)', genre: 'Romantic', duration: 4.38, durationSec: 263 },
-      { videoId: 'ElZfdU54Cp8', title: 'Apna Bana Le', artist: 'Arijit Singh, Sachin-Jigar', album: 'Bhediya', genre: 'Romantic', duration: 4.35, durationSec: 261 },
-      { videoId: 'V7LwfY5U5WI', title: 'Raataan Lambiyan', artist: 'Jubin Nautiyal, Asees Kaur', album: 'Shershaah', genre: 'Romantic', duration: 3.83, durationSec: 230 }
+      { videoId: 'bfIqG8a1sHY', title: 'Shayad', artist: 'Arijit Singh, Pritam', album: 'Love Aaj Kal', genre: 'Romantic', duration: 4.12, durationSec: 247 },
+      { videoId: 'xRb8hxwN5zc', title: 'Agar Tum Saath Ho', artist: 'Alka Yagnik & Arijit Singh', album: 'Tamasha', genre: 'Romantic', duration: 5.68, durationSec: 341 },
+      { videoId: 'RLzC55ai0eo', title: 'Heeriye', artist: 'Jasleen Royal, Arijit Singh', album: 'Heeriye Single', genre: 'Romantic', duration: 3.25, durationSec: 195 },
+      { videoId: 'mt9xg0mmt68', title: 'Tum Se Hi', artist: 'Mohit Chauhan, Pritam', album: 'Jab We Met', genre: 'Romantic', duration: 5.38, durationSec: 323 },
+      { videoId: 'Grr0Exhy-lQ', title: 'Kalank', artist: 'Arijit Singh, Pritam', album: 'Kalank', genre: 'Romantic', duration: 5.18, durationSec: 311 },
+      { videoId: '4K-V-n7D_b0', title: 'Pehla Nasha', artist: 'Udit Narayan, Sadhana Sargam', album: 'Jo Jeeta Wohi Sikandar', genre: 'Romantic', duration: 4.85, durationSec: 291 },
+      { videoId: 'PEM0Vs8jf1w', title: 'Golden Hour', artist: 'JVKE', album: 'This Is What Falling In Love Feels Like', genre: 'Romantic', duration: 3.48, durationSec: 209 },
+      { videoId: 'GxldQ9GyXfY', title: 'Until I Found You', artist: 'Stephen Sanchez', album: 'Easy On My Eyes', genre: 'Romantic', duration: 2.97, durationSec: 178 }
     ],
     hiphop: [
-      { videoId: '8nK_4VfFpYc', title: 'Cheques', artist: 'Shubh', album: 'Still Rollin', genre: 'Hip-Hop', duration: 3.05, durationSec: 183 },
-      { videoId: '47dwt3_yC3s', title: 'Winning Speech', artist: 'Karan Aujla, Mxrci', album: 'Four You', genre: 'Hip-Hop', duration: 3.42, durationSec: 205 },
       { videoId: '_Yhyp-_hX2s', title: 'Lose Yourself', artist: 'Eminem', album: '8 Mile', genre: 'Hip-Hop', duration: 5.4, durationSec: 324 },
-      { videoId: 'e-ORhEE9VVg', title: '295', artist: 'Sidhu Moose Wala', album: 'Moosetape', genre: 'Hip-Hop', duration: 4.5, durationSec: 270 }
+      { videoId: 'xpVfcZ0ZcFM', title: "God's Plan", artist: 'Drake', album: 'Scorpion', genre: 'Hip-Hop', duration: 3.32, durationSec: 199 },
+      { videoId: 'tvTRZJ-4EyI', title: 'HUMBLE.', artist: 'Kendrick Lamar', album: 'DAMN.', genre: 'Hip-Hop', duration: 2.95, durationSec: 177 },
+      { videoId: 'UceaB4D0jpo', title: 'Rockstar', artist: 'Post Malone ft. 21 Savage', album: 'Beerbongs & Bentleys', genre: 'Hip-Hop', duration: 3.63, durationSec: 218 }
     ]
   };
 
@@ -568,7 +570,7 @@ const YTMusicAPI = (() => {
     const isIndian = /bollywood|hindi|punjabi|sufi|ghazal|qawwali|bhangra|desi|arijit|pritam|mithoon|neha|badshah|jubin|asees|t-series|zee music|sony music|shreya|sunidhi|atif|mohit|rahat|tanishk|bagchi|sachin-jigar|alka|kumar sanu|udit|sonu nigam|shankar|vishal|shekhar|rahman|jasleen|b praak|darshan|diljit|sidhu|karan aujla|shubh|crook|aashiqui|simmba|shershaah|brahmastra|jawan|pathaan|war|loveyatri|pagalpanti|half girlfriend/i.test(`${title} ${artist} ${explicitGenre} ${genre}`);
 
     // Candidates pool: Strict genre boundaries (never recommend Western rock/pop for Bollywood)
-    const pool = isIndian
+    const pool = deduplicateTracks(isIndian
       ? [
           ...(TRENDING_FEEDS.bollywood || []),
           ...(TRENDING_FEEDS.romantic || []),
@@ -582,26 +584,33 @@ const YTMusicAPI = (() => {
           ...TRENDING_FEEDS.rock,
           ...TRENDING_FEEDS.electronic,
           ...TRENDING_FEEDS.lofi
-        ];
+        ]);
 
     const targetVid = track.videoId || (typeof track.id === 'string' && track.id.startsWith('yt_') ? track.id.replace('yt_', '') : null);
 
     const seenIds = new Set();
+    const seenTitles = new Set();
     const scored = [];
 
     for (const item of pool) {
       if (!item || !item.videoId) continue;
       if (targetVid && item.videoId === targetVid) continue;
       if (seenIds.has(item.videoId)) continue;
-      seenIds.add(item.videoId);
 
       const iTitle = cleanSongTitle(item.title).toLowerCase().trim();
       const iArtist = cleanArtistName(item.artist).toLowerCase().trim();
+      const normKey = iTitle.replace(/[^a-z0-9]/g, '');
 
-      // Skip identical song title
+      // Skip identical song title or duplicate
       if (title && (iTitle === title || iTitle.includes(title) || title.includes(iTitle))) {
         continue;
       }
+      if (normKey && seenTitles.has(normKey)) {
+        continue;
+      }
+
+      seenIds.add(item.videoId);
+      if (normKey) seenTitles.add(normKey);
 
       let score = 0;
       let reason = `🏷️ Same Category: ${item.genre || genre}`;
