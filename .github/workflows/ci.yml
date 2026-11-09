@@ -24,13 +24,10 @@ jobs:
 
       - name: Run DSA test suite
         run: |
-          ./test_dsa 2>&1 | tee dsa_test_results.txt
-          EXIT_CODE=${PIPESTATUS[0]}
-          echo "### DSA Test Output" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat dsa_test_results.txt >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          exit $EXIT_CODE
+          ./test_dsa 2>&1 | while IFS= read -r line; do
+            echo "::notice::$line"
+          done
+          ./test_dsa
 
       - name: Compile and run performance benchmarks
         run: |
